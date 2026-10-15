@@ -31,7 +31,7 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
 **Attacker (RTS)**
 - `LMB` click/drag to select, `Shift` to add · `RMB` attack-move, or attack a gate/defender you click on · `Ctrl+RMB` move without stopping
 - Spawn: `Z` Bear Rifleman · `X` Kangaroo Commando (fast) · `C` Wolf Medic (heals) · `V` Sky Talon (flies over walls) · `B` War Elephant (heavy) · `N` Mule Artillery (long-range shells) · `M` Breaching Ram (gates only)
-- Models in, roles still to be designed (placeholder stats): `G` War Ram · `H` Savanna Signal Scout · `J` Night Ops Chimp · `K` Hippo Heavy Gunner · `L` Bison Field Gun
+- Models in, roles still to be designed (placeholder stats): `G` War Ram · `H` Savanna Signal Scout · `J` Night Ops Chimp · `K` Hippo Heavy Gunner · `L` Bison Field Gun · `Y` Armored Lioness · `U` Serpent Sniper · `I` Armored Rhino
 - `Tab` cycles spawn point · `Ctrl+1`–`5` save a group, `1`–`5` recall it
 - Camera: `WASD`/arrows/screen edge to pan, `Q`/`E` or middle mouse to rotate, wheel to zoom
 - `Esc` pauses (both sides)
@@ -72,6 +72,9 @@ This puts the pivot at the feet (or the bounding-box center with `--pivot bbox`,
 | savanna_signal_scout | 4.5 | |
 | hippopotamus_heavy_gunner | 2.6 | `--pivot bbox` |
 | semi_futuristic_pair | 2.4 | `--pivot bbox` |
+| armored_lioness_unit | 1.6 | |
+| serpent_sniper | 0.9 | `--rotate-z 56 --pivot bbox` |
+| armored_rhino_unit | 2.4 | `--pivot bbox` |
 
 ## Asset layout
 

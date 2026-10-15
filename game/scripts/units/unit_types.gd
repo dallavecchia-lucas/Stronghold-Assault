@@ -13,7 +13,7 @@ extends RefCounted
 ## model: path to a processed GLB (front facing +Z, feet at origin), or "ram" for the built-in mesh.
 
 const ORDER := ["rifleman", "kangaroo", "medic", "talon", "elephant", "mule", "breacher",
-		"war_ram", "giraffe", "chimp", "hippo", "bison_gun"]
+		"war_ram", "giraffe", "chimp", "hippo", "bison_gun", "lioness", "serpent", "rhino"]
 const FLY_HEIGHT := 16.0
 
 const DATA := {
@@ -101,5 +101,26 @@ const DATA := {
 		"structure_mult": 1.5, "radius": 1.6, "height": 2.4,
 		"role": "infantry", "anim": "stomp", "hotkey": KEY_L,
 		"model": "res://assets/units/semi_futuristic_pair/semi_futuristic_pair.glb",
+	},
+	"lioness": {
+		"name": "Armored Lioness", "cost": 90, "hp": 160.0, "speed": 6.5,
+		"range": 22.0, "damage": 10.0, "fire_interval": 0.5, "spread": 0.04,
+		"structure_mult": 0.5, "radius": 0.6, "height": 1.6,
+		"role": "infantry", "anim": "walk", "hotkey": KEY_Y,
+		"model": "res://assets/units/armored_lioness_unit/armored_lioness_unit.glb",
+	},
+	"serpent": {
+		"name": "Serpent Sniper", "cost": 110, "hp": 80.0, "speed": 3.5,
+		"range": 45.0, "damage": 35.0, "fire_interval": 2.5, "spread": 0.01,
+		"structure_mult": 0.3, "radius": 0.6, "height": 0.9,
+		"role": "infantry", "anim": "roll", "hotkey": KEY_U,
+		"model": "res://assets/units/serpent_sniper/serpent_sniper.glb",
+	},
+	"rhino": {
+		"name": "Armored Rhino", "cost": 280, "hp": 1100.0, "speed": 3.6,
+		"range": 24.0, "damage": 8.0, "fire_interval": 0.2, "spread": 0.05,
+		"structure_mult": 1.2, "radius": 1.3, "height": 2.4,
+		"role": "infantry", "anim": "stomp", "hotkey": KEY_I,
+		"model": "res://assets/units/armored_rhino_unit/armored_rhino_unit.glb",
 	},
 }

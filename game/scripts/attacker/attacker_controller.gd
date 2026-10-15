@@ -5,7 +5,7 @@ extends CanvasLayer
 ##
 ## LMB click/drag: select · Shift adds · RMB: attack-move / attack target
 ## Ctrl+RMB: move without stopping to fight · Ctrl+1-5 assign group · 1-5 recall
-## Z X C V B N M G H J K L: spawn units · Tab: cycle spawn point
+## Z X C V B N M G H J K L Y U I: spawn units · Tab: cycle spawn point
 
 const DRAG_THRESHOLD := 6.0
 
@@ -219,7 +219,7 @@ func _build_hud() -> void:
 	row.add_child(info)
 
 	var grid := GridContainer.new()
-	grid.columns = 6
+	grid.columns = 8
 	grid.add_theme_constant_override("h_separation", 6)
 	grid.add_theme_constant_override("v_separation", 6)
 	row.add_child(grid)
