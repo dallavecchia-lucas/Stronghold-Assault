@@ -60,6 +60,11 @@ func _ready() -> void:
 	diff_row.add_child(diff)
 	box.add_child(diff_row)
 
+	var intro := UIKit.button("Watch Intro", 18)
+	intro.custom_minimum_size = Vector2(560, 44)
+	intro.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/intro.tscn"))
+	box.add_child(intro)
+
 	var quit := UIKit.button("Quit", 18)
 	quit.custom_minimum_size = Vector2(560, 44)
 	quit.pressed.connect(get_tree().quit)

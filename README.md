@@ -38,6 +38,21 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
 
 Balance numbers live in `game/scripts/units/unit_types.gd` and the constants at the top of each defense script.
 
+### Intro cinematic
+
+The game opens with a ~2.5 minute intro (`game/scenes/intro.tscn`, built in `game/scripts/intro/intro.gd`); any key skips it, and the main menu has a **Watch Intro** button. Lore cards, shots and lighting cues are timed to the score in a table at the top of the script.
+
+Render it to video with Godot's Movie Maker (use a real GPU for the full Forward+ look):
+
+```sh
+godot --path game --resolution 1920x1080 --write-movie intro.avi --fixed-fps 30 res://scenes/intro.tscn
+ffmpeg -i intro.avi -c:v libx264 -crf 18 -pix_fmt yuv420p -c:a aac -b:a 256k intro.mp4
+```
+
+Preview from a given moment with `-- --intro-start=80` (seconds).
+
+The score (`game/assets/audio/intro_theme.ogg`) is original and synthesized by `tools/audio/compose_intro.py`; it is a temp track meant to be replaced by a real recording.
+
 ### Automated smoke test
 
 Plays a scripted match at 4× speed with no window and prints a report (useful after changes):
