@@ -129,7 +129,7 @@ func _autotest_step(delta: float) -> void:
 		elif player_controller is AttackerController:
 			var ac: AttackerController = player_controller
 			ac.set_spawn_point(step % 3)
-			for t in ["rifleman", "rifleman", "heavy", "breacher"]:
+			for t in [UnitTypes.ORDER[step % UnitTypes.ORDER.size()], "rifleman", "kangaroo", "medic"]:
 				ac.spawn(t)
 			var ids := commander.units.keys()
 			var gate: Structure = level.gates.values()[step % 3]

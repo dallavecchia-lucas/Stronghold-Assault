@@ -14,9 +14,9 @@ signal unit_spawned(unit: AttackerUnit)
 signal unit_died(unit: AttackerUnit)
 
 const UNIT_CAP := 60
-const BASE_INCOME := 9.0
+const BASE_INCOME := 12.0
 
-var supply := 200.0
+var supply := 250.0
 var income := BASE_INCOME
 var units := {}  # id -> AttackerUnit
 var spawn_points: Array[Vector3] = []

@@ -50,16 +50,25 @@ func _plan_wave() -> void:
 	_wave += 1
 	_wave_spawn = randi() % SPAWN_SIDES.size()
 	_wave_side = SPAWN_SIDES[_wave_spawn]
-	var riflemen := mini(4 + _wave * 2, 16)
-	var heavies := mini(_wave / 2, 5)
-	var rams := 1 if _wave >= 2 and (_wave % 2 == 0 or _wave > 5) else 0
-	for i in rams:
-		_pending.append("breacher")
-	for i in riflemen:
-		_pending.append("rifleman")
-		if i % 3 == 1 and heavies > 0:
-			_pending.append("heavy")
-			heavies -= 1
+	# Wave mix grows over time: infantry core, then flyers, heavies and artillery.
+	var counts := {
+		"breacher": 1 if _wave >= 2 and (_wave % 2 == 0 or _wave > 5) else 0,
+		"mule": 1 if _wave >= 3 and _wave % 2 == 1 else 0,
+		"elephant": 0 if _wave < 3 else (1 if _wave < 7 else 2),
+		"medic": 1 if _wave < 5 else 2,
+		"rifleman": mini(3 + _wave, 10),
+		"kangaroo": mini(1 + _wave / 2, 5),
+		"talon": 0 if _wave < 2 else mini(_wave - 1, 4),
+	}
+	# Interleave so a partly-spawned wave is still a sensible mix.
+	var remaining := true
+	while remaining:
+		remaining = false
+		for type_id in counts:
+			if counts[type_id] > 0:
+				_pending.append(type_id)
+				counts[type_id] -= 1
+				remaining = true
 
 
 func _launch_wave() -> void:
@@ -69,18 +78,20 @@ func _launch_wave() -> void:
 	if gate.is_alive():
 		var infantry := []
 		var siege := []
+		var artillery := []
 		for id in ids:
 			var u = commander.units.get(id)
 			if u == null:
 				continue
-			if u.stats.structures_only:
-				siege.append(id)
-			else:
-				infantry.append(id)
-		# Infantry fight their way up to the gate and suppress the walls; rams go for the gate.
+			match u.role:
+				"siege": siege.append(id)
+				"artillery": artillery.append(id)
+				_: infantry.append(id)
+		# Infantry, medics and flyers push up to the gate and suppress the walls, rams go
+		# for the gate, artillery shells it from range.
 		var out: Vector3 = LevelBuilder.SIDES[_wave_side].dir
 		commander.submit({"type": "move", "units": infantry, "pos": out * (LevelBuilder.FORT_HALF + 14.0), "attack": true})
-		commander.submit({"type": "attack", "units": siege, "target": gate.get_path()})
+		commander.submit({"type": "attack", "units": siege + artillery, "target": gate.get_path()})
 	else:
 		_push_keep(ids)
 

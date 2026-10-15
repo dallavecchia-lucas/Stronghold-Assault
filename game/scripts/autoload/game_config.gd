@@ -59,7 +59,7 @@ func _setup_input() -> void:
 	_add_action("cam_rotate_left", [KEY_Q])
 	_add_action("cam_rotate_right", [KEY_E])
 	_add_action("pause", [KEY_ESCAPE])
-	_add_action("spawn_cycle", [KEY_V])
+	_add_action("spawn_cycle", [KEY_TAB])
 	var digit_keys := [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9, KEY_0]
 	for i in digit_keys.size():
 		_add_action("slot_%d" % (i + 1), [digit_keys[i]])

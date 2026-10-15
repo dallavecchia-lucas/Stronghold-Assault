@@ -7,7 +7,7 @@ signal became_unavailable(station)
 
 const YAW_LIMIT := deg_to_rad(75.0)
 const PITCH_MIN := deg_to_rad(-40.0)
-const PITCH_MAX := deg_to_rad(25.0)
+const PITCH_MAX := deg_to_rad(50.0)  # high enough to shoot down flyers
 const PLAYER_DAMAGE := 17.0
 const PLAYER_FIRE_INTERVAL := 0.075
 const AI_DAMAGE := 8.0
@@ -276,7 +276,7 @@ func _find_target() -> Node3D:
 		if d >= best_d:
 			continue
 		var ang := _angles_to(Combat.aim_point(u))
-		if absf(ang.x) > YAW_LIMIT or ang.y < PITCH_MIN:
+		if absf(ang.x) > YAW_LIMIT or ang.y < PITCH_MIN or ang.y > PITCH_MAX:
 			continue
 		if Combat.has_line_of_sight(self, _muzzle.global_position, Combat.aim_point(u), u):
 			best_d = d

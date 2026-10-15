@@ -5,7 +5,7 @@ extends CanvasLayer
 ##
 ## LMB click/drag: select · Shift adds · RMB: attack-move / attack target
 ## Ctrl+RMB: move without stopping to fight · Ctrl+1-5 assign group · 1-5 recall
-## Z/X/C: spawn units · V: cycle spawn point
+## Z X C V B N M: spawn units · Tab: cycle spawn point
 
 const DRAG_THRESHOLD := 6.0
 
@@ -215,21 +215,22 @@ func _build_hud() -> void:
 	info.add_child(_supply_label)
 	info.add_child(_count_label)
 	info.add_child(_selection_label)
-	info.custom_minimum_size.x = 170
+	info.custom_minimum_size.x = 150
 	row.add_child(info)
 
 	for type_id in UnitTypes.ORDER:
 		var d: Dictionary = UnitTypes.DATA[type_id]
 		var key := OS.get_keycode_string(d.hotkey)
-		var b := UIKit.button("%s\n%d supply  [%s]" % [d.name, d.cost, key], 16)
-		b.custom_minimum_size = Vector2(170, 64)
+		var b := UIKit.button("%s\n%d  [%s]" % [d.name, d.cost, key], 14)
+		b.custom_minimum_size = Vector2(132, 60)
+		b.tooltip_text = "%s · %d HP · %s" % [d.name, int(d.hp), d.role]
 		b.focus_mode = Control.FOCUS_NONE
 		b.pressed.connect(spawn.bind(type_id))
 		row.add_child(b)
 		_spawn_buttons[type_id] = b
 
 	var sp := VBoxContainer.new()
-	sp.add_child(UIKit.label("SPAWN AT  [V]", 12, Color(0.7, 0.75, 0.85)))
+	sp.add_child(UIKit.label("SPAWN AT  [Tab]", 12, Color(0.7, 0.75, 0.85)))
 	var sp_row := HBoxContainer.new()
 	var bg := ButtonGroup.new()
 	for i in level.spawn_names.size():

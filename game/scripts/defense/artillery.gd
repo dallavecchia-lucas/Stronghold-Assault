@@ -241,6 +241,8 @@ func _ai_fire() -> void:
 	var best: Node3D = null
 	var best_n := 2  # don't waste shells on lone units
 	for u in units:
+		if u.is_flying():
+			continue
 		var dist := Vector2(u.global_position.x - global_position.x, u.global_position.z - global_position.z).length()
 		if dist < MIN_RANGE or dist > MAX_RANGE:
 			continue

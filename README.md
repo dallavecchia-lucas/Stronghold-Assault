@@ -30,7 +30,8 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
 
 **Attacker (RTS)**
 - `LMB` click/drag to select, `Shift` to add · `RMB` attack-move, or attack a gate/defender you click on · `Ctrl+RMB` move without stopping
-- `Z` rifleman, `X` gunner, `C` breaching ram · `V` cycles spawn point · `Ctrl+1`–`5` save a group, `1`–`5` recall it
+- Spawn: `Z` Bear Rifleman · `X` Kangaroo Commando (fast) · `C` Wolf Medic (heals) · `V` Sky Talon (flies over walls) · `B` War Elephant (heavy) · `N` Mule Artillery (long-range shells) · `M` Breaching Ram (gates only)
+- `Tab` cycles spawn point · `Ctrl+1`–`5` save a group, `1`–`5` recall it
 - Camera: `WASD`/arrows/screen edge to pan, `Q`/`E` or middle mouse to rotate, wheel to zoom
 - `Esc` pauses (both sides)
 
@@ -55,7 +56,16 @@ blender -b --python tools/blender/process_meshy_model.py -- \
     --output game/assets/units/cyber_bear_commando/cyber_bear_commando.glb
 ```
 
-This puts the pivot at the feet, optionally rescales (`--height`), and shrinks textures (`--tex`, `--orm-tex`).
+This puts the pivot at the feet (or the bounding-box center with `--pivot bbox`, for long vehicles), rescales to a real height in meters (`--height`), turns the model to face forward (`--rotate-z`), and shrinks textures (`--tex`, `--orm-tex`). Settings used so far:
+
+| Unit | `--height` | other |
+|---|---|---|
+| cyber_bear_commando | (as exported) | |
+| kangaroo_commando | 2.0 | |
+| sky_talon_battalion | 2.1 | |
+| battlefield_lifesaver | 1.4 | |
+| war_elephant_sentinel | 3.8 | `--pivot bbox` |
+| cyber_mule_artillery | 2.2 | `--rotate-z 90 --pivot bbox` |
 
 ## Asset layout
 

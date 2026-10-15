@@ -1,19 +1,23 @@
 class_name AttackerUnit
 extends CharacterBody3D
-## One attacking soldier or siege machine. Driven entirely by its current order:
+## One attacking unit. Driven entirely by its current order:
 ##   {"type": "idle"}
-##   {"type": "move", "pos": Vector3}          walk there, ignore enemies
-##   {"type": "attack_move", "pos": Vector3}   walk there, fight anything in range
+##   {"type": "move", "pos": Vector3}          go there, ignore enemies
+##   {"type": "attack_move", "pos": Vector3}   go there, fight anything in range
 ##   {"type": "attack", "target": Node3D}      chase and destroy a specific target
+## Behaviour differences per unit come from UnitTypes role (infantry, siege,
+## artillery, healer, flying).
 
 signal died(unit: AttackerUnit)
 
-const BEAR_MODEL := "res://assets/units/cyber_bear_commando/cyber_bear_commando.glb"
-static var _bear_scene: PackedScene
+const HEAL_COLOR := Color(0.35, 1.0, 0.45)
+
+static var _scenes := {}
 
 var unit_id := 0
 var type_id := "rifleman"
 var stats: Dictionary
+var role := "infantry"
 var team := GameConfig.TEAM_ATTACKER
 var hp := 100.0
 var order := {"type": "idle"}
@@ -42,8 +46,13 @@ func setup(p_type: String, p_id: int) -> void:
 	type_id = p_type
 	unit_id = p_id
 	stats = UnitTypes.DATA[p_type]
+	role = stats.role
 	hp = stats.hp
 	name = "Unit%d" % p_id
+
+
+func is_flying() -> bool:
+	return role == "flying"
 
 
 func _ready() -> void:
@@ -51,7 +60,8 @@ func _ready() -> void:
 	add_to_group("attacker_units")
 	collision_layer = GameConfig.LAYER_ATTACKERS
 	# Attackers don't collide with each other; avoidance keeps them apart instead.
-	collision_mask = GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES | GameConfig.LAYER_DEFENDERS
+	# Flyers don't collide with anything.
+	collision_mask = 0 if is_flying() else GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES | GameConfig.LAYER_DEFENDERS
 	floor_snap_length = 0.5
 
 	var shape := CollisionShape3D.new()
@@ -68,7 +78,7 @@ func _ready() -> void:
 	_agent.max_speed = stats.speed
 	_agent.path_desired_distance = 1.0
 	_agent.target_desired_distance = 1.5
-	_agent.avoidance_enabled = true
+	_agent.avoidance_enabled = not is_flying()
 	_agent.neighbor_distance = 6.0
 	_agent.max_neighbors = 8
 	_agent.time_horizon_agents = 1.0
@@ -84,12 +94,15 @@ func _ready() -> void:
 # ---------------------------------------------------------------- orders
 
 func set_order(o: Dictionary) -> void:
+	# Medics don't attack: follow the attack to its target instead.
+	if role == "healer" and o.type == "attack":
+		o = {"type": "attack_move", "pos": o.target.global_position}
 	order = o
 	if o.type == "attack":
 		target = o.target
 	elif o.type == "move":
 		target = null
-	if o.has("pos"):
+	if o.has("pos") and not is_flying():
 		_agent.target_position = o.pos
 
 
@@ -116,6 +129,13 @@ func take_damage(amount: float, from_team: int) -> void:
 		_die()
 
 
+func heal(amount: float) -> void:
+	if hp <= 0.0:
+		return
+	hp = minf(hp + amount, stats.hp)
+	_update_hp_bar()
+
+
 func _die() -> void:
 	hp = 0.0
 	remove_from_group("damageable")
@@ -127,9 +147,9 @@ func _die() -> void:
 	_hp_bar.visible = false
 	died.emit(self)
 	var tw := create_tween()
-	tw.tween_property(_model, "rotation:x", -PI * 0.5, 0.5).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.tween_property(_model, "rotation:z", PI * 0.5, 0.6).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	tw.tween_interval(3.0)
-	tw.tween_property(_model, "position:y", -2.0, 2.0)
+	tw.tween_property(_model, "position:y", -stats.height, 2.0)
 	tw.tween_callback(queue_free)
 
 
@@ -139,14 +159,24 @@ func _range_to(t: Node3D) -> float:
 
 
 func _in_range(t: Node3D) -> bool:
-	return _range_to(t) <= stats.range
+	var d := _range_to(t)
+	return d <= stats.range and d >= stats.get("min_range", 0.0)
 
 
 func _eye() -> Vector3:
 	return global_position + Vector3.UP * stats.height * 0.8
 
 
+func _can_see(t: Node3D) -> bool:
+	if role == "artillery" or t.is_in_group("structures"):
+		return true  # shells arc over walls; buildings are big enough to always hit
+	return Combat.has_line_of_sight(self, _eye(), Combat.aim_point(t), t)
+
+
 func _update_target() -> void:
+	if role == "healer":
+		target = null
+		return
 	if order.type == "attack":
 		if Combat.is_valid_target(order.target):
 			target = order.target
@@ -155,29 +185,27 @@ func _update_target() -> void:
 	if order.type == "move":
 		target = null
 		return
-	if Combat.is_valid_target(target) and _in_range(target) and (target.is_in_group("structures") or Combat.has_line_of_sight(self, _eye(), Combat.aim_point(target), target)):
+	if Combat.is_valid_target(target) and _in_range(target) and _can_see(target):
 		return
 	target = _find_enemy()
 
 
 func _find_enemy() -> Node3D:
-	var best: Node3D = null
-	if not stats.structures_only:
+	if role != "siege":
 		var candidates := []
 		for d in get_tree().get_nodes_in_group("defender_targets"):
-			if d.is_alive():
-				var dist := global_position.distance_to(d.global_position)
-				if dist <= stats.range:
-					candidates.append([dist, d])
+			if d.is_alive() and _in_range(d):
+				candidates.append([global_position.distance_to(d.global_position), d])
 		candidates.sort_custom(func(a, b): return a[0] < b[0])
 		for c in candidates.slice(0, 3):
-			if Combat.has_line_of_sight(self, _eye(), Combat.aim_point(c[1]), c[1]):
+			if _can_see(c[1]):
 				return c[1]
+	var best: Node3D = null
 	var best_d := INF
 	for s in get_tree().get_nodes_in_group("structures"):
 		if s.is_alive() and s.team != team:
 			var d := _range_to(s)
-			if d <= stats.range + 2.0 and d < best_d:
+			if d <= stats.range + 2.0 and d >= stats.get("min_range", 0.0) and d < best_d:
 				best_d = d
 				best = s
 	return best
@@ -186,12 +214,43 @@ func _find_enemy() -> Node3D:
 func _fire_at(t: Node3D) -> void:
 	_fire_cd = stats.fire_interval * randf_range(0.9, 1.15)
 	_recoil = 1.0
-	if stats.model == "ram":
-		t.take_damage(stats.damage * stats.structure_mult, team)
-		Combat.spawn_impact(self, global_position + (t.global_position - global_position).normalized() * 2.5 + Vector3.UP, true)
-		return
-	Combat.fire_hitscan(self, _eye(), Combat.aim_point(t), stats.spread, stats.damage, team,
-			stats.structure_mult, [get_rid()])
+	match role:
+		"siege":
+			t.take_damage(stats.damage * stats.structure_mult, team)
+			Combat.spawn_impact(self, global_position + (t.global_position - global_position).normalized() * 2.5 + Vector3.UP, true)
+		"artillery":
+			var aim := Combat.aim_point(t)
+			var scatter: float = global_position.distance_to(aim) * stats.spread
+			aim += Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)) * scatter
+			var shell := Shell.new()
+			shell.team = team
+			shell.damage = stats.damage
+			shell.radius = stats.splash
+			shell.structure_mult = stats.structure_mult
+			get_tree().current_scene.add_child(shell)
+			var muzzle: Vector3 = global_position - global_basis.z * 3.5 + Vector3.UP * stats.height
+			shell.launch(muzzle, aim)
+			Combat.spawn_explosion(self, muzzle, 0.8)
+		_:
+			Combat.fire_hitscan(self, _eye(), Combat.aim_point(t), stats.spread, stats.damage, team,
+					stats.structure_mult, [get_rid()])
+
+
+## Medic: patch up the most hurt ally in range.
+func _heal_tick() -> void:
+	_fire_cd = stats.fire_interval
+	var best: AttackerUnit = null
+	var worst := 0.999
+	for u in get_tree().get_nodes_in_group("attacker_units"):
+		if u == self:
+			continue
+		var ratio: float = u.hp / u.stats.hp
+		if ratio < worst and global_position.distance_to(u.global_position) <= stats.range:
+			worst = ratio
+			best = u
+	if best:
+		best.heal(stats.heal_rate * stats.fire_interval)
+		Combat.spawn_tracer(self, _eye(), Combat.aim_point(best), HEAL_COLOR)
 
 
 # ---------------------------------------------------------------- movement
@@ -199,6 +258,8 @@ func _fire_at(t: Node3D) -> void:
 func _physics_process(delta: float) -> void:
 	if hp <= 0.0:
 		if not is_on_floor():
+			velocity.x = 0.0
+			velocity.z = 0.0
 			velocity.y -= _gravity * delta
 			move_and_slide()
 		return
@@ -209,6 +270,9 @@ func _physics_process(delta: float) -> void:
 		_update_target()
 
 	var move_to = null
+	if role == "healer":
+		if _fire_cd <= 0.0:
+			_heal_tick()
 	if Combat.is_valid_target(target) and _in_range(target):
 		_face(target.global_position, delta)
 		if _fire_cd <= 0.0:
@@ -217,6 +281,10 @@ func _physics_process(delta: float) -> void:
 		move_to = order.pos
 	elif order.type == "attack" and Combat.is_valid_target(target):
 		move_to = target.global_position
+
+	if is_flying():
+		_fly(move_to, delta)
+		return
 
 	_desired_velocity = Vector3.ZERO
 	if move_to != null:
@@ -234,8 +302,26 @@ func _physics_process(delta: float) -> void:
 	_agent.velocity = _desired_velocity
 
 
+## Flyers go in a straight line at cruising height and hover when they arrive.
+func _fly(move_to, delta: float) -> void:
+	var want := Vector3.ZERO
+	if move_to != null:
+		var to: Vector3 = move_to - global_position
+		to.y = 0.0
+		if to.length() > 2.0:
+			want = to.normalized() * stats.speed
+		elif order.type != "attack":
+			order = {"type": "idle"}
+	velocity.x = lerpf(velocity.x, want.x, delta * 2.0)
+	velocity.z = lerpf(velocity.z, want.z, delta * 2.0)
+	velocity.y = clampf((UnitTypes.FLY_HEIGHT - global_position.y) * 1.5, -6.0, 6.0)
+	global_position += velocity * delta
+	if want.length() > 0.3 and not Combat.is_valid_target(target):
+		rotation.y = lerp_angle(rotation.y, atan2(-velocity.x, -velocity.z), 4.0 * delta)
+
+
 func _on_velocity_computed(safe: Vector3) -> void:
-	if hp <= 0.0:
+	if hp <= 0.0 or is_flying():
 		return
 	var dt := get_physics_process_delta_time()
 	velocity.x = safe.x
@@ -249,23 +335,37 @@ func _on_velocity_computed(safe: Vector3) -> void:
 
 func _face(point: Vector3, delta: float) -> void:
 	var d := point - global_position
-	rotation.y = lerp_angle(rotation.y, atan2(-d.x, -d.z), 10.0 * delta)
+	rotation.y = lerp_angle(rotation.y, atan2(-d.x, -d.z), (3.0 if stats.radius > 1.0 else 10.0) * delta)
 
 
 func _process(delta: float) -> void:
 	if hp <= 0.0:
 		return
-	# Procedural animation until the model is rigged: bob while walking, kick when firing.
+	# Procedural animation until models are rigged.
 	var spd := Vector2(velocity.x, velocity.z).length()
+	var moving := spd > 0.3
 	_recoil = maxf(_recoil - delta * 6.0, 0.0)
-	if spd > 0.3:
-		_anim_t += delta * spd * 2.2
-		_model.position.y = absf(sin(_anim_t)) * 0.08 * stats.scale
-		_model.rotation.z = sin(_anim_t) * 0.06
-	else:
-		_model.position.y = lerpf(_model.position.y, 0.0, delta * 8.0)
-		_model.rotation.z = lerpf(_model.rotation.z, 0.0, delta * 8.0)
-	_model.rotation.x = _recoil * 0.08
+	if moving:
+		_anim_t += delta * spd
+	match stats.anim:
+		"hop":
+			var hop := absf(sin(_anim_t * 1.2)) if moving else 0.0
+			_model.position.y = lerpf(_model.position.y, hop * 0.45, delta * 15.0)
+			_model.rotation.x = lerpf(_model.rotation.x, -hop * 0.15, delta * 10.0)
+		"stomp":
+			_model.position.y = absf(sin(_anim_t * 1.6)) * 0.06 if moving else lerpf(_model.position.y, 0.0, delta * 5.0)
+			_model.rotation.z = sin(_anim_t * 1.6) * 0.025 if moving else lerpf(_model.rotation.z, 0.0, delta * 5.0)
+		"hover":
+			_anim_t += delta * 2.0
+			_model.position.y = sin(_anim_t) * 0.3
+			_model.rotation.x = -clampf(spd / stats.speed, 0.0, 1.0) * 0.25
+		"roll":
+			_model.position.y = randf_range(0.0, 0.02) if moving else 0.0
+		_:
+			_model.position.y = absf(sin(_anim_t * 2.2)) * 0.08 if moving else lerpf(_model.position.y, 0.0, delta * 8.0)
+			_model.rotation.z = sin(_anim_t * 2.2) * 0.06 if moving else lerpf(_model.rotation.z, 0.0, delta * 8.0)
+	if stats.anim != "hop" and stats.anim != "hover":
+		_model.rotation.x = _recoil * (0.08 if stats.radius < 1.0 else 0.015)
 	if _hp_bar.visible:
 		_hp_bar.global_position = global_position + Vector3.UP * (stats.height + 0.5)
 		var cam := get_viewport().get_camera_3d()
@@ -278,29 +378,25 @@ func _process(delta: float) -> void:
 func _build_model() -> void:
 	_model = Node3D.new()
 	add_child(_model)
-	if stats.model == "bear":
-		if _bear_scene == null:
-			_bear_scene = load(BEAR_MODEL)
-		var bear := _bear_scene.instantiate() as Node3D
-		bear.scale = Vector3.ONE * stats.scale
-		bear.rotation.y = PI  # model front is +Z, units look down -Z
-		_model.add_child(bear)
-		# Carried weapon placeholder until weapons get modeled.
-		var gun_len := 1.2 if type_id == "heavy" else 0.9
-		var gun := Mats.box_mesh(Vector3(0.12, 0.16, gun_len), Vector3(0.35, 1.15, -0.45) * stats.scale,
-				Mats.flat(Color(0.12, 0.12, 0.13), 0.6, 0.4))
-		_model.add_child(gun)
-	else:
+	if stats.model == "ram":
 		_build_ram()
+		return
+	if not _scenes.has(stats.model):
+		_scenes[stats.model] = load(stats.model)
+	var m := (_scenes[stats.model] as PackedScene).instantiate() as Node3D
+	m.rotation.y = PI  # model front is +Z, units look down -Z
+	_model.add_child(m)
+	if stats.get("carry_gun", false):
+		# Carried weapon placeholder until weapons get modeled.
+		_model.add_child(Mats.box_mesh(Vector3(0.12, 0.16, 0.9), Vector3(0.35, 1.15, -0.45),
+				Mats.flat(Color(0.12, 0.12, 0.13), 0.6, 0.4)))
 
 
 func _build_ram() -> void:
 	var wood := Mats.wood()
 	var iron := Mats.flat(Color(0.2, 0.2, 0.22), 0.8, 0.35)
 	_model.add_child(Mats.box_mesh(Vector3(2.2, 0.5, 3.6), Vector3(0, 0.7, 0), wood))
-	# roof
-	var roof := Mats.box_mesh(Vector3(2.4, 0.15, 3.8), Vector3(0, 2.2, 0), wood)
-	_model.add_child(roof)
+	_model.add_child(Mats.box_mesh(Vector3(2.4, 0.15, 3.8), Vector3(0, 2.2, 0), wood))  # roof
 	for x in [-1.0, 1.0]:
 		for z in [-1.5, 1.5]:
 			_model.add_child(Mats.box_mesh(Vector3(0.15, 1.5, 0.15), Vector3(x, 1.45, z), wood))
@@ -310,13 +406,9 @@ func _build_ram() -> void:
 	var log := Mats.cylinder_mesh(0.28, 4.6, Vector3(0, 1.4, -0.6), wood)
 	log.rotation.x = PI * 0.5
 	_model.add_child(log)
-	_model.add_child(_ram_head(iron))
-
-
-func _ram_head(mat: Material) -> MeshInstance3D:
-	var head := Mats.cylinder_mesh(0.36, 0.5, Vector3(0, 1.4, -2.9), mat)
+	var head := Mats.cylinder_mesh(0.36, 0.5, Vector3(0, 1.4, -2.9), iron)
 	head.rotation.x = PI * 0.5
-	return head
+	_model.add_child(head)
 
 
 func _build_ring() -> void:
@@ -339,7 +431,7 @@ func _build_hp_bar() -> void:
 	_hp_bar = Node3D.new()
 	_hp_bar.top_level = true
 	add_child(_hp_bar)
-	var w := 1.2 * maxf(stats.scale, 1.0) * (1.6 if stats.model == "ram" else 1.0)
+	var w := clampf(stats.radius * 2.2, 1.2, 3.0)
 	var bg := MeshInstance3D.new()
 	var q := QuadMesh.new()
 	q.size = Vector2(w, 0.14)
@@ -364,4 +456,3 @@ func _update_hp_bar() -> void:
 	_hp_bar.visible = hp > 0.0 and (selected or ratio < 1.0)
 	_hp_fill.scale.x = maxf(ratio, 0.001)
 	_hp_fill.material_override = Mats.unshaded(Color(1.0, 0.25, 0.2) if ratio < 0.35 else Color(0.95, 0.8, 0.2) if ratio < 0.7 else Color(0.3, 1.0, 0.4))
-
