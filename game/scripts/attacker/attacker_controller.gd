@@ -5,7 +5,7 @@ extends CanvasLayer
 ##
 ## LMB click/drag: select · Shift adds · RMB: attack-move / attack target
 ## Ctrl+RMB: move without stopping to fight · Ctrl+1-5 assign group · 1-5 recall
-## Z X C V B N M: spawn units · Tab: cycle spawn point
+## Z X C V B N M G H J K L: spawn units · Tab: cycle spawn point
 
 const DRAG_THRESHOLD := 6.0
 
@@ -218,15 +218,20 @@ func _build_hud() -> void:
 	info.custom_minimum_size.x = 150
 	row.add_child(info)
 
+	var grid := GridContainer.new()
+	grid.columns = 6
+	grid.add_theme_constant_override("h_separation", 6)
+	grid.add_theme_constant_override("v_separation", 6)
+	row.add_child(grid)
 	for type_id in UnitTypes.ORDER:
 		var d: Dictionary = UnitTypes.DATA[type_id]
 		var key := OS.get_keycode_string(d.hotkey)
 		var b := UIKit.button("%s\n%d  [%s]" % [d.name, d.cost, key], 14)
-		b.custom_minimum_size = Vector2(132, 60)
+		b.custom_minimum_size = Vector2(132, 50)
 		b.tooltip_text = "%s · %d HP · %s" % [d.name, int(d.hp), d.role]
 		b.focus_mode = Control.FOCUS_NONE
 		b.pressed.connect(spawn.bind(type_id))
-		row.add_child(b)
+		grid.add_child(b)
 		_spawn_buttons[type_id] = b
 
 	var sp := VBoxContainer.new()
@@ -250,7 +255,7 @@ func _build_hud() -> void:
 			13, Color(0.85, 0.85, 0.85, 0.75))
 	help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	help.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	help.position = Vector2(14, help.position.y - 112)
+	help.position = Vector2(14, help.position.y - 150)
 	root.add_child(help)
 
 

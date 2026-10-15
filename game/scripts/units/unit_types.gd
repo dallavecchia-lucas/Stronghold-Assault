@@ -12,7 +12,8 @@ extends RefCounted
 ## anim: procedural animation style until models are rigged (walk, hop, stomp, hover, roll).
 ## model: path to a processed GLB (front facing +Z, feet at origin), or "ram" for the built-in mesh.
 
-const ORDER := ["rifleman", "kangaroo", "medic", "talon", "elephant", "mule", "breacher"]
+const ORDER := ["rifleman", "kangaroo", "medic", "talon", "elephant", "mule", "breacher",
+		"war_ram", "giraffe", "chimp", "hippo", "bison_gun"]
 const FLY_HEIGHT := 16.0
 
 const DATA := {
@@ -64,5 +65,41 @@ const DATA := {
 		"structure_mult": 4.0, "radius": 1.4, "height": 2.2,
 		"role": "siege", "anim": "roll", "hotkey": KEY_M,
 		"model": "ram",
+	},
+	# ---- Placeholder stats: models are in, roles still to be designed.
+	"war_ram": {
+		"name": "War Ram", "cost": 80, "hp": 150.0, "speed": 5.5,
+		"range": 24.0, "damage": 9.0, "fire_interval": 0.5, "spread": 0.04,
+		"structure_mult": 0.5, "radius": 0.6, "height": 1.6,
+		"role": "infantry", "anim": "walk", "hotkey": KEY_G,
+		"model": "res://assets/units/war_ram/war_ram.glb",
+	},
+	"giraffe": {
+		"name": "Savanna Signal Scout", "cost": 100, "hp": 160.0, "speed": 5.0,
+		"range": 30.0, "damage": 6.0, "fire_interval": 0.6, "spread": 0.04,
+		"structure_mult": 0.3, "radius": 0.8, "height": 4.5,
+		"role": "infantry", "anim": "stomp", "hotkey": KEY_H,
+		"model": "res://assets/units/savanna_signal_scout/savanna_signal_scout.glb",
+	},
+	"chimp": {
+		"name": "Night Ops Chimp", "cost": 70, "hp": 110.0, "speed": 5.5,
+		"range": 24.0, "damage": 10.0, "fire_interval": 0.55, "spread": 0.04,
+		"structure_mult": 0.5, "radius": 0.5, "height": 1.7,
+		"role": "infantry", "anim": "walk", "hotkey": KEY_J,
+		"model": "res://assets/units/night_ops_chimpanzee/night_ops_chimpanzee.glb",
+	},
+	"hippo": {
+		"name": "Hippo Heavy Gunner", "cost": 260, "hp": 1000.0, "speed": 3.2,
+		"range": 26.0, "damage": 8.0, "fire_interval": 0.15, "spread": 0.05,
+		"structure_mult": 1.0, "radius": 1.4, "height": 2.6,
+		"role": "infantry", "anim": "stomp", "hotkey": KEY_K,
+		"model": "res://assets/units/hippopotamus_heavy_gunner/hippopotamus_heavy_gunner.glb",
+	},
+	"bison_gun": {
+		"name": "Bison Field Gun", "cost": 260, "hp": 600.0, "speed": 3.0,
+		"range": 40.0, "damage": 40.0, "fire_interval": 2.0, "spread": 0.02,
+		"structure_mult": 1.5, "radius": 1.6, "height": 2.4,
+		"role": "infantry", "anim": "stomp", "hotkey": KEY_L,
+		"model": "res://assets/units/semi_futuristic_pair/semi_futuristic_pair.glb",
 	},
 }
