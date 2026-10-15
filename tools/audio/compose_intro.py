@@ -13,7 +13,9 @@ of a slow, grieving string adagio that breaks into a driving, triumphant choral 
                          final surge, the citadel falls, B-flat major victory and title.
 
 Usage: python3 tools/audio/compose_intro.py out.wav
-Then:  ffmpeg -i out.wav -c:a libvorbis -q:a 6 game/assets/audio/intro_theme.ogg
+Then master (lifts the quiet opening so it's audible on small speakers) and encode:
+  ffmpeg -i out.wav -af "acompressor=threshold=-34dB:ratio=2.2:attack=300:release=1500:knee=6,volume=12dB,alimiter=limit=0.89:level=false" master.wav
+  ffmpeg -i master.wav -c:a libvorbis -q:a 6 game/assets/audio/intro_theme.ogg
 """
 import sys
 
