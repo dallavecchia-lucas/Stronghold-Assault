@@ -40,7 +40,7 @@ Balance numbers live in `game/scripts/units/unit_types.gd` and the constants at 
 
 ### Intro cinematic
 
-The game opens with a ~2.5 minute intro (`game/scenes/intro.tscn`, built in `game/scripts/intro/intro.gd`); any key skips it, and the main menu has a **Watch Intro** button. Lore cards, shots and lighting cues are timed to the score in a table at the top of the script.
+The game opens with a ~3.5 minute intro (`game/scenes/intro.tscn`, built in `game/scripts/intro/intro.gd`); any key skips it, and the main menu has a **Watch Intro** button. Lore cards, shots and lighting cues are timed to the score in a table at the top of the script.
 
 Render it to video with Godot's Movie Maker (use a real GPU for the full Forward+ look):
 

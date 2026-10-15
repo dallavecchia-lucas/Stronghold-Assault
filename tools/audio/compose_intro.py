@@ -1,4 +1,4 @@
-"""Original synthesized score for the intro cinematic (152 s).
+"""Original synthesized score for the intro cinematic (212 s).
 
 Not a recording or arrangement of any existing piece: an original temp score in the spirit
 of a slow, grieving string adagio that breaks into a driving, triumphant choral ostinato.
@@ -6,8 +6,11 @@ of a slow, grieving string adagio that breaks into a driving, triumphant choral 
   Part A  0.0 - 78.5 s  B-flat minor adagio: low strings, rising violin line, choir joins,
                          builds to a fortissimo climax and cuts to silence.
   (silence 78.5 - 80 s)
-  Part B 80.0 - 152 s   120 bpm: impact, spiccato string ostinato, timpani, choir, brass;
-                         heroic melody; resolves to B-flat MAJOR (the victory) and fades.
+  Part B 80.0 - 140 s   120 bpm: impact, spiccato string ostinato, timpani, choir, brass;
+                         heroic melody lifting to B-flat major.
+  Part C 140 - 212 s    the last stand: war drums and standoff, horn call, the charge, the
+                         clash into slow motion, battle fury, a solo-violin breakdown, the
+                         final surge, the citadel falls, B-flat major victory and title.
 
 Usage: python3 tools/audio/compose_intro.py out.wav
 Then:  ffmpeg -i out.wav -c:a libvorbis -q:a 6 game/assets/audio/intro_theme.ogg
@@ -19,7 +22,7 @@ from scipy.io import wavfile
 from scipy.signal import butter, fftconvolve, sosfilt
 
 SR = 44100
-DUR = 152.0
+DUR = 212.0
 N = int(SR * DUR)
 rng = np.random.default_rng(1945)
 
@@ -218,7 +221,7 @@ for i, name in enumerate(PLAN_B):
     section = i // 4
     tri = TRIADS[name]
     final = name == "Bb"
-    dur = 12.0 if final else 4.1
+    dur = 4.4 if final else 4.1
     # sustained low strings
     place(bowed(mtof(BASS[name]), dur, 0.35 + 0.1 * section, attack=0.3, release=1.5, bright=1.5), t0, -0.1, rev=0.4)
     place(bowed(mtof(BASS[name] + 12), dur, 0.3, attack=0.3, release=1.5), t0, 0.1, rev=0.4)
@@ -258,19 +261,139 @@ place(boom(0.8), 136.0, 0.0, rev=0.7)
 # heroic melody (violins + horns + choir), 112 s onwards: (midi, start offset, duration)
 MELODY_B = [
     (73, 0, 2), (78, 2, 2), (77, 4, 3), (75, 7, 1), (75, 8, 2), (72, 10, 1), (75, 11, 1), (77, 12, 4),
-    (78, 16, 2), (82, 18, 2), (80, 20, 2), (84, 22, 2), (86, 24, 7), (82, 31, 9),
+    (78, 16, 2), (82, 18, 2), (80, 20, 2), (84, 22, 2), (86, 24, 4.3),
 ]
 for m, off, dur in MELODY_B:
     t0 = 112.0 + off
-    last = off >= 31
-    rel = 6.0 if last else 1.0
+    last = off >= 24
+    rel = 1.2 if last else 1.0
     place(bowed(mtof(m), dur, 0.42, attack=0.25, release=rel, vib_depth=0.006, bright=1.1), t0, 0.1, rev=0.6)
     place(brass(mtof(m - 12), dur, 0.25, release=rel), t0, -0.15, rev=0.5)
     place(choir(mtof(m), dur, 0.3, attack=0.4, release=rel), t0, 0.0, rev=0.75)
 
-# final B-flat major chord with choir, swelling then fading out
+# B-flat major arrival at 136 (the army on the ridge)
 for j, m in enumerate([46, 53, 58, 62, 65, 70, 74]):
-    place(choir(mtof(m + (12 if m < 55 else 0)), 10.0, 0.22, attack=1.0, release=4.0), 136.0, -0.6 + 0.2 * j, rev=0.8)
+    place(choir(mtof(m + (12 if m < 55 else 0)), 4.0, 0.22, attack=1.0, release=1.5), 136.0, -0.6 + 0.2 * j, rev=0.8)
+
+# ------------------------------------------------------------------ Part C: the last stand
+
+
+def ostinato(t0, name, seconds, amp, octave_up=True, sixteenths=True):
+    tri = TRIADS[name]
+    step = BEAT / 4 if sixteenths else BEAT / 2
+    for s_ in range(int(seconds / step)):
+        idx = PATTERN[s_ % 8]
+        m = tri[idx % 3] + (12 if idx == 3 else 0)
+        acc = 1.0 if s_ % 4 == 0 else 0.6
+        place(spiccato(mtof(m), amp * acc), t0 + s_ * step, -0.35, rev=0.3)
+        if octave_up:
+            place(spiccato(mtof(m + 12), amp * acc * 0.6), t0 + s_ * step + 0.004, 0.35, rev=0.3)
+
+
+def pad(t0, name, seconds, amp, choir_amp=0.0, brass_amp=0.0, release=1.5):
+    tri = TRIADS[name]
+    place(bowed(mtof(BASS[name]), seconds, amp, attack=0.3, release=release, bright=1.5), t0, -0.1, rev=0.4)
+    place(bowed(mtof(BASS[name] + 12), seconds, amp * 0.8, attack=0.3, release=release), t0, 0.1, rev=0.4)
+    for j, m in enumerate(tri):
+        if choir_amp:
+            place(choir(mtof(m + 12), seconds, choir_amp, attack=0.5, release=release + 1.0), t0, -0.4 + 0.4 * j, rev=0.75)
+        if brass_amp:
+            place(brass(mtof(m - 12 + (12 if j else 0)), seconds, brass_amp, release=release), t0, -0.2 + 0.2 * j, rev=0.5)
+
+
+def drums(t0, seconds, amp, every_beat=False, root=34):
+    for b in range(int(seconds / BEAT)):
+        tb = t0 + b * BEAT
+        if b % 4 == 0 or every_beat:
+            place(timpani(mtof(root + 12), amp * (1.0 if b % 4 == 0 else 0.5)), tb, 0.0, rev=0.45)
+        if b % 4 in (0, 3) or (every_beat and b % 2 == 1):
+            place(taiko(amp * 0.9), tb + (0.25 if b % 4 == 3 else 0.0), 0.2, rev=0.35)
+
+
+def roll(t0, seconds, amp, root=46):
+    n = int(seconds / 0.0625)
+    for k in range(n):
+        place(timpani(mtof(root), 0.04 + amp * k / max(n - 1, 1), decay=8), t0 + k * 0.0625, 0.0, rev=0.4)
+
+
+def heartbeat(t0, seconds, amp):
+    k = 0.0
+    while k < seconds:
+        place(taiko(amp), t0 + k, 0.0, rev=0.5)
+        place(taiko(amp * 0.6), t0 + k + 0.28, 0.0, rev=0.5)
+        k += 1.2
+
+
+# 140-152 standoff: drums and a low pulse while the horde marches
+for i, name in enumerate(["Bbm", "Gb", "Bbm"]):
+    t0 = 140.0 + i * 4.0
+    pad(t0, name, 4.1, 0.32, choir_amp=0.12 + 0.05 * i, brass_amp=0.06 * i)
+    ostinato(t0, name, 4.0, 0.16 + 0.03 * i, octave_up=i > 0, sixteenths=False)
+    drums(t0, 4.0, 0.45 + 0.08 * i)
+roll(150.0, 2.0, 0.35)
+
+# 152 horn call, then the charge
+for m, off, d in [(58, 0.0, 0.45), (65, 0.5, 0.45), (70, 1.0, 2.6)]:
+    place(brass(mtof(m), d, 0.5, attack=0.08, release=0.6), 152.0 + off, 0.0, rev=0.6)
+    place(brass(mtof(m - 12), d, 0.35, attack=0.08, release=0.6), 152.0 + off, -0.2, rev=0.6)
+for i, name in enumerate(["Gb", "Ab"]):
+    t0 = 152.0 + i * 4.0
+    pad(t0, name, 4.1, 0.42, choir_amp=0.3, brass_amp=0.16)
+    ostinato(t0, name, 4.0, 0.24)
+    drums(t0, 4.0, 0.6, every_beat=True)
+roll(158.0, 2.0, 0.45)
+
+# 160 the clash: impact, then slow motion (sustain, high choir, heartbeat)
+place(boom(1.0), 160.0, 0.0, rev=0.7)
+place(timpani(mtof(34), 0.9, decay=0.6), 160.0, 0.0, rev=0.6)
+pad(160.0, "Bbm", 6.2, 0.35, choir_amp=0.32, release=1.0)
+for j, m in enumerate([70, 73, 77]):
+    place(bowed(mtof(m + 12), 6.0, 0.18, attack=1.5, release=1.0), 160.0, -0.3 + 0.3 * j, rev=0.8)
+heartbeat(160.6, 5.4, 0.5)
+
+# 166-174 battle fury
+for i, name in enumerate(["Bbm", "Gb"]):
+    t0 = 166.0 + i * 4.0
+    pad(t0, name, 4.1, 0.45, choir_amp=0.34, brass_amp=0.2)
+    ostinato(t0, name, 4.0, 0.26)
+    drums(t0, 4.0, 0.7, every_beat=True)
+    for b in (0.0, 1.25, 2.0, 3.25):  # brass stabs
+        for m in TRIADS[name]:
+            place(brass(mtof(m), 0.25, 0.22, attack=0.03, release=0.3), t0 + b, 0.0, rev=0.5)
+place(boom(0.7), 172.5, 0.0, rev=0.6)  # the eagle strike
+
+# 174-182 breakdown: solo violin over the heartbeat, in slow motion
+pad(174.0, "Bbm", 4.2, 0.26, choir_amp=0.12, release=2.0)
+pad(178.0, "Gb", 4.2, 0.26, choir_amp=0.14, release=1.5)
+heartbeat(174.0, 8.0, 0.42)
+for m, off, d in [(77, 0.0, 2.0), (78, 2.0, 1.0), (80, 3.0, 1.0), (82, 4.0, 2.5), (80, 6.5, 1.5)]:
+    place(bowed(mtof(m), d, 0.42, attack=0.35, release=1.2, vib_depth=0.008, bright=1.05, voices=2, spread=4.0),
+          174.0 + off, 0.15, rev=0.75)
+roll(180.0, 2.0, 0.5)
+
+# 182-189 the final surge, lifting key
+for i, name in enumerate(["Gb", "Ab"]):
+    t0 = 182.0 + i * 4.0
+    pad(t0, name, 4.1, 0.5, choir_amp=0.38, brass_amp=0.24)
+    ostinato(t0, name, 4.0 if i == 0 else 3.4, 0.28)
+    drums(t0, 4.0 if i == 0 else 3.4, 0.75, every_beat=True)
+for m, off, d in [(82, 0.0, 2.0), (85, 2.0, 2.0), (84, 4.0, 2.0), (87, 6.0, 1.4)]:
+    place(bowed(mtof(m), d, 0.45, attack=0.2, release=0.8, vib_depth=0.006, bright=1.1), 182.0 + off, 0.1, rev=0.6)
+    place(brass(mtof(m - 12), d, 0.3, release=0.8), 182.0 + off, -0.15, rev=0.5)
+roll(187.6, 1.8, 0.6)
+
+# 189.4 the citadel falls -> B-flat major victory, held through the title
+place(boom(1.0), 189.4, 0.0, rev=0.8)
+place(timpani(mtof(34), 1.0, decay=0.5), 189.4, 0.0, rev=0.6)
+for j, m in enumerate([46, 53, 58, 62, 65, 70, 74]):
+    place(choir(mtof(m + (12 if m < 55 else 0)), 20.0, 0.24, attack=0.8, release=4.0), 189.4, -0.6 + 0.2 * j, rev=0.8)
+pad(189.4, "Bb", 20.0, 0.4, brass_amp=0.16, release=4.0)
+for m, off, d in [(86, 0.0, 4.6), (82, 4.6, 2.0), (86, 6.6, 3.0), (89, 9.6, 8.0)]:
+    place(bowed(mtof(m), d, 0.4, attack=0.4, release=2.5, vib_depth=0.006, bright=1.1), 189.4 + off, 0.1, rev=0.7)
+    place(choir(mtof(m - 12), d, 0.22, attack=0.5, release=2.5), 189.4 + off, -0.1, rev=0.8)
+for k in range(4):
+    place(timpani(mtof(34), 0.35, decay=1.0), 198.0 + k * 2.0, 0.0, rev=0.6)
+place(boom(0.6), 199.0, 0.0, rev=0.8)  # the title
 
 # ------------------------------------------------------------------ reverb + master
 

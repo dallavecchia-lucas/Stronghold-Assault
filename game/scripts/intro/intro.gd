@@ -6,7 +6,7 @@ extends Node3D
 ##   godot --path game --write-movie intro.avi --fixed-fps 30 res://scenes/intro.tscn
 ## Preview from a given time with `-- --intro-start=80`.
 
-const LENGTH := 152.0
+const LENGTH := 212.0
 const THEME := "res://assets/audio/intro_theme.ogg"
 
 const CITY := Vector3(0, 0, 0)
@@ -54,7 +54,13 @@ const CARDS := [
 	[116.0, 120.5, "They fight as we always fought."],
 	[126.0, 131.0, "We are them."],
 	[132.0, 138.0, "They are OUR last hope."],
+	[141.0, 145.5, "They came for our world one last time."],
+	[147.0, 151.5, "Shoulder to shoulder.  No retreat."],
+	[152.3, 155.8, "FOR EARTH!"],
+	[175.0, 180.5, "We were never afraid."],
+	[193.0, 197.5, "This is OUR planet."],
 ]
+const TITLE_IN := 199.0
 
 var t := 0.0
 var _movie := false
@@ -77,6 +83,9 @@ var _ground_ring: MeshInstance3D
 var _ring: MeshInstance3D
 var _ships: Array = []
 var _talons: Array = []
+var _army: Array = []  # [node, flying, charges] for the battle
+var _battle: IntroBattle
+var _particles: Array = []
 
 var _black: ColorRect
 var _white: ColorRect
@@ -105,7 +114,14 @@ func _ready() -> void:
 	_build_gallery()
 	_build_ridge()
 	_build_citadel()
+	_battle = IntroBattle.new()
+	add_child(_battle)
+	_battle.setup(_army, CITADEL, _ring)
 	_build_particles()
+	_particles = [_ash, _motes]
+	for n in find_children("*", "CPUParticles3D", true, false):
+		if not n in _particles:
+			_particles.append(n)
 	_build_overlay()
 	_build_shots()
 	_camera = Camera3D.new()
@@ -146,6 +162,10 @@ func _process(delta: float) -> void:
 # ================================================================ timeline
 
 func _update(delta: float) -> void:
+	_battle.update(t)
+	var rate: float = IntroBattle.time_rate(t)
+	for p in _particles:
+		p.speed_scale = rate
 	_update_camera()
 	_update_props(delta)
 	_update_overlay()
@@ -165,10 +185,14 @@ func _update_camera() -> void:
 	u = u * u * (3.0 - 2.0 * u) if s.get("ease", true) else u
 	var pos: Vector3 = s.from.lerp(s.to, u)
 	var look: Vector3 = s.look_from.lerp(s.look_to, u)
+	if s.hero:
+		var h: Vector3 = _battle.hero_position(IntroBattle.battle_time(t))
+		pos += h
+		look += h
 	_camera.fov = lerpf(s.get("fov_from", 50.0), s.get("fov_to", s.get("fov_from", 50.0)), u)
 	# impact shake on the big hits
 	var shake := 0.0
-	for hit in [80.0, 112.0, 136.0]:
+	for hit in [80.0, 112.0, 136.0, 160.0, 172.5, 189.4]:
 		if t > hit and t < hit + 1.2:
 			shake = maxf(shake, (1.0 - (t - hit) / 1.2) * 0.35)
 	pos += Vector3(randf_range(-1, 1), randf_range(-1, 1), 0) * shake
@@ -176,10 +200,12 @@ func _update_camera() -> void:
 	_camera.look_at(look, Vector3.UP)
 
 
+## `hero` shots are relative to the lead bear's position during the battle.
 func _shot(start: float, end: float, from: Vector3, to: Vector3, look_from: Vector3, look_to: Vector3,
-		preset: String, fov_from := 50.0, fov_to := -1.0) -> void:
+		preset: String, fov_from := 50.0, fov_to := -1.0, hero := false) -> void:
 	_shots.append({"start": start, "end": end, "from": from, "to": to, "look_from": look_from,
-			"look_to": look_to, "preset": preset, "fov_from": fov_from, "fov_to": fov_to if fov_to > 0 else fov_from})
+			"look_to": look_to, "preset": preset, "fov_from": fov_from, "fov_to": fov_to if fov_to > 0 else fov_from,
+			"hero": hero})
 
 
 func _build_shots() -> void:
@@ -219,8 +245,31 @@ func _build_shots() -> void:
 				focus, focus + Vector3.UP * size.y * 0.05, "dawn", 42.0, 38.0)
 	_shot(HERO_END, 140.0, RIDGE + Vector3(0, 10.5, 48), RIDGE + Vector3(0, 48, 75),
 			RIDGE + Vector3(0, 12, -80), CITADEL + Vector3(0, 70, 0), "dawn", 48.0, 55.0)
-	_shot(140.0, LENGTH, RIDGE + Vector3(0, 48, 75), RIDGE + Vector3(0, 54, 55),
-			CITADEL + Vector3(0, 70, 0), CITADEL + Vector3(0, 80, 0), "dawn", 55.0, 50.0)
+	# Act IV: the last stand
+	_shot(140.0, 146.0, Vector3(22, 3.0, -585), Vector3(15, 2.4, -545),
+			Vector3(0, 6, -660), Vector3(0, 3, -600), "battle", 38.0, 42.0)
+	_shot(146.0, 152.0, Vector3(-30, 9.6, -431), Vector3(24, 9.4, -431),
+			Vector3(-22, 9.8, -415), Vector3(30, 9.8, -415), "battle", 34.0)
+	_shot(152.0, 156.0, Vector3(34, 3.0, -470), Vector3(30, 3.5, -478),
+			Vector3(0, 9, -432), Vector3(0, 6, -450), "battle", 34.0, 40.0)
+	_shot(156.0, 160.0, Vector3(44, 3.0, -455), Vector3(42, 3.0, -500),
+			Vector3(4, 2.5, -465), Vector3(0, 2.5, -508), "battle", 42.0)
+	_shot(160.0, 166.0, Vector3(-9, 2.0, -496), Vector3(-5, 2.4, -503),
+			Vector3(0, 2.4, -512), Vector3(1, 2.6, -516), "battle", 32.0, 30.0)
+	_shot(166.0, 170.0, Vector3(-40, 12.5, -378), Vector3(-36, 13.5, -386),
+			Vector3(-25, 9, -430), Vector3(-10, 20, -520), "battle", 45.0)
+	_shot(170.0, 174.0, Vector3(-4, 3.0, -518), Vector3(-8, 3.5, -522),
+			Vector3(-42, 20, -562), Vector3(-42, 12, -566), "battle", 48.0)
+	_shot(174.0, 182.0, Vector3(4.5, 1.5, 4.0), Vector3(-4.0, 2.2, 3.5),
+			Vector3(0, 1.4, 0), Vector3(0, 1.5, 0), "battle", 36.0, 32.0, true)
+	_shot(182.0, 188.0, Vector3(-62, 16, -478), Vector3(-36, 24, -540),
+			Vector3(0, 3, -520), Vector3(0, 18, -640), "battle", 50.0)
+	_shot(188.0, 192.0, Vector3(10, 18, -585), Vector3(6, 22, -592),
+			CITADEL + Vector3(0, 110, 0), CITADEL + Vector3(0, 80, 0), "battle", 52.0)
+	_shot(192.0, 198.0, Vector3(1.5, 0.9, -5.0), Vector3(0.8, 1.6, -4.0),
+			Vector3(0, 1.7, 0), Vector3(0, 1.9, 0), "victory", 40.0, 36.0, true)
+	_shot(198.0, LENGTH, Vector3(28, 12, -655), Vector3(40, 26, -680),
+			Vector3(0, 4, -600), Vector3(0, 10, -600), "victory", 50.0, 55.0)
 
 
 func _update_props(delta: float) -> void:
@@ -230,6 +279,7 @@ func _update_props(delta: float) -> void:
 	for f in _fires:
 		f.light_energy = f.get_meta("base") * randf_range(0.7, 1.15)
 	for s in _ships:
+		s.visible = t < 190.0
 		s.position.x += delta * s.get_meta("drift")
 		for beam in s.get_meta("beams"):
 			beam.scale.x = 1.0 + sin(t * 9.0 + s.position.x) * 0.25
@@ -266,10 +316,14 @@ func _update_overlay() -> void:
 	if t > 78.5 and t < 80.0:
 		a = 1.0
 	a = maxf(a, 1.0 - absf(t - HERO_END) / 0.4)
-	a = maxf(a, 0.55 * smoothstep(139.0, 142.0, t))
-	a = maxf(a, smoothstep(149.0, 151.5, t))
+	a = maxf(a, 0.5 * smoothstep(TITLE_IN - 1.0, TITLE_IN + 1.5, t))
+	a = maxf(a, smoothstep(LENGTH - 2.5, LENGTH - 0.3, t))
 	_black.color.a = clampf(a, 0.0, 1.0)
-	_white.color.a = clampf(1.0 - (t - 80.0) / 0.8, 0.0, 1.0) if t >= 80.0 else 0.0
+	var w := 0.0
+	for f in [[80.0, 0.8], [160.0, 0.35], [189.4, 1.4]]:
+		if t >= f[0]:
+			w = maxf(w, 1.0 - (t - f[0]) / f[1])
+	_white.color.a = clampf(w, 0.0, 1.0)
 
 	var text := ""
 	var alpha := 0.0
@@ -279,6 +333,7 @@ func _update_overlay() -> void:
 			alpha = minf(smoothstep(c[0], c[0] + 0.8, t), 1.0 - smoothstep(c[1] - 0.8, c[1], t))
 	_card.text = text
 	_card.modulate.a = alpha
+	_card.add_theme_font_size_override("font_size", 72 if text == "FOR EARTH!" else 40)
 	var hero_section := t >= HERO_START and t < HERO_END
 	_card.anchor_top = 0.13 if hero_section else 0.62
 	_card.anchor_bottom = 0.3 if hero_section else 0.86
@@ -294,8 +349,8 @@ func _update_overlay() -> void:
 	_caption.text = cap
 	_caption.modulate.a = cap_a
 
-	_title.modulate.a = minf(smoothstep(141.0, 143.5, t), 1.0 - smoothstep(149.0, 151.0, t))
-	_subtitle.modulate.a = minf(smoothstep(143.5, 145.5, t), 1.0 - smoothstep(149.0, 151.0, t))
+	_title.modulate.a = minf(smoothstep(TITLE_IN, TITLE_IN + 2.5, t), 1.0 - smoothstep(LENGTH - 3.0, LENGTH - 1.0, t))
+	_subtitle.modulate.a = minf(smoothstep(TITLE_IN + 2.5, TITLE_IN + 4.5, t), 1.0 - smoothstep(LENGTH - 3.0, LENGTH - 1.0, t))
 
 
 # ================================================================ lighting presets
@@ -303,8 +358,10 @@ func _update_overlay() -> void:
 func _apply_preset(p: String) -> void:
 	var night := p in ["night", "memorial"]
 	_ash.emitting = night or p == "genome"
-	_motes.emitting = p == "dawn"
-	_fill.visible = p == "dawn"
+	_motes.emitting = p in ["dawn", "battle", "victory"]
+	_fill.visible = p in ["dawn", "battle", "victory"]
+	_env.adjustment_saturation = 0.72 if p == "battle" else 1.05
+	_env.adjustment_contrast = 1.32 if p == "battle" else 1.1
 	match p:
 		"night", "memorial":
 			_sky.sky_top_color = Color(0.02, 0.012, 0.015)
@@ -336,7 +393,7 @@ func _apply_preset(p: String) -> void:
 			_env.ambient_light_energy = 0.02
 			_env.fog_light_color = Color(0, 0, 0)
 			_env.fog_density = 0.06
-		"dawn":
+		"dawn", "battle", "victory":
 			_sky.sky_top_color = Color(0.22, 0.38, 0.66)
 			_sky.sky_horizon_color = Color(1.0, 0.6, 0.32)
 			_sky.ground_horizon_color = Color(0.65, 0.42, 0.3)
@@ -349,6 +406,12 @@ func _apply_preset(p: String) -> void:
 			_env.fog_light_color = Color(0.72, 0.5, 0.36)
 			_env.fog_density = 0.0022
 			_env.tonemap_exposure = 0.8
+			if p == "battle":  # dusty, bleached, high contrast
+				_env.fog_light_color = Color(0.62, 0.46, 0.34)
+				_env.fog_density = 0.0045
+			elif p == "victory":
+				_sun.light_energy = 1.9
+				_env.tonemap_exposure = 0.9
 
 
 # ================================================================ sets
@@ -721,18 +784,23 @@ func _build_ridge() -> void:
 		if absf(x) < 18 and z < -2:
 			z = rng.randf_range(-22, -14)
 		layout.append([infantry[i % infantry.size()], Vector3(x, 0, z)])
+	layout.append(["cyber_bear_commando", Vector3(2, 0, -24), true])  # the lead bear, front and center
 	for entry in layout:
 		var m := _load_model(entry[0])
 		m.position = RIDGE + entry[1] + Vector3(0, top, 0)
 		m.rotation.y = PI + rng.randf_range(-0.15, 0.15)  # face the citadel
+		if entry.size() > 2:
+			m.set_meta("hero", true)
+			m.rotation.y = PI
 		add_child(m)
+		_army.append([m, false, not entry[0] in ["cyber_mule_artillery", "semi_futuristic_pair"]])
 	for i in 6:
 		var m := _load_model("sky_talon_battalion")
 		m.position = RIDGE + Vector3(rng.randf_range(-40, 40), top + rng.randf_range(10, 18), rng.randf_range(-20, 0))
 		m.set_meta("y", m.position.y)
 		m.rotation.y = PI
 		add_child(m)
-		_talons.append(m)
+		_army.append([m, true, true])
 
 
 func _build_citadel() -> void:
