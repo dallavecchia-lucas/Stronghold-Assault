@@ -1,0 +1,37 @@
+; Engine configuration file.
+config_version=5
+
+[application]
+
+config/name="Stronghold Assault"
+run/main_scene="res://scenes/main_menu.tscn"
+config/features=PackedStringArray("4.5", "Forward Plus")
+config/icon="res://icon.svg"
+
+[autoload]
+
+GameConfig="*res://scripts/autoload/game_config.gd"
+
+[display]
+
+window/size/viewport_width=1600
+window/size/viewport_height=900
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[layer_names]
+
+3d_physics/layer_1="world"
+3d_physics/layer_2="attackers"
+3d_physics/layer_3="defenders"
+3d_physics/layer_4="structures"
+
+[navigation]
+
+3d/default_cell_size=0.4
+3d/default_cell_height=0.2
+
+[rendering]
+
+anti_aliasing/quality/msaa_3d=1
+lights_and_shadows/directional_shadow/size=8192
