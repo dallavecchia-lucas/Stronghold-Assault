@@ -99,7 +99,7 @@ func _ready() -> void:
 	if GameConfig.autotest != "":
 		get_tree().change_scene_to_file.call_deferred("res://scenes/main_menu.tscn")
 		return
-	_movie = "--write-movie" in OS.get_cmdline_args()
+	_movie = Engine.get_write_movie_path() != ""
 	# `-- --intro-start=SECONDS` starts mid-way (for previewing a shot)
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--intro-start="):
