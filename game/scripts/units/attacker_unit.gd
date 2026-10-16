@@ -31,6 +31,7 @@ var selected := false:
 
 var _agent: NavigationAgent3D
 var _model: Node3D
+var _anim: AnimationPlayer  # set when the model is rigged and carries clips
 var _ring: MeshInstance3D
 var _hp_bar: Node3D
 var _hp_fill: MeshInstance3D
@@ -347,6 +348,12 @@ func _process(delta: float) -> void:
 	_recoil = maxf(_recoil - delta * 6.0, 0.0)
 	if moving:
 		_anim_t += delta * spd
+	if _anim:
+		# Rigged model: play its clips, matching the move cycle to ground speed.
+		var clip: String = stats.anim_move if moving else stats.anim_idle
+		if _anim.current_animation != clip:
+			_anim.play(clip, 0.25)
+		_anim.speed_scale = clampf(spd / stats.anim_ref_speed, 0.6, 2.0) if moving else 1.0
 	match stats.anim:
 		"hop":
 			var hop := absf(sin(_anim_t * 1.2)) if moving else 0.0
@@ -361,10 +368,12 @@ func _process(delta: float) -> void:
 			_model.rotation.x = -clampf(spd / stats.speed, 0.0, 1.0) * 0.25
 		"roll":
 			_model.position.y = randf_range(0.0, 0.02) if moving else 0.0
+		"rigged":
+			pass
 		_:
 			_model.position.y = absf(sin(_anim_t * 2.2)) * 0.08 if moving else lerpf(_model.position.y, 0.0, delta * 8.0)
 			_model.rotation.z = sin(_anim_t * 2.2) * 0.06 if moving else lerpf(_model.rotation.z, 0.0, delta * 8.0)
-	if stats.anim != "hop" and stats.anim != "hover":
+	if stats.anim not in ["hop", "hover", "rigged"]:
 		_model.rotation.x = _recoil * (0.08 if stats.radius < 1.0 else 0.015)
 	if _hp_bar.visible:
 		_hp_bar.global_position = global_position + Vector3.UP * (stats.height + 0.5)
@@ -386,6 +395,18 @@ func _build_model() -> void:
 	var m := (_scenes[stats.model] as PackedScene).instantiate() as Node3D
 	m.rotation.y = PI  # model front is +Z, units look down -Z
 	_model.add_child(m)
+	var players := m.find_children("*", "AnimationPlayer", true, false)
+	if not players.is_empty() and stats.has("anim_move"):
+		_anim = players[0]
+		for clip in [stats.anim_move, stats.anim_idle]:
+			var a := _anim.get_animation(clip)
+			if not a.has_meta("looped"):
+				# Baked loops end on a copy of the first frame: drop it so the wrap is seamless.
+				a.length -= 1.0 / 30.0
+				a.loop_mode = Animation.LOOP_LINEAR
+				a.set_meta("looped", true)
+		_anim.play(stats.anim_idle)
+		_anim.seek(randf() * _anim.current_animation_length)  # don't move in lockstep
 	if stats.get("carry_gun", false):
 		# Carried weapon placeholder until weapons get modeled.
 		_model.add_child(Mats.box_mesh(Vector3(0.12, 0.16, 0.9), Vector3(0.35, 1.15, -0.45),

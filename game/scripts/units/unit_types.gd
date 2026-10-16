@@ -9,7 +9,9 @@ extends RefCounted
 ##   "healer"    doesn't fight, heals the most damaged ally in range
 ##   "flying"    ignores walls and pathfinding, hovers at FLY_HEIGHT
 ## structure_mult: damage multiplier against gates / the keep.
-## anim: procedural animation style until models are rigged (walk, hop, stomp, hover, roll).
+## anim: procedural animation style until models are rigged (walk, hop, stomp, hover, roll),
+##   or "rigged" to play the model's own clips: anim_move / anim_idle, with the move clip
+##   sped up or slowed to match ground speed relative to anim_ref_speed (m/s).
 ## model: path to a processed GLB (front facing +Z, feet at origin), or "ram" for the built-in mesh.
 
 const ORDER := ["rifleman", "kangaroo", "medic", "talon", "elephant", "mule", "breacher",
@@ -113,8 +115,9 @@ const DATA := {
 		"name": "Serpent Sniper", "cost": 110, "hp": 80.0, "speed": 3.5,
 		"range": 45.0, "damage": 35.0, "fire_interval": 2.5, "spread": 0.01,
 		"structure_mult": 0.3, "radius": 0.6, "height": 0.9,
-		"role": "infantry", "anim": "roll", "hotkey": KEY_U,
-		"model": "res://assets/units/serpent_sniper/serpent_sniper.glb",
+		"role": "infantry", "anim": "rigged", "hotkey": KEY_U,
+		"anim_move": "slither", "anim_idle": "idle", "anim_ref_speed": 2.4,
+		"model": "res://assets/units/serpent_sniper/serpent_sniper_rigged.glb",
 	},
 	"rhino": {
 		"name": "Armored Rhino", "cost": 280, "hp": 1100.0, "speed": 3.6,
