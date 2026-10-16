@@ -12,6 +12,7 @@ extends RefCounted
 ## anim: procedural animation style until models are rigged (walk, hop, stomp, hover, roll),
 ##   or "rigged" to play the model's own clips: anim_move / anim_idle, with the move clip
 ##   sped up or slowed to match ground speed relative to anim_ref_speed (m/s).
+## steer: only move where the model faces, turning at turn_rate (rad/s), no strafing.
 ## model: path to a processed GLB (front facing +Z, feet at origin), or "ram" for the built-in mesh.
 
 const ORDER := ["rifleman", "kangaroo", "medic", "talon", "elephant", "mule", "breacher",
@@ -117,6 +118,7 @@ const DATA := {
 		"structure_mult": 0.3, "radius": 0.6, "height": 0.9,
 		"role": "infantry", "anim": "rigged", "hotkey": KEY_U,
 		"anim_move": "slither", "anim_idle": "idle", "anim_ref_speed": 2.4,
+		"steer": true, "turn_rate": 2.5,
 		"model": "res://assets/units/serpent_sniper/serpent_sniper_rigged.glb",
 	},
 	"rhino": {

@@ -325,13 +325,32 @@ func _on_velocity_computed(safe: Vector3) -> void:
 	if hp <= 0.0 or is_flying():
 		return
 	var dt := get_physics_process_delta_time()
-	velocity.x = safe.x
-	velocity.z = safe.z
+	if stats.get("steer", false):
+		_steer(safe, dt)
+	else:
+		velocity.x = safe.x
+		velocity.z = safe.z
 	velocity.y = 0.0 if is_on_floor() else velocity.y - _gravity * dt
 	move_and_slide()
 	var flat := Vector2(velocity.x, velocity.z)
-	if flat.length() > 0.3 and not (Combat.is_valid_target(target) and _in_range(target)):
+	if not stats.get("steer", false) and flat.length() > 0.3 and not (Combat.is_valid_target(target) and _in_range(target)):
 		rotation.y = lerp_angle(rotation.y, atan2(-velocity.x, -velocity.z), 8.0 * dt)
+
+
+## Vehicle-style movement (snakes): turn toward the wanted direction at a limited rate and
+## only ever move the way the head points, slowing down while the turn is sharp.
+func _steer(want: Vector3, dt: float) -> void:
+	var flat := Vector2(want.x, want.z)
+	if flat.length() < 0.1:
+		velocity.x = 0.0
+		velocity.z = 0.0
+		return
+	rotation.y = rotate_toward(rotation.y, atan2(-want.x, -want.z), stats.get("turn_rate", 3.0) * dt)
+	var fwd := Vector2(-sin(rotation.y), -cos(rotation.y))
+	var along := maxf(fwd.dot(flat.normalized()), 0.0)
+	var spd := flat.length() * along * along
+	velocity.x = fwd.x * spd
+	velocity.z = fwd.y * spd
 
 
 func _face(point: Vector3, delta: float) -> void:

@@ -26,7 +26,7 @@ FPS = 30
 SLITHER_PERIOD = 1.2  # seconds per wave cycle
 IDLE_PERIOD = 3.0
 WAVES_ON_BODY = 1.4  # how many full waves fit along the body
-ROTATE_Z = 60.0  # degrees: head/rifle direction -> -Y
+ROTATE_Z = 59.5  # degrees: turns the mean head direction while slithering (-149.5) to -Y
 TARGET_HEIGHT = 0.9
 
 # head -> tail spine order (the rig branches at Bone_000 in the middle of the body)
@@ -60,6 +60,7 @@ def orient_and_scale(arm, mesh):
     """Bake the turn + scale into the armature rest pose and the mesh."""
     verts_z = [(mesh.matrix_world @ v.co).z for v in mesh.data.vertices]
     scale = TARGET_HEIGHT / (max(verts_z) - min(verts_z))
+    arm.rotation_mode = "XYZ"  # the glTF importer uses quaternions, which ignore rotation_euler
     arm.rotation_euler = (0, 0, math.radians(ROTATE_Z))
     arm.scale = (scale, scale, scale)
     bpy.context.view_layer.update()
@@ -181,11 +182,11 @@ def render_preview(arm, mesh, out_dir, body_length):
     sc.collection.objects.link(cam)
     sc.camera = cam
     cam.data.lens = 40
-    # follow camera: 3/4 view from the front-left, tracking the snake
+    # follow camera: raised side view, tracking the snake
     for f in (1, frames):
         sc.frame_set(f)
         y = arm.location.y
-        cam.location = (4.2, y - 4.8, 2.6)
+        cam.location = (6.5, y - 1.8, 4.2)
         cam.rotation_euler = (Vector((0, y - 0.6, 0.35)) - cam.location).to_track_quat("-Z", "Y").to_euler()
         cam.keyframe_insert("location", frame=f)
         cam.keyframe_insert("rotation_euler", frame=f)
