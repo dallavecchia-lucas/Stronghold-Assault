@@ -22,6 +22,7 @@ const DEFENDER_MODELS := [
 	"res://assets/defenders/crimson_warden/crimson_warden.glb",
 	"res://assets/defenders/grey_veil_warden/grey_veil_warden.glb",
 	"res://assets/defenders/heavy_gunner/heavy_gunner.glb",
+	"res://assets/defenders/cyber_orc_sentinel/cyber_orc_sentinel.glb",
 ]
 
 ## side name -> {"dir": outward Vector3, "along_x": bool}
@@ -390,7 +391,7 @@ func _build_stations() -> void:
 	add_child(art)
 	stations.append(art)
 
-	var posts := [["south", -16.0], ["south", 16.0], ["east", -14.0], ["west", 14.0], ["north", 0.0]]
+	var posts := [["south", -16.0], ["south", 16.0], ["east", -14.0], ["west", 14.0], ["north", 0.0], ["east", 14.0]]
 	for i in posts.size():
 		var p: Array = posts[i]
 		var soldier := DefenderSoldier.new()
