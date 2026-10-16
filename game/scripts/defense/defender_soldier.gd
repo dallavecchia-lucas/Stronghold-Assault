@@ -39,6 +39,11 @@ var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 var _head: Node3D
 var _camera: Camera3D
 var _body: Node3D
+## Rigged character model (empty = placeholder capsule). Clips: "Idle", "Running".
+var model_path := ""
+var _anim: AnimationPlayer
+const ANIM_IDLE := "Idle"
+const ANIM_RUN := "Running"
 var _viewmodel: Node3D
 var _muzzle: Node3D
 var _shape: CollisionShape3D
@@ -61,26 +66,21 @@ func _ready() -> void:
 
 	_body = Node3D.new()
 	add_child(_body)
-	var uniform := Mats.flat(Color(0.18, 0.28, 0.5), 0.1, 0.8)
-	var armor := Mats.flat(Color(0.55, 0.57, 0.6), 0.6, 0.4)
-	var torso := MeshInstance3D.new()
-	var cm := CapsuleMesh.new()
-	cm.radius = 0.32
-	cm.height = 1.5
-	torso.mesh = cm
-	torso.material_override = uniform
-	torso.position.y = 0.78
-	_body.add_child(torso)
-	var helmet := MeshInstance3D.new()
-	var sm := SphereMesh.new()
-	sm.radius = 0.2
-	sm.height = 0.36
-	helmet.mesh = sm
-	helmet.material_override = armor
-	helmet.position.y = 1.62
-	_body.add_child(helmet)
-	_body.add_child(Mats.box_mesh(Vector3(0.5, 0.4, 0.25), Vector3(0, 1.15, 0.05), armor))
-	_body.add_child(Mats.box_mesh(Vector3(0.08, 0.1, 0.8), Vector3(0.22, 1.2, -0.4), Mats.flat(Color(0.1, 0.1, 0.1), 0.5, 0.4)))
+	if model_path != "":
+		var m := (load(model_path) as PackedScene).instantiate() as Node3D
+		m.rotation.y = PI  # model front is +Z, soldiers look down -Z
+		_body.add_child(m)
+		var players := m.find_children("*", "AnimationPlayer", true, false)
+		if not players.is_empty():
+			_anim = players[0]
+			for clip in [ANIM_IDLE, ANIM_RUN]:
+				if _anim.has_animation(clip):
+					_anim.get_animation(clip).loop_mode = Animation.LOOP_LINEAR
+			_play(ANIM_IDLE)
+			if _anim.is_playing():
+				_anim.seek(randf() * _anim.current_animation_length)
+	else:
+		_build_placeholder_body()
 
 	_head = Node3D.new()
 	_head.position.y = 1.6
@@ -291,3 +291,43 @@ func _find_target() -> Node3D:
 			best_d = d
 			best = u
 	return best
+
+
+func _build_placeholder_body() -> void:
+	var uniform := Mats.flat(Color(0.18, 0.28, 0.5), 0.1, 0.8)
+	var armor := Mats.flat(Color(0.55, 0.57, 0.6), 0.6, 0.4)
+	var torso := MeshInstance3D.new()
+	var cm := CapsuleMesh.new()
+	cm.radius = 0.32
+	cm.height = 1.5
+	torso.mesh = cm
+	torso.material_override = uniform
+	torso.position.y = 0.78
+	_body.add_child(torso)
+	var helmet := MeshInstance3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = 0.2
+	sm.height = 0.36
+	helmet.mesh = sm
+	helmet.material_override = armor
+	helmet.position.y = 1.62
+	_body.add_child(helmet)
+	_body.add_child(Mats.box_mesh(Vector3(0.5, 0.4, 0.25), Vector3(0, 1.15, 0.05), armor))
+	_body.add_child(Mats.box_mesh(Vector3(0.08, 0.1, 0.8), Vector3(0.22, 1.2, -0.4), Mats.flat(Color(0.1, 0.1, 0.1), 0.5, 0.4)))
+
+
+func _play(clip: String) -> void:
+	if _anim and _anim.has_animation(clip) and _anim.current_animation != clip:
+		_anim.play(clip, 0.25)
+
+
+func _process(_delta: float) -> void:
+	if _anim == null or hp <= 0.0:
+		return
+	var spd := Vector2(velocity.x, velocity.z).length()
+	if spd > 0.5:
+		_play(ANIM_RUN)
+		_anim.speed_scale = clampf(spd / WALK_SPEED, 0.7, 1.6)
+	else:
+		_play(ANIM_IDLE)
+		_anim.speed_scale = 1.0

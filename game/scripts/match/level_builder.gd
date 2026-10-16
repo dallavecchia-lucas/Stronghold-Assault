@@ -15,6 +15,15 @@ const GATE_H := 6.0
 const GATE_HP := 1500.0
 const KEEP_HP := 4000.0
 
+## Defender garrison models, one per wall post (rigged, with Idle/Running clips).
+const DEFENDER_MODELS := [
+	"res://assets/defenders/armored_sentinel/armored_sentinel.glb",
+	"res://assets/defenders/harpy_vanguard/harpy_vanguard.glb",
+	"res://assets/defenders/crimson_warden/crimson_warden.glb",
+	"res://assets/defenders/grey_veil_warden/grey_veil_warden.glb",
+	"res://assets/defenders/heavy_gunner/heavy_gunner.glb",
+]
+
 ## side name -> {"dir": outward Vector3, "along_x": bool}
 const SIDES := {
 	"south": {"dir": Vector3(0, 0, 1), "along_x": true, "gate": true},
@@ -382,8 +391,10 @@ func _build_stations() -> void:
 	stations.append(art)
 
 	var posts := [["south", -16.0], ["south", 16.0], ["east", -14.0], ["west", 14.0], ["north", 0.0]]
-	for p in posts:
+	for i in posts.size():
+		var p: Array = posts[i]
 		var soldier := DefenderSoldier.new()
+		soldier.model_path = DEFENDER_MODELS[i % DEFENDER_MODELS.size()]
 		soldier.station_name = "Rifleman · %s Wall" % p[0].capitalize()
 		soldier.name = "Soldier_%s_%d" % [p[0], int(p[1])]
 		_place_facing_out(soldier, p[0], _wall_point(p[0], p[1], -0.2, WALL_H + 0.1))
