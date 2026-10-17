@@ -8,7 +8,10 @@ Run headless:
 The profile is traced from the sketch in pixel coordinates (PX_SCALE meters per pixel) and
 extruded along the ridge into MODULES bays, one hot-air vent / roof hatch (exit A) /
 gun-deck door (exit B) per bay, and a ground tunnel (exit C) in the bays listed in C_BAYS.
-Interior (ramps, stair shafts, spawn hall) is carved with booleans and is walkable.
+Interior is carved with booleans and is walkable: tunnel C runs in at ground level and turns
+onto a ramp along the ridge up to the junction; from the junction a ramp runs back down into
+the spawn hall and a switchback stair climbs to the gun-deck landing (door B) and a top
+landing, where a ladder goes up through roof hatch A.
 
 Axes: length along Blender X, front (downhill, -Y) to cliff (+Y), Z up. Exported as glTF
 (+Y up, front +Z). Empties mark exits, spawn and weapon mounts for the game to hook into:
@@ -30,10 +33,25 @@ MODULES = 5
 BAY = 12.0                # bay length (m)
 END_CHAMFER = 6.0         # how much longer the front is than the back at each end
 C_BAYS = (0, 2, 4)        # bays with a ground tunnel exit
-SHAFT_LEN = 5.0           # stair shaft length along the ridge
-RAMP_W = 4.0              # corridor width along the ridge
-DOOR_W = 1.4
-HATCH_LEN = 1.8
+
+# Interior, in meters. x is relative to the bay centre, d is depth from the front.
+HEADROOM = 3.0
+TUNNEL_X = (-5.5, -2.5)   # exit C tunnel, straight in from the front portal
+TUNNEL_D = (-2.0, 8.6)
+TUNNEL_H = 2.8
+RAMP_D = (8.5, 11.5)      # ramp runs along the ridge from the tunnel up to the junction
+RAMP_FLAT_TO = -2.5       # ramp floor is flat up to here, then climbs
+JUNCTION_X = (3.5, 5.5)   # "ramp intersection": tunnel ramp, spawn ramp and stair foot meet here
+JUNCTION_Z = 2.8
+SHAFT_X = (-1.8, 5.5)     # switchback stair shaft behind the gun deck
+SHAFT_D = (12.2, 14.9)
+SPAWN_RAMP_END_D = 20.5   # spawn ramp runs back and down into the spawn hall
+RISER = 0.175
+TREAD = 0.3
+DOOR_X = (4.1, 5.5)       # exit B, from the deck-level stair landing onto the gun deck
+DOOR_H = 2.2
+HATCH_X = (4.0, 5.5)      # exit A, over the top landing; a ladder climbs through it
+HATCH_D = (12.2, 13.4)
 
 
 def P(px, py):
@@ -45,16 +63,12 @@ def P(px, py):
 BODY = [(350, 770), (275, 670), (370, 680), (450, 540), (615, 540), (615, 425),
         (485, 340), (694, 340), (1000, 762)]
 SLAB = [(640, 95), (1078, 762), (1000, 762), (633, 262)]
-RAMP_C = [(240, 772), (465, 772), (690, 540), (615, 548), (370, 690), (240, 690)]
-RAMP_NO_C = [(380, 772), (465, 772), (690, 540), (615, 548), (380, 690)]
-BRANCH = [(570, 660), (630, 610), (755, 705), (710, 772)]
 SPAWN_HALL = [(720, 772), (850, 600), (960, 772)]
-SHAFT = [(628, 368), (690, 368), (690, 548), (628, 548)]
-DOOR_B = [(600, 482), (640, 482), (640, 541), (600, 541)]
-HATCH = [(630, 320), (656, 320), (656, 372), (630, 372)]
-VENT = [(585, 262), (670, 262), (670, 300), (585, 300)]  # hood cantilevered off the slab, over the hatch
+VENT = [(585, 230), (670, 230), (670, 262), (585, 262)]  # hood cantilevered off the slab, ~2.7 m over the hatch
 DECK_Z = P(0, 540)[1]
 ROOF_Z = P(0, 340)[1]
+SHAFT_TOP = ROOF_Z - 1.0  # underside of the roof slab
+TOP_LANDING_Z = SHAFT_TOP - 2.17
 
 
 def parse_args():
@@ -76,6 +90,7 @@ def mat(name, color, rough=0.9, metal=0.0):
     b.inputs["Base Color"].default_value = (*color, 1.0)
     b.inputs["Roughness"].default_value = rough
     b.inputs["Metallic"].default_value = metal
+    m.diffuse_color = (*color, 1.0)  # viewport / Workbench color
     return m
 
 
@@ -99,6 +114,20 @@ def prism(name, poly_px, x0, x1, material=None, px=True):
     bpy.context.collection.objects.link(ob)
     if material:
         me.materials.append(material)
+    return ob
+
+
+def prism_d(name, poly_xz, d0, d1, cx=0.0, material=None):
+    """Extrude a 2D (x, height) polygon along depth from d0 to d1, offset by cx along the ridge."""
+    ob = prism(name, [(x, z) for x, z in poly_xz], d0, d1, material, px=False)
+    # prism() extrudes along X with points in (y, z); swap so the polygon lies in X/Z
+    for v in ob.data.vertices:
+        v.co.x, v.co.y = v.co.y + cx, v.co.x
+    bm = bmesh.new()
+    bm.from_mesh(ob.data)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.to_mesh(ob.data)
+    bm.free()
     return ob
 
 
@@ -159,39 +188,52 @@ def end_cutters(total_len, depth_max):
     return cutters
 
 
-def stairs(cx, material):
-    """Switchback stair in a shaft centred at x = cx: two flights side by side in depth."""
-    d0, z_top = P(628, 368)
-    d1, z_bot = P(690, 548)
-    half = (d1 - d0) / 2
-    rise_total = (z_top - 0.2) - z_bot
-    landing = 0.9
-    run = SHAFT_LEN - 2 * landing
-    steps_per = 14
-    h = rise_total / (2 * steps_per)
-    t = run / steps_per
-    x_start = cx - SHAFT_LEN / 2 + landing
+def flight(parts, cx, x_from, x_to, band, z_from, steps):
+    """Steps climbing from x_from toward x_to within a depth band, starting on floor z_from."""
+    sgn = 1 if x_to > x_from else -1
+    for k in range(steps):
+        top = z_from + RISER * (k + 1)
+        xc = cx + x_from + sgn * TREAD * (k + 0.5)
+        parts.append(box("step", (xc, (band[0] + band[1]) / 2, top - 0.25), (TREAD, band[1] - band[0], 0.5)))
+    return z_from + RISER * steps
+
+
+def landing(parts, cx, xs, ds, top):
+    parts.append(box("landing", (cx + (xs[0] + xs[1]) / 2, (ds[0] + ds[1]) / 2, top - 0.15),
+                     (xs[1] - xs[0], ds[1] - ds[0], 0.3)))
+
+
+def stairs(cx, m_conc, m_metal):
+    """Switchback stair: junction (2.8) -> gun-deck landing (8.05) -> top landing, then a ladder."""
+    d0, d1 = SHAFT_D
+    dm = (d0 + d1) / 2
+    front, back = (d0, dm), (dm, d1)
+    east = (DOOR_X[0], SHAFT_X[1])
+    lower_steps = round((DECK_Z - JUNCTION_Z) / 2 / RISER)
+    upper_steps = round((TOP_LANDING_Z - DECK_Z) / 2 / RISER)
     parts = []
-    # flight 1: back half (cliff side), climbing +X
-    for k in range(steps_per):
-        top = z_bot + h * (k + 1)
-        parts.append(box("step", (x_start + t * (k + 0.5), d0 + half * 1.5, (z_bot + top) / 2),
-                         (t, half, top - z_bot)))
-    mid_z = z_bot + h * steps_per
-    parts.append(box("landing", (cx + SHAFT_LEN / 2 - landing / 2, (d0 + d1) / 2, (z_bot + mid_z) / 2),
-                     (landing, d1 - d0, mid_z - z_bot)))
-    # flight 2: front half, climbing -X, built on a sloped stringer block
-    for k in range(steps_per):
-        top = mid_z + h * (k + 1)
-        x = cx + SHAFT_LEN / 2 - landing - t * (k + 0.5)
-        parts.append(box("step", (x, d0 + half * 0.5, (z_bot + top) / 2), (t, half, top - z_bot)))
-    top_landing_z = mid_z + h * steps_per
-    parts.append(box("landing", (cx - SHAFT_LEN / 2 + landing / 2, d0 + half * 0.5,
-                                 (z_bot + top_landing_z) / 2), (landing, half, top_landing_z - z_bot)))
+    z = flight(parts, cx, east[0], -1, front, JUNCTION_Z, lower_steps)
+    west1 = (SHAFT_X[0], east[0] - lower_steps * TREAD)
+    landing(parts, cx, west1, SHAFT_D, z)
+    z = flight(parts, cx, west1[1], 1, back, z, lower_steps)
+    landing(parts, cx, east, SHAFT_D, z)
+    z = flight(parts, cx, east[0], -1, front, z, upper_steps)
+    west2 = (east[0] - upper_steps * TREAD - 1.4, east[0] - upper_steps * TREAD)
+    landing(parts, cx, west2, SHAFT_D, z)
+    z = flight(parts, cx, west2[1], 1, back, z, upper_steps)
+    landing(parts, cx, east, SHAFT_D, z)
     ob = join(parts, "Stairs")
     ob.data.materials.clear()
-    ob.data.materials.append(material)
-    return ob, top_landing_z
+    ob.data.materials.append(m_conc)
+
+    # ladder up through the roof hatch, against the front wall of the shaft
+    lx = cx + (HATCH_X[0] + HATCH_X[1]) / 2
+    rails = [box("rail", (lx + s * 0.35, d0 + 0.08, (z + ROOF_Z + 1.0) / 2), (0.06, 0.06, ROOF_Z + 1.0 - z), m_metal)
+             for s in (-1, 1)]
+    rungs = [box("rung", (lx, d0 + 0.1, z + 0.3 * (k + 1)), (0.7, 0.05, 0.05), m_metal)
+             for k in range(int((ROOF_Z - z) / 0.3))]
+    ladder = join(rails + rungs, "Ladder")
+    return ob, ladder, z
 
 
 def placeholder_aa(name, loc, m_metal):
@@ -233,20 +275,45 @@ def build():
     boolean(body, prism("hall", SPAWN_HALL, -total / 2 + 1.0, total / 2 - 1.0))
 
     stair_objs = []
+    ladders = []
+    spawn_ramps = []
+    jx0, jx1 = JUNCTION_X
     for i in range(MODULES):
         cx = bay_center(i)
-        ramp = RAMP_C if i in C_BAYS else RAMP_NO_C
-        boolean(body, prism("ramp", ramp, cx - RAMP_W / 2, cx + RAMP_W / 2))
-        boolean(body, prism("branch", BRANCH, cx - RAMP_W / 2, cx + RAMP_W / 2))
-        boolean(body, prism("shaft", SHAFT, cx - SHAFT_LEN / 2, cx + SHAFT_LEN / 2))
-        boolean(body, prism("door", DOOR_B, cx - SHAFT_LEN / 2 + 0.3, cx - SHAFT_LEN / 2 + 0.3 + DOOR_W))
-        boolean(body, prism("hatch", HATCH, cx - SHAFT_LEN / 2 + 0.2, cx - SHAFT_LEN / 2 + 0.2 + HATCH_LEN))
-        st, _ = stairs(cx, m_conc)
+        if i in C_BAYS:
+            boolean(body, box("tunnel", (cx + sum(TUNNEL_X) / 2, sum(TUNNEL_D) / 2, TUNNEL_H / 2),
+                              (TUNNEL_X[1] - TUNNEL_X[0], TUNNEL_D[1] - TUNNEL_D[0], TUNNEL_H)))
+            ramp = [(TUNNEL_X[0], 0.0), (RAMP_FLAT_TO, 0.0), (jx0, JUNCTION_Z),
+                    (jx0, JUNCTION_Z + HEADROOM), (RAMP_FLAT_TO, HEADROOM), (TUNNEL_X[0], HEADROOM)]
+            boolean(body, prism_d("ramp", ramp, *RAMP_D, cx=cx))
+            junction_d0 = RAMP_D[0]
+        else:
+            junction_d0 = RAMP_D[1]
+        boolean(body, box("junction", (cx + (jx0 + jx1) / 2, (junction_d0 + SHAFT_D[1]) / 2, JUNCTION_Z + HEADROOM / 2),
+                          (jx1 - jx0, SHAFT_D[1] - junction_d0, HEADROOM)))
+        boolean(body, box("shaft", (cx + sum(SHAFT_X) / 2, sum(SHAFT_D) / 2, (JUNCTION_Z + SHAFT_TOP) / 2),
+                          (SHAFT_X[1] - SHAFT_X[0], SHAFT_D[1] - SHAFT_D[0], SHAFT_TOP - JUNCTION_Z)))
+        # spawn ramp: corridor back and down from the junction into the spawn hall
+        spawn = [(SHAFT_D[1] - 0.4, JUNCTION_Z), (SHAFT_D[1], JUNCTION_Z), (SPAWN_RAMP_END_D, 0.0),
+                 (SPAWN_RAMP_END_D, 4.0), (SHAFT_D[1], JUNCTION_Z + HEADROOM), (SHAFT_D[1] - 0.4, JUNCTION_Z + HEADROOM)]
+        boolean(body, prism("spawn_corridor", spawn, cx + jx0, cx + jx1, px=False))
+        wedge = prism(f"SpawnRamp_{i + 1}", [(SHAFT_D[1] - 0.4, JUNCTION_Z), (SHAFT_D[1] - 0.4, 0.0),
+                                             (SPAWN_RAMP_END_D, 0.0)], cx + jx0, cx + jx1, m_conc, px=False)
+        spawn_ramps.append(wedge)
+        boolean(body, box("door", (cx + sum(DOOR_X) / 2, (P(615, 0)[0] + SHAFT_D[0]) / 2, DECK_Z + DOOR_H / 2),
+                          (DOOR_X[1] - DOOR_X[0], SHAFT_D[0] - P(615, 0)[0] + 0.4, DOOR_H)))
+        boolean(body, box("hatch", (cx + sum(HATCH_X) / 2, sum(HATCH_D) / 2, ROOF_Z),
+                          (HATCH_X[1] - HATCH_X[0], HATCH_D[1] - HATCH_D[0], 2.4)))
+        st, lad, _ = stairs(cx, m_conc, m_metal)
         st.name = f"Stairs_{i + 1}"
+        lad.name = f"Ladder_{i + 1}"
         stair_objs.append(st)
+        ladders.append(lad)
 
     # brutalist dressing: bevels so edges catch light
-    for ob in [body, slab] + stair_objs:
+    for ob in ladders:
+        ob.parent = root
+    for ob in [body, slab] + stair_objs + spawn_ramps:
         bv = ob.modifiers.new("bevel", "BEVEL")
         bv.width = 0.06
         bv.segments = 1
@@ -255,27 +322,26 @@ def build():
         bpy.ops.object.modifier_apply(modifier=bv.name)
         ob.parent = root
 
-    # vents (hood on two fins above the hatch), hatch lids, rooftop parapet, gun-deck parapet
+    # vents (hood on two fins, cantilevered off the slab over hatch A), open hatch lids, door B lintels
     for i in range(MODULES):
         cx = bay_center(i)
-        hood = prism(f"Vent_{i + 1}", VENT, cx - 2.2, cx + 2.2, m_dark)
+        vx = cx + sum(HATCH_X) / 2
+        hood = prism(f"Vent_{i + 1}", VENT, vx - 1.8, vx + 1.8, m_dark)
         d0, _ = P(585, 0)
         d1, _ = P(670, 0)
         fins = []
         for s in (-1, 1):
-            fins.append(box("fin", (cx + s * 2.0, (d0 + d1) / 2 + 0.6, (ROOF_Z + P(0, 300)[1]) / 2),
-                            (0.4, d1 - d0 - 1.2, P(0, 300)[1] - ROOF_Z), m_dark))
-        grille = [box("grille", (cx - 1.8 + 0.45 * k, (d0 + d1) / 2, P(0, 262)[1] + 0.15),
-                      (0.12, d1 - d0 - 0.4, 0.3), m_metal) for k in range(9)]
+            fins.append(box("fin", (vx + s * 1.6, (d0 + d1) / 2 + 0.6, (ROOF_Z + P(0, 262)[1]) / 2),
+                            (0.4, d1 - d0 - 1.2, P(0, 262)[1] - ROOF_Z), m_dark))
+        grille = [box("grille", (vx - 1.4 + 0.4 * k, (d0 + d1) / 2, P(0, 230)[1] + 0.15),
+                      (0.12, d1 - d0 - 0.4, 0.3), m_metal) for k in range(8)]
         vent = join([hood] + fins + grille, f"Vent_{i + 1}")
         vent.parent = root
-        hd0, hz = P(630, 340)
-        hd1, _ = P(656, 340)
-        hx = cx - SHAFT_LEN / 2 + 0.2 + HATCH_LEN / 2
-        lid = box(f"HatchLid_{i + 1}", (hx, (hd0 + hd1) / 2 - 0.6, hz + 0.05), (HATCH_LEN, 0.1, 0.9), m_hatch)
+        lid = box(f"HatchLid_{i + 1}", (vx, HATCH_D[1] + 0.05, ROOF_Z + 0.6),
+                  (HATCH_X[1] - HATCH_X[0], 0.1, 1.2), m_hatch)
         lid.parent = root
-        dx = cx - SHAFT_LEN / 2 + 0.3 + DOOR_W / 2
-        door = box(f"DoorFrame_{i + 1}", (dx, P(615, 0)[0] - 0.05, DECK_Z + 2.15), (DOOR_W + 0.4, 0.15, 0.25), m_hatch)
+        door = box(f"DoorFrame_{i + 1}", (cx + sum(DOOR_X) / 2, P(615, 0)[0] - 0.05, DECK_Z + DOOR_H + 0.12),
+                   (DOOR_X[1] - DOOR_X[0] + 0.4, 0.15, 0.25), m_hatch)
         door.parent = root
 
     # parapets
@@ -319,12 +385,12 @@ def build():
     # markers + placeholder weapons
     for i in range(MODULES):
         cx = bay_center(i)
-        e = empty(f"EXIT_A_{i + 1}", (cx - SHAFT_LEN / 2 + 0.2 + HATCH_LEN / 2, P(643, 0)[0], ROOF_Z), root)
-        empty(f"EXIT_B_{i + 1}", (cx - SHAFT_LEN / 2 + 0.3 + DOOR_W / 2, P(605, 0)[0], DECK_Z), root)
+        empty(f"EXIT_A_{i + 1}", (cx + sum(HATCH_X) / 2, sum(HATCH_D) / 2, ROOF_Z), root)
+        empty(f"EXIT_B_{i + 1}", (cx + sum(DOOR_X) / 2, P(615, 0)[0] - 0.6, DECK_Z), root)
         if i in C_BAYS:
-            empty(f"EXIT_C_{i + 1}", (cx, P(300, 0)[0], 0.0), root)
+            empty(f"EXIT_C_{i + 1}", (cx + sum(TUNNEL_X) / 2, -1.0, 0.0), root)
         empty(f"SPAWN_{i + 1}", (cx, P(850, 0)[0], 0.0), root)
-        empty(f"VENT_FX_{i + 1}", (cx, P(678, 0)[0], P(0, 262)[1] + 0.3), root)
+        empty(f"VENT_FX_{i + 1}", (cx + sum(HATCH_X) / 2, P(628, 0)[0], P(0, 230)[1] + 0.3), root)
         for k, off in enumerate((-3.5, 3.5)):
             loc = (cx + off, P(540, 0)[0], ROOF_Z)
             empty(f"MOUNT_AA_{i + 1}_{k + 1}", loc, root)
