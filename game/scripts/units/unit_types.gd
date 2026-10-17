@@ -114,8 +114,9 @@ const DATA := {
 		"name": "Armored Lioness", "cost": 90, "hp": 160.0, "speed": 6.5,
 		"range": 22.0, "damage": 10.0, "fire_interval": 0.5, "spread": 0.04,
 		"structure_mult": 0.5, "radius": 0.6, "height": 1.6,
-		"role": "infantry", "anim": "walk", "hotkey": KEY_Y,
-		"model": "res://assets/units/armored_lioness_unit/armored_lioness_unit.glb",
+		"role": "infantry", "anim": "rigged", "hotkey": KEY_Y,
+		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 3.0,
+		"model": "res://assets/units/armored_lioness_unit/armored_lioness_unit_rigged.glb",
 	},
 	"serpent": {
 		"name": "Serpent Sniper", "cost": 110, "hp": 80.0, "speed": 3.5,
