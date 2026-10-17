@@ -129,4 +129,5 @@ def main():
     print("exported", args.output, "clips:", [a.name for a in bpy.data.actions])
 
 
-main()
+if __name__ == "__main__":
+    main()
