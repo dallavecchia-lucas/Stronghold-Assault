@@ -410,23 +410,27 @@ def keyframe(cam, frames, cut_mods):
     sc.render.fps = FPS
 
 
-# name -> (camera, target, lens mm)
+# name -> (camera, target, lens mm, cut height or None). A cut slices the mountain and bunkers off
+# above that height (rendered in Workbench, as a plan view of that level). A negative cut height
+# does the same with a top-down orthographic camera clipped at that height instead of a boolean.
+C = B.CENTER
 STILLS = {
-    "01_front": ((0, -80, 9), (0, 6, 13), 22),
-    "02_three_quarter": ((-64, -50, 22), (-6, 8, 10), 24),
-    "03_battlefield_eye_level": ((-38, -24, 1.7), (-22, 0, 6), 22),
-    "04_gun_deck": ((-15, -13, 10.5), (-22, 9, 10.5), 24),
-    "05_rooftop_vents": ((-36, -4, 25), (-16, 12, 16.5), 24),
-    "06_aerial": ((-14, -95, 78), (0, 14, 10), 28),
+    "01_aerial_sw": ((-170, -110, 120), (C.x, C.y - 5, 8), 26, None),
+    "02_aerial_ne": ((C.x + 170, C.y + 190, 120), (C.x, C.y + 5, 8), 26, None),
+    "03_south_face": ((0, -80, 9), (0, 6, 13), 22, None),
+    "04_east_face": ((C.x + B.MOUNTAIN_R + 80, C.y, 9), (C.x + B.MOUNTAIN_R - 6, C.y, 13), 22, None),
+    "05_plan_gun_ring_level": ((C.x, C.y, 260), (C.x, C.y + 0.01, 0), 30, -(B.DECK_Z + 2.4)),
+    "06_plan_roof_ring_level": ((C.x, C.y, 260), (C.x, C.y + 0.01, 0), 30, B.ROOF_Z + 2.4),
+    "07_plan_ground_level": ((C.x, C.y, 260), (C.x, C.y + 0.01, 0), 30, 2.6),
+    "08_cutaway_roof_ring_3d": ((-95, -55, 105), (C.x, C.y, 8), 26, B.ROOF_Z + 2.4),
 }
 
 
-def render_stills(cam, out_dir, samples):
+def render_stills(cam, out_dir, samples, stronghold):
     sc = bpy.context.scene
-    sc.render.engine = "CYCLES"
+    sc.render.use_stamp = False
     sc.cycles.samples = samples
     sc.cycles.use_denoising = True
-    sc.render.use_stamp = False
     sc.world.use_nodes = True
     bg = sc.world.node_tree.nodes["Background"]
     bg.inputs[0].default_value = (0.55, 0.62, 0.72, 1)
@@ -436,14 +440,38 @@ def render_stills(cam, out_dir, samples):
     sun.data.angle = math.radians(2.0)
     sun.rotation_euler = (math.radians(48), 0, math.radians(-30))
     sc.collection.objects.link(sun)
+    sc.display.shading.show_shadows = False
+    meshes = [o for o in stronghold.children_recursive if o.type == "MESH"]
     os.makedirs(out_dir, exist_ok=True)
-    for name, (loc, target, lens) in STILLS.items():
+    for name, (loc, target, lens, cut_z) in STILLS.items():
         cam.location = loc
         cam.rotation_euler = (Vector(target) - Vector(loc)).to_track_quat("-Z", "Y").to_euler()
         cam.data.lens = lens
+        cutter, mods = None, []
+        clip = cut_z is not None and cut_z < 0
+        cam.data.type = "ORTHO" if clip else "PERSP"
+        cam.data.ortho_scale = (2 * B.MOUNTAIN_R + 45) * 16 / 9  # fit the mountain vertically in 16:9
+        cam.data.clip_start = loc[2] + cut_z if clip else 0.05
+        sc.display.shading.show_backface_culling = clip
+        ground = bpy.data.objects.get("Ground")
+        if ground:
+            ground.hide_render = clip
+        if cut_z is not None and not clip:
+            cutter = B.box("plan_cut", (C.x, C.y, cut_z + 200), (600, 600, 400))
+            cutter.hide_render = cutter.hide_viewport = True
+            for o in meshes:
+                m = o.modifiers.new("plan_cut", "BOOLEAN")
+                m.object = cutter
+                m.solver = "EXACT"
+                mods.append((o, m))
+        sc.render.engine = "BLENDER_WORKBENCH" if cut_z is not None else "CYCLES"
         sc.render.filepath = os.path.join(out_dir, name + ".png")
         bpy.ops.render.render(write_still=True)
         print("WALKTHROUGH still", sc.render.filepath, flush=True)
+        for o, m in mods:
+            o.modifiers.remove(m)
+        if cutter:
+            bpy.data.objects.remove(cutter, do_unlink=True)
 
 
 def main():
@@ -457,7 +485,7 @@ def main():
     if args.stills:
         sc = bpy.context.scene
         sc.frame_set(sc.frame_start)
-        render_stills(cam, args.stills, args.samples)
+        render_stills(cam, args.stills, args.samples, stronghold)
         return
     cut_mods = setup_cutaway(stronghold)
     frames = build_track()

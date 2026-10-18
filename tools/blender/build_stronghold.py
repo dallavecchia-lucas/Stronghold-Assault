@@ -13,14 +13,18 @@ onto a ramp along the ridge up to the junction; from the junction a ramp runs ba
 the spawn hall and a switchback stair climbs to the gun-deck landing (door B) and a top
 landing, where a ladder goes up through roof hatch A.
 
-The bunker is buried in a rock ridge ("Mountain"): only the rooftop terrace with its vent
-hoods, the gun-deck gallery and the exit C tunnel portals are exposed. Along the bunker the
-ridge's profile dips to open the decks; toward the ends it rolls back over them.
+Four of these faces sit on the four sides of one mountain (S, E, N, W). The mountain buries
+them: only each face's rooftop terrace with its vent hoods, its gun-deck gallery and its exit C
+tunnel portals are exposed. Inside, a gun ring at deck level links all four gun decks (through
+every bay's deck-level stair landing), a roof ring at roof level links all four rooftops (one
+door per bay off the terrace), lifts at the four corners join ground, gun ring and roof ring,
+and ground corridors run from each spawn hall and each lift to the core hall under the peak.
 
 Axes: length along Blender X, front (downhill, -Y) to cliff (+Y), Z up. Exported as glTF
 (+Y up, front +Z). Empties mark exits, spawn and weapon mounts for the game to hook into:
-  EXIT_A_n, EXIT_B_n, EXIT_C_n, SPAWN_n, MOUNT_AA_n_k (roof), MOUNT_GUN_n_k (gun deck),
-  VENT_FX_n (hot air plume origin). Placeholder weapons sit on every mount.
+  EXIT_A_<face><bay>, EXIT_B_.., EXIT_C_.., SPAWN_.., MOUNT_AA_<face><bay>_k (roof),
+  MOUNT_GUN_<face><bay>_k (gun deck), VENT_FX_.. (hot air plume origin), LIFT_<face>, CORE.
+  Placeholder weapons sit on every mount.
 """
 import argparse
 import math
@@ -29,7 +33,7 @@ import sys
 
 import bpy
 import bmesh
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 PX_SCALE = 0.035          # meters per sketch pixel
 PX_ORIGIN = (280.0, 770.0)  # sketch pixel of (front, ground)
@@ -78,18 +82,38 @@ TOP_LANDING_Z = SHAFT_TOP - 2.17
 # ledge in front of the gun deck, ducks inside the bunker and rises again behind the roof.
 MOUNTAIN_FULL = [(-20.0, -0.5), (-2.2, 0.0), (-1.9, 1.0), (-1.4, 2.6), (-1.1, 4.3), (0.5, 5.4), (2.4, 6.6),
                  (4.2, 7.8), (5.2, 9.5), (5.8, 13.0), (6.3, 17.2), (8.5, 21.5), (11.5, 25.5), (16.0, 30.0),
-                 (24.0, 40.0), (40.0, 58.0), (70.0, 75.0), (110.0, 80.0)]
+                 (24.0, 40.0), (40.0, 58.0), (60.0, 68.0), (78.0, 72.0)]
 MOUNTAIN_CUT = [(-20.0, -0.5), (-2.2, 0.0), (-1.9, 1.0), (-1.4, 2.6), (-1.1, 4.3), (0.5, 5.4), (2.4, 6.6),
                 (4.2, 7.3), (5.7, 7.3), (11.9, 6.0), (12.3, 13.2), (14.2, 14.3), (14.75, 15.6), (15.4, 22.0),
-                (24.0, 40.0), (40.0, 58.0), (70.0, 75.0), (110.0, 80.0)]
+                (24.0, 40.0), (40.0, 58.0), (60.0, 68.0), (78.0, 72.0)]
 # rock-face noise per MOUNTAIN_CUT point: none where the profile runs hidden inside the bunker,
 # so bumps never poke up through the deck or the roof
 MOUNTAIN_CUT_NOISE = [1, 1, 1, 1, 1, 1, 1, 0.6, 0.25, 0, 0, 0, 0.3, 1, 1, 1, 1, 1]
-MOUNTAIN_HALF = 150.0
+MOUNTAIN_COLUMNS = 160    # columns across each face's wedge of the mountain
 CUT_HALF = 27.0           # decks fully exposed within +-CUT_HALF ...
 CUT_BLEND = 6.0           # ... and buried again CUT_BLEND further out
 PARAPET_HALF = 32.0       # parapets run on into the rock at both ends
 PORTAL = (-2.6, -0.6)     # depth of the concrete portal frames around exit C
+
+# Four faces around one mountain. Face S is the original (front at y = 0, facing -Y); E, N, W are
+# the same face turned 90/180/270 degrees about the mountain centre.
+FACES = ["S", "E", "N", "W"]
+MOUNTAIN_R = MOUNTAIN_FULL[-1][0]   # face front to mountain centre
+CENTER = Vector((0.0, MOUNTAIN_R, 0.0))
+# Rings behind the faces, chamfered at the corners: GUN ring at deck level joins all gun decks
+# (through the deck-level stair landings), ROOF ring at roof level joins all rooftops.
+RING_D = (16.0, 19.0)               # depth band of the straight ring runs behind each face
+RING_H = 3.0
+RING_STRAIGHT = 38.5                # straight run is +-this; diagonals cut the corners
+RING_DOOR_W = 2.0                   # roof terrace -> roof ring doors, one per bay
+CORRIDOR = (4.0, 3.5)               # ground corridors to the core: width, height
+CORRIDOR_D0 = 21.0                  # starts inside the spawn hall
+CORE_SIZE = (28.0, 28.0, 9.0)       # central core hall (the keep) under the peak
+LIFT = 4.0                          # corner lift shafts: ground <-> gun ring <-> roof ring
+
+
+def face_matrix(k):
+    return Matrix.Translation(CENTER) @ Matrix.Rotation(k * math.pi / 2, 4, "Z") @ Matrix.Translation(-CENTER)
 
 
 def parse_args():
@@ -280,57 +304,57 @@ def smoothstep(a, b, x):
 
 
 def mountain(m_rock):
-    """Rock ridge along X with a noisy face; calm near the bunker so it keeps covering it."""
+    """Rock mountain: four wedges, one per face, meeting on the diagonals and at the peak.
+
+    Each wedge is the face's profile swept across the face (x = t * distance to the centre),
+    dipping to MOUNTAIN_CUT in front of the bunker and back to MOUNTAIN_FULL toward the corners.
+    Noise is added afterwards along the vertex normals, calm near the bunker.
+    """
     from mathutils import noise
     full = [Vector(p) for p in MOUNTAIN_FULL]
     cut = [Vector(p) for p in MOUNTAIN_CUT]
-    # same subdivision for every column so the rings line up
     steps = [max(1, math.ceil(max((f1 - f0).length, (c1 - c0).length) / (0.8 if f0.x < 20 else 4.0)))
              for f0, f1, c0, c1 in zip(full[:-1], full[1:], cut[:-1], cut[1:])]
-    xs = []
-    x = -MOUNTAIN_HALF
-    while x < MOUNTAIN_HALF:
-        xs.append(x)
-        x += 1.0 if abs(x) < 45 else 3.0
-    xs.append(MOUNTAIN_HALF)
     bm = bmesh.new()
-    rings = []
-    for x in xs:
-        w = smoothstep(CUT_HALF, CUT_HALF + CUT_BLEND, abs(x))
-        ctrl = [c.lerp(f, w) for c, f in zip(cut, full)]
-        ctrl_noise = [cn + (1 - cn) * w for cn in MOUNTAIN_CUT_NOISE]
-        prof, prof_noise = [], []
-        for i, n in enumerate(steps):
-            prof += [ctrl[i].lerp(ctrl[i + 1], k / n) for k in range(n)]
-            prof_noise += [ctrl_noise[i] + (ctrl_noise[i + 1] - ctrl_noise[i]) * k / n for k in range(n)]
-        prof.append(ctrl[-1])
-        prof_noise.append(ctrl_noise[-1])
-        far = smoothstep(42, 65, abs(x))
-        end = 0.0 if abs(x) >= MOUNTAIN_HALF else 1.0
-        shift = far * 8.0 * noise.noise(Vector((x * 0.02, 3.1, 0.0))) * end
-        ring = []
-        for i, p in enumerate(prof):
-            t = prof[min(i + 1, len(prof) - 1)] - prof[max(i - 1, 0)]
-            n = Vector((-t.y, t.x)).normalized()  # toward the air
-            d, z = p.x, p.y
-            if i > 0:
-                d += shift
-            if z > 0.05 and end:
-                amp = (0.35 + 2.2 * far + 1.2 * smoothstep(24, 40, z)) * prof_noise[i]
-                k = noise.fractal(Vector((x * 0.18, p.x * 0.18, p.y * 0.18)), 0.6, 2.0, 4)
-                d += n.x * amp * k
-                z += n.y * amp * k
-            ring.append(bm.verts.new((x, d, z)))
-        ring.append(bm.verts.new((x, prof[-1].x + shift, -0.5)))  # bottom-back corner closes the section
-        rings.append(ring)
-    m = len(rings[0])
-    for a, b in zip(rings[:-1], rings[1:]):
-        for i in range(m):
-            j = (i + 1) % m
-            bm.faces.new((a[i], a[j], b[j], b[i]))
-    bm.faces.new(rings[0])
-    bm.faces.new(list(reversed(rings[-1])))
+    amp_layer = bm.verts.layers.float.new("amp")
+    for k in range(len(FACES)):
+        M = face_matrix(k)
+        cols = []
+        for c in range(MOUNTAIN_COLUMNS + 1):
+            t = -1 + 2 * c / MOUNTAIN_COLUMNS
+            ws = [smoothstep(CUT_HALF, CUT_HALF + CUT_BLEND, abs(t) * (MOUNTAIN_R - f.x)) for f in full]
+            ctrl = [cp.lerp(fp, w) for cp, fp, w in zip(cut, full, ws)]
+            ctrl_noise = [cn + (1 - cn) * w for cn, w in zip(MOUNTAIN_CUT_NOISE, ws)]
+            col = []
+            for i, n in enumerate(steps + [1]):
+                for j in range(n if i < len(steps) else 1):
+                    if i < len(steps):
+                        p = ctrl[i].lerp(ctrl[i + 1], j / n)
+                        nw = ctrl_noise[i] + (ctrl_noise[i + 1] - ctrl_noise[i]) * j / n
+                    else:
+                        p, nw = ctrl[-1], ctrl_noise[-1]
+                    x = t * (MOUNTAIN_R - p.x)
+                    far = smoothstep(42, 65, abs(x))
+                    v = bm.verts.new(M @ Vector((x, p.x, p.y)))
+                    v[amp_layer] = (0.35 + 2.2 * far + 1.2 * smoothstep(24, 40, p.y)) * nw if p.y > 0.05 else 0.0
+                    col.append(v)
+            cols.append(col)
+        for a, b in zip(cols[:-1], cols[1:]):
+            for i in range(len(a) - 1):
+                bm.faces.new((a[i], b[i], b[i + 1], a[i + 1]))
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.02)
+    bmesh.ops.dissolve_degenerate(bm, edges=bm.edges, dist=0.001)
+    bmesh.ops.holes_fill(bm, edges=bm.edges, sides=0)  # flat bottom under the outer ground strip
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    bm.normal_update()
+    moves = []
+    for v in bm.verts:
+        amp = v[amp_layer]
+        if amp > 0:
+            k = noise.fractal(v.co * 0.18, 0.6, 2.0, 4)
+            moves.append((v, v.normal * amp * k))
+    for v, dv in moves:
+        v.co += dv
     me = bpy.data.meshes.new("Mountain")
     bm.to_mesh(me)
     bm.free()
@@ -340,18 +364,13 @@ def mountain(m_rock):
     return ob
 
 
-def build():
-    m_conc = mat("Concrete", (0.46, 0.45, 0.43), 0.95)
-    m_dark = mat("ConcreteDark", (0.25, 0.25, 0.25), 0.95)
-    m_metal = mat("Metal", (0.18, 0.19, 0.2), 0.5, 0.8)
-    m_hatch = mat("HatchOrange", (0.8, 0.35, 0.08), 0.6, 0.3)
-    m_rock = mat("Rock", (0.17, 0.15, 0.13), 1.0)
+def build_face(key, root, m_conc, m_dark, m_metal, m_hatch):
+    """One bunker face in its own frame (front at d = 0 facing -Y), parented to `root`.
 
+    Returns the face's outer envelope (unparented, same frame) for hollowing the mountain.
+    """
     total = MODULES * BAY
-    root = bpy.data.objects.new("Stronghold", None)
-    bpy.context.collection.objects.link(root)
-
-    body = prism("Body", BODY, -total / 2 - END_CHAMFER - 2, total / 2 + END_CHAMFER + 2, m_conc)
+    body = prism(f"Body_{key}", BODY, -total / 2 - END_CHAMFER - 2, total / 2 + END_CHAMFER + 2, m_conc)
     for c in end_cutters(total, P(1078, 0)[0]):
         boolean(body, c)
     # the rock is hollowed out by the bunker's outer shape, before the interior is carved
@@ -361,6 +380,12 @@ def build():
 
     # spawn hall runs along the whole ridge
     boolean(body, prism("hall", SPAWN_HALL, -total / 2 + 1.0, total / 2 - 1.0))
+    # links to the rest of the mountain: corridor from the spawn hall to the core, and the gun
+    # ring's run behind this face (reached from every bay's deck-level stair landing)
+    boolean(body, box("core_corridor", (0, (CORRIDOR_D0 + RING_D[1] + 6) / 2, CORRIDOR[1] / 2),
+                      (CORRIDOR[0], RING_D[1] + 6 - CORRIDOR_D0, CORRIDOR[1])))
+    boolean(body, box("gun_ring", (0, sum(RING_D) / 2, DECK_Z + RING_H / 2),
+                      (2 * RING_STRAIGHT + RING_D[1] - RING_D[0], RING_D[1] - RING_D[0], RING_H)))
 
     stair_objs = []
     ladders = []
@@ -385,16 +410,18 @@ def build():
         spawn = [(SHAFT_D[1] - 0.4, JUNCTION_Z), (SHAFT_D[1], JUNCTION_Z), (SPAWN_RAMP_END_D, 0.0),
                  (SPAWN_RAMP_END_D, 4.0), (SHAFT_D[1], JUNCTION_Z + HEADROOM), (SHAFT_D[1] - 0.4, JUNCTION_Z + HEADROOM)]
         boolean(body, prism("spawn_corridor", spawn, cx + jx0, cx + jx1, px=False))
-        wedge = prism(f"SpawnRamp_{i + 1}", [(SHAFT_D[1] - 0.4, JUNCTION_Z), (SHAFT_D[1] - 0.4, 0.0),
+        wedge = prism(f"SpawnRamp_{key}{i + 1}", [(SHAFT_D[1] - 0.4, JUNCTION_Z), (SHAFT_D[1] - 0.4, 0.0),
                                              (SPAWN_RAMP_END_D, 0.0)], cx + jx0, cx + jx1, m_conc, px=False)
         spawn_ramps.append(wedge)
         boolean(body, box("door", (cx + sum(DOOR_X) / 2, (P(615, 0)[0] + SHAFT_D[0]) / 2, DECK_Z + DOOR_H / 2),
                           (DOOR_X[1] - DOOR_X[0], SHAFT_D[0] - P(615, 0)[0] + 0.4, DOOR_H)))
+        boolean(body, box("ring_door", (cx + sum(DOOR_X) / 2, (SHAFT_D[1] + RING_D[0]) / 2, DECK_Z + DOOR_H / 2),
+                          (DOOR_X[1] - DOOR_X[0], RING_D[0] - SHAFT_D[1] + 0.6, DOOR_H)))
         boolean(body, box("hatch", (cx + sum(HATCH_X) / 2, sum(HATCH_D) / 2, ROOF_Z),
                           (HATCH_X[1] - HATCH_X[0], HATCH_D[1] - HATCH_D[0], 2.4)))
         st, lad, _ = stairs(cx, m_conc, m_metal)
-        st.name = f"Stairs_{i + 1}"
-        lad.name = f"Ladder_{i + 1}"
+        st.name = f"Stairs_{key}{i + 1}"
+        lad.name = f"Ladder_{key}{i + 1}"
         stair_objs.append(st)
         ladders.append(lad)
 
@@ -414,7 +441,7 @@ def build():
     for i in range(MODULES):
         cx = bay_center(i)
         vx = cx + sum(HATCH_X) / 2
-        hood = prism(f"Vent_{i + 1}", VENT, vx - 1.8, vx + 1.8, m_dark)
+        hood = prism(f"Vent_{key}{i + 1}", VENT, vx - 1.8, vx + 1.8, m_dark)
         d0, _ = P(585, 0)
         d1, _ = P(670, 0)
         fins = []
@@ -423,20 +450,20 @@ def build():
                             (0.4, d1 - d0 - 1.2, P(0, 262)[1] - ROOF_Z), m_dark))
         grille = [box("grille", (vx - 1.4 + 0.4 * k, (d0 + d1) / 2, P(0, 230)[1] + 0.15),
                       (0.12, d1 - d0 - 0.4, 0.3), m_metal) for k in range(8)]
-        vent = join([hood] + fins + grille, f"Vent_{i + 1}")
+        vent = join([hood] + fins + grille, f"Vent_{key}{i + 1}")
         vent.parent = root
-        lid = box(f"HatchLid_{i + 1}", (vx, HATCH_D[1] + 0.05, ROOF_Z + 0.6),
+        lid = box(f"HatchLid_{key}{i + 1}", (vx, HATCH_D[1] + 0.05, ROOF_Z + 0.6),
                   (HATCH_X[1] - HATCH_X[0], 0.1, 1.2), m_hatch)
         lid.parent = root
-        door = box(f"DoorFrame_{i + 1}", (cx + sum(DOOR_X) / 2, P(615, 0)[0] - 0.05, DECK_Z + DOOR_H + 0.12),
+        door = box(f"DoorFrame_{key}{i + 1}", (cx + sum(DOOR_X) / 2, P(615, 0)[0] - 0.05, DECK_Z + DOOR_H + 0.12),
                    (DOOR_X[1] - DOOR_X[0] + 0.4, 0.15, 0.25), m_hatch)
         door.parent = root
 
     # parapets run the full length of the cut-out, into the rock at both ends
     fr, _ = P(485, 340)
-    para_r = box("RoofParapet", (0, fr + 0.25, ROOF_Z + 0.5), (2 * PARAPET_HALF, 0.5, 1.0), m_conc)
+    para_r = box(f"RoofParapet_{key}", (0, fr + 0.25, ROOF_Z + 0.5), (2 * PARAPET_HALF, 0.5, 1.0), m_conc)
     gd, _ = P(450, 540)
-    para_g = box("DeckParapet", (0, gd + 0.25, DECK_Z + 0.55), (2 * PARAPET_HALF, 0.5, 1.1), m_conc)
+    para_g = box(f"DeckParapet_{key}", (0, gd + 0.25, DECK_Z + 0.55), (2 * PARAPET_HALF, 0.5, 1.1), m_conc)
     for ob in (para_r, para_g):
         ob.parent = root
 
@@ -445,37 +472,120 @@ def build():
         cx = bay_center(i)
         x0, x1 = cx + TUNNEL_X[0], cx + TUNNEL_X[1]
         dc, dl = sum(PORTAL) / 2, PORTAL[1] - PORTAL[0]
-        parts = [box(f"Portal_{i + 1}", (x0 - 0.45, dc, 1.9), (0.9, dl, 3.8), m_dark),
+        parts = [box(f"Portal_{key}{i + 1}", (x0 - 0.45, dc, 1.9), (0.9, dl, 3.8), m_dark),
                  box("jamb", (x1 + 0.45, dc, 1.9), (0.9, dl, 3.8), m_dark),
                  box("lintel", ((x0 + x1) / 2, dc, TUNNEL_H + 0.5), (x1 - x0, dl, 1.0), m_dark)]
-        join(parts, f"Portal_{i + 1}").parent = root
-
-    # rock ridge: hollowed by the bunker and opened at the tunnel mouths
-    rock = mountain(m_rock)
-    boolean(rock, envelope)
-    for i in C_BAYS:
-        cx = bay_center(i)
-        boolean(rock, box("portal_cut", (cx + sum(TUNNEL_X) / 2, 0.0, TUNNEL_H / 2 - 0.1),
-                          (TUNNEL_X[1] - TUNNEL_X[0], 6.0, TUNNEL_H + 0.2)))
-    rock.parent = root
+        join(parts, f"Portal_{key}{i + 1}").parent = root
 
     # markers + placeholder weapons
     for i in range(MODULES):
         cx = bay_center(i)
-        empty(f"EXIT_A_{i + 1}", (cx + sum(HATCH_X) / 2, sum(HATCH_D) / 2, ROOF_Z), root)
-        empty(f"EXIT_B_{i + 1}", (cx + sum(DOOR_X) / 2, P(615, 0)[0] - 0.6, DECK_Z), root)
+        empty(f"EXIT_A_{key}{i + 1}", (cx + sum(HATCH_X) / 2, sum(HATCH_D) / 2, ROOF_Z), root)
+        empty(f"EXIT_B_{key}{i + 1}", (cx + sum(DOOR_X) / 2, P(615, 0)[0] - 0.6, DECK_Z), root)
         if i in C_BAYS:
-            empty(f"EXIT_C_{i + 1}", (cx + sum(TUNNEL_X) / 2, -1.0, 0.0), root)
-        empty(f"SPAWN_{i + 1}", (cx, P(850, 0)[0], 0.0), root)
-        empty(f"VENT_FX_{i + 1}", (cx + sum(HATCH_X) / 2, P(628, 0)[0], P(0, 230)[1] + 0.3), root)
+            empty(f"EXIT_C_{key}{i + 1}", (cx + sum(TUNNEL_X) / 2, -1.0, 0.0), root)
+        empty(f"SPAWN_{key}{i + 1}", (cx, P(850, 0)[0], 0.0), root)
+        empty(f"VENT_FX_{key}{i + 1}", (cx + sum(HATCH_X) / 2, P(628, 0)[0], P(0, 230)[1] + 0.3), root)
         for k, off in enumerate((-3.5, 3.5)):
             loc = (cx + off, P(540, 0)[0], ROOF_Z)
-            empty(f"MOUNT_AA_{i + 1}_{k + 1}", loc, root)
-            placeholder_aa(f"PH_AA_{i + 1}_{k + 1}", loc, m_metal).parent = root
+            empty(f"MOUNT_AA_{key}{i + 1}_{k + 1}", loc, root)
+            placeholder_aa(f"PH_AA_{key}{i + 1}_{k + 1}", loc, m_metal).parent = root
         for k, off in enumerate((-3.0, 3.0)):
             loc = (cx + off, P(500, 0)[0], DECK_Z)
-            empty(f"MOUNT_GUN_{i + 1}_{k + 1}", loc, root)
-            placeholder_gun(f"PH_GUN_{i + 1}_{k + 1}", loc, m_metal).parent = root
+            empty(f"MOUNT_GUN_{key}{i + 1}_{k + 1}", loc, root)
+            placeholder_gun(f"PH_GUN_{key}{i + 1}_{k + 1}", loc, m_metal).parent = root
+    return envelope
+
+
+def face_box(k, center, size, rot=0.0, name="void", material=None):
+    """Box given in face k's frame (optionally turned `rot` radians about Z), baked into world space."""
+    ob = box(name, (0, 0, 0), size, material)
+    ob.data.transform(face_matrix(k) @ Matrix.Translation(center) @ Matrix.Rotation(rot, 4, "Z"))
+    return ob
+
+
+def segment(k, a, b, z0, width, height, name="void", extra=0.0):
+    """Box running from a to b (2D points in face k's frame), floor at z0."""
+    a, b = Vector(a), Vector(b)
+    mid = (a + b) / 2
+    return face_box(k, (mid.x, mid.y, z0 + height / 2), ((b - a).length + extra, width, height),
+                    math.atan2(b.y - a.y, b.x - a.x), name)
+
+
+def interior_voids():
+    """Everything carved out of the rock to connect the faces: rings, lifts, corridors, core."""
+    voids = []
+    ring_w = RING_D[1] - RING_D[0]
+    ring_y = sum(RING_D) / 2
+    corner_a = Vector((RING_STRAIGHT, ring_y))                          # end of this face's straight run
+    corner_b = Vector((MOUNTAIN_R - ring_y, MOUNTAIN_R - RING_STRAIGHT))  # start of the next face's run
+    corner_mid = (corner_a + corner_b) / 2
+    inward = (Vector((0, MOUNTAIN_R)) - corner_mid).normalized()
+    lift = corner_mid + inward * (ring_w / 2 + LIFT / 2 + 0.6)
+    for k in range(len(FACES)):
+        for z0 in (DECK_Z, ROOF_Z):
+            voids.append(segment(k, (-RING_STRAIGHT, ring_y), corner_a, z0, ring_w, RING_H, extra=ring_w))
+            voids.append(segment(k, corner_a, corner_b, z0, ring_w, RING_H, extra=ring_w))
+            voids.append(segment(k, corner_mid, lift, z0, 2.5, DOOR_H))     # ring -> lift landing
+        voids.append(face_box(k, (lift.x, lift.y, (ROOF_Z + RING_H + 0.5) / 2), (LIFT, LIFT, ROOF_Z + RING_H + 0.5),
+                              math.pi / 4))
+        voids.append(segment(k, lift, (0, MOUNTAIN_R), 0.0, CORRIDOR[0] - 1, CORRIDOR[1]))  # lift -> core
+        voids.append(segment(k, (0, CORRIDOR_D0), (0, MOUNTAIN_R), 0.0, *CORRIDOR))       # spawn hall -> core
+        for i in range(MODULES):   # roof terrace -> roof ring, between the AA mounts
+            cx = bay_center(i)
+            voids.append(face_box(k, (cx, (13.8 + RING_D[0] + 0.3) / 2, ROOF_Z + DOOR_H / 2),
+                                  (RING_DOOR_W, RING_D[0] + 0.3 - 13.8, DOOR_H)))
+        for i in C_BAYS:           # tunnel mouths through the rock face
+            cx = bay_center(i)
+            voids.append(face_box(k, (cx + sum(TUNNEL_X) / 2, 0.0, TUNNEL_H / 2 - 0.1),
+                                  (TUNNEL_X[1] - TUNNEL_X[0], 6.0, TUNNEL_H + 0.2)))
+    voids.append(box("core", (CENTER.x, CENTER.y, CORE_SIZE[2] / 2), CORE_SIZE))
+    return voids, lift
+
+
+def build():
+    m_conc = mat("Concrete", (0.46, 0.45, 0.43), 0.95)
+    m_dark = mat("ConcreteDark", (0.25, 0.25, 0.25), 0.95)
+    m_metal = mat("Metal", (0.18, 0.19, 0.2), 0.5, 0.8)
+    m_hatch = mat("HatchOrange", (0.8, 0.35, 0.08), 0.6, 0.3)
+    m_rock = mat("Rock", (0.17, 0.15, 0.13), 1.0)
+    root = bpy.data.objects.new("Stronghold", None)
+    bpy.context.collection.objects.link(root)
+
+    envelopes = []
+    for k, key in enumerate(FACES):
+        face = bpy.data.objects.new(f"Face_{key}", None)
+        bpy.context.collection.objects.link(face)
+        face.matrix_world = face_matrix(k)
+        face.parent = root
+        env = build_face(key, face, m_conc, m_dark, m_metal, m_hatch)
+        env.data.transform(face_matrix(k))
+        envelopes.append(env)
+
+    # mountain: hollowed by the four faces, then the shared interior carved out of it
+    rock = mountain(m_rock)
+    for env in envelopes:
+        boolean(rock, env)
+    voids, lift = interior_voids()
+    for v in voids:
+        boolean(rock, v)
+    rock.parent = root
+
+    # core: reactor placeholder in the central hall, lift cars parked at gun-ring level
+    bpy.ops.mesh.primitive_cylinder_add(vertices=24, radius=4.0, depth=7.0, location=(CENTER.x, CENTER.y, 3.5))
+    reactor = bpy.context.active_object
+    reactor.name = "Reactor"
+    reactor.data.materials.append(m_dark)
+    reactor.parent = root
+    band = box("ReactorBand", (CENTER.x, CENTER.y, 5.2), (8.6, 8.6, 0.6), m_hatch)
+    band.parent = root
+    empty("CORE", (CENTER.x, CENTER.y, 0.0), root)
+    for k, key in enumerate(FACES):
+        car = face_box(k, (lift.x, lift.y, DECK_Z - 0.15), (LIFT - 0.3, LIFT - 0.3, 0.3), math.pi / 4,
+                       f"LiftCar_{key}", m_metal)
+        car.parent = root
+        loc = face_matrix(k) @ Vector((lift.x, lift.y, 0.0))
+        empty(f"LIFT_{key}", loc, root)
 
     for ob in bpy.data.objects:
         if ob.type == "MESH":
