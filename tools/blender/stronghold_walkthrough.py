@@ -1,9 +1,11 @@
 """Scale-check video of the stronghold: a first-person walk through bay 1 plus wide corner shots
-of each room, with the defender models placed around it.
+of each room, with the defender models placed around it. --stills renders exterior screenshots
+(Cycles) of the same scene instead.
 
-Run headless (renders with Workbench, so it works without a GPU):
+Run headless (the video renders with Workbench, so it works without a GPU):
   blender -b --python tools/blender/stronghold_walkthrough.py -- \
       --frames /tmp/walk_frames --video /tmp/stronghold_walkthrough.mp4 [--res 1280x720] [--every 1]
+  blender -b --python tools/blender/stronghold_walkthrough.py -- --stills /tmp/exterior_shots
   (or: python3 tools/blender/stronghold_walkthrough.py -- ... with the `bpy` pip package)
 
 The stronghold is rebuilt from build_stronghold.py, so the video always matches the script.
@@ -47,8 +49,10 @@ D_BACK = ((B.SHAFT_D[0] + B.SHAFT_D[1]) / 2 + B.SHAFT_D[1]) / 2
 def parse_args():
     argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     p = argparse.ArgumentParser()
-    p.add_argument("--frames", required=True)
-    p.add_argument("--video", required=True)
+    p.add_argument("--frames", help="frame directory for the video")
+    p.add_argument("--video", help="output .mp4")
+    p.add_argument("--stills", help="render the exterior screenshots into this directory instead")
+    p.add_argument("--samples", type=int, default=48, help="Cycles samples for --stills")
     p.add_argument("--res", default="1280x720")
     p.add_argument("--every", type=int, default=1, help="render every Nth frame (quick tests)")
     p.add_argument("--aa", default="5", help="Workbench anti-aliasing samples: OFF, FXAA, 5, 8, 11, 16, 32")
@@ -158,7 +162,7 @@ def populate(lib):
         ("harpy_vanguard", A(0, 2.0, 8.8, B.DECK_Z), F),
         ("crimson_warden", A(0, -2.0, 8.8, B.DECK_Z), F),
         ("heavy_gunner", A(0, 2.4, 10.6, B.ROOF_Z), F),
-        ("grey_veil_warden", A(0, -4.6, 10.0, B.ROOF_Z), F),
+        ("grey_veil_warden", A(0, -2.8, 10.0, B.ROOF_Z), F),
         # bay 2: one on every flight and landing (cutaway shot)
         ("crimson_warden", A(1, 2.3, D_FRONT, f1_floor(2.3)), W),
         ("harpy_vanguard", A(1, -1.1, 13.5, Z_WL1), X),
@@ -316,8 +320,8 @@ def build_track():
     t.static(A(2, -5.3, 8.65, 2.7), A(2, 3.5, 11.3, 2.0), 4.5, "Corner: tunnel ramp and junction, bay 3")
     t.static((-28.6, 17.7, 2.3), (-21.0, 20.6, 1.0), 4.5,
              "Corner: spawn hall, line-up of all six defenders")
-    t.static((-32.5, 9.5, 10.0), (-10, 8.5, 8.6), 4.5, "Corner: gun deck")
-    t.static((-32.4, 12.0, 17.0), (-12, 9.0, 15.0), 4.5, "Corner: rooftop (anti-air placeholders, vent hoods)")
+    t.static((-29.0, 9.0, 10.4), (-8, 8.5, 8.6), 4.5, "Corner: gun deck")
+    t.static((-29.0, 11.0, 17.6), (-10, 9.0, 15.0), 4.5, "Corner: rooftop (anti-air placeholders, vent hoods)")
     smooth(t.frames, "yaw")
     smooth(t.frames, "pitch")
     return t.frames
@@ -353,7 +357,7 @@ def setup_render(res, aa="5", shadows=True):
     bpy.ops.mesh.primitive_plane_add(size=600, location=(0, 0, -0.005))
     ground = bpy.context.active_object
     ground.name = "Ground"
-    ground.data.materials.append(B.mat("Ground", (0.36, 0.33, 0.27)))
+    ground.data.materials.append(B.mat("Ground", (0.24, 0.21, 0.15)))
     cam = bpy.data.objects.new("cam", bpy.data.cameras.new("cam"))
     cam.data.clip_start = 0.05
     cam.data.clip_end = 1000
@@ -406,6 +410,42 @@ def keyframe(cam, frames, cut_mods):
     sc.render.fps = FPS
 
 
+# name -> (camera, target, lens mm)
+STILLS = {
+    "01_front": ((0, -80, 9), (0, 6, 13), 22),
+    "02_three_quarter": ((-64, -50, 22), (-6, 8, 10), 24),
+    "03_battlefield_eye_level": ((-38, -24, 1.7), (-22, 0, 6), 22),
+    "04_gun_deck": ((-15, -13, 10.5), (-22, 9, 10.5), 24),
+    "05_rooftop_vents": ((-36, -4, 25), (-16, 12, 16.5), 24),
+    "06_aerial": ((-14, -95, 78), (0, 14, 10), 28),
+}
+
+
+def render_stills(cam, out_dir, samples):
+    sc = bpy.context.scene
+    sc.render.engine = "CYCLES"
+    sc.cycles.samples = samples
+    sc.cycles.use_denoising = True
+    sc.render.use_stamp = False
+    sc.world.use_nodes = True
+    bg = sc.world.node_tree.nodes["Background"]
+    bg.inputs[0].default_value = (0.55, 0.62, 0.72, 1)
+    bg.inputs[1].default_value = 0.35
+    sun = bpy.data.objects.new("sun", bpy.data.lights.new("sun", "SUN"))
+    sun.data.energy = 2.6
+    sun.data.angle = math.radians(2.0)
+    sun.rotation_euler = (math.radians(48), 0, math.radians(-30))
+    sc.collection.objects.link(sun)
+    os.makedirs(out_dir, exist_ok=True)
+    for name, (loc, target, lens) in STILLS.items():
+        cam.location = loc
+        cam.rotation_euler = (Vector(target) - Vector(loc)).to_track_quat("-Z", "Y").to_euler()
+        cam.data.lens = lens
+        sc.render.filepath = os.path.join(out_dir, name + ".png")
+        bpy.ops.render.render(write_still=True)
+        print("WALKTHROUGH still", sc.render.filepath, flush=True)
+
+
 def main():
     args = parse_args()
     res = tuple(int(v) for v in args.res.split("x"))
@@ -414,6 +454,11 @@ def main():
     lib = import_defenders()
     populate(lib)
     cam = setup_render(res, args.aa, not args.no_shadows)
+    if args.stills:
+        sc = bpy.context.scene
+        sc.frame_set(sc.frame_start)
+        render_stills(cam, args.stills, args.samples)
+        return
     cut_mods = setup_cutaway(stronghold)
     frames = build_track()
     keyframe(cam, frames, cut_mods)

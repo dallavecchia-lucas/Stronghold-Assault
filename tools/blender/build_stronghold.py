@@ -13,6 +13,10 @@ onto a ramp along the ridge up to the junction; from the junction a ramp runs ba
 the spawn hall and a switchback stair climbs to the gun-deck landing (door B) and a top
 landing, where a ladder goes up through roof hatch A.
 
+The bunker is buried in a rock ridge ("Mountain"): only the rooftop terrace with its vent
+hoods, the gun-deck gallery and the exit C tunnel portals are exposed. Along the bunker the
+ridge's profile dips to open the decks; toward the ends it rolls back over them.
+
 Axes: length along Blender X, front (downhill, -Y) to cliff (+Y), Z up. Exported as glTF
 (+Y up, front +Z). Empties mark exits, spawn and weapon mounts for the game to hook into:
   EXIT_A_n, EXIT_B_n, EXIT_C_n, SPAWN_n, MOUNT_AA_n_k (roof), MOUNT_GUN_n_k (gun deck),
@@ -62,13 +66,30 @@ def P(px, py):
 # --- profile (sketch pixels) ---
 BODY = [(350, 770), (275, 670), (370, 680), (450, 540), (615, 540), (615, 425),
         (485, 340), (694, 340), (1000, 762)]
-SLAB = [(640, 95), (1078, 762), (1000, 762), (633, 262)]
 SPAWN_HALL = [(720, 772), (850, 600), (960, 772)]
-VENT = [(585, 230), (670, 230), (670, 262), (585, 262)]  # hood cantilevered off the slab, ~2.7 m over the hatch
+VENT = [(585, 230), (735, 230), (735, 262), (585, 262)]  # hood ~2.7 m over the hatch, running back into the rock
 DECK_Z = P(0, 540)[1]
 ROOF_Z = P(0, 340)[1]
 SHAFT_TOP = ROOF_Z - 1.0  # underside of the roof slab
 TOP_LANDING_Z = SHAFT_TOP - 2.17
+
+# Rock ridge profiles (depth, height), front-bottom to back-top, extruded along the ridge.
+# MOUNTAIN_FULL buries everything; MOUNTAIN_CUT (same point count, matched by index) drops to a
+# ledge in front of the gun deck, ducks inside the bunker and rises again behind the roof.
+MOUNTAIN_FULL = [(-20.0, -0.5), (-2.2, 0.0), (-1.9, 1.0), (-1.4, 2.6), (-1.1, 4.3), (0.5, 5.4), (2.4, 6.6),
+                 (4.2, 7.8), (5.2, 9.5), (5.8, 13.0), (6.3, 17.2), (8.5, 21.5), (11.5, 25.5), (16.0, 30.0),
+                 (24.0, 40.0), (40.0, 58.0), (70.0, 75.0), (110.0, 80.0)]
+MOUNTAIN_CUT = [(-20.0, -0.5), (-2.2, 0.0), (-1.9, 1.0), (-1.4, 2.6), (-1.1, 4.3), (0.5, 5.4), (2.4, 6.6),
+                (4.2, 7.3), (5.7, 7.3), (11.9, 6.0), (12.3, 13.2), (14.2, 14.3), (14.75, 15.6), (15.4, 22.0),
+                (24.0, 40.0), (40.0, 58.0), (70.0, 75.0), (110.0, 80.0)]
+# rock-face noise per MOUNTAIN_CUT point: none where the profile runs hidden inside the bunker,
+# so bumps never poke up through the deck or the roof
+MOUNTAIN_CUT_NOISE = [1, 1, 1, 1, 1, 1, 1, 0.6, 0.25, 0, 0, 0, 0.3, 1, 1, 1, 1, 1]
+MOUNTAIN_HALF = 150.0
+CUT_HALF = 27.0           # decks fully exposed within +-CUT_HALF ...
+CUT_BLEND = 6.0           # ... and buried again CUT_BLEND further out
+PARAPET_HALF = 32.0       # parapets run on into the rock at both ends
+PORTAL = (-2.6, -0.6)     # depth of the concrete portal frames around exit C
 
 
 def parse_args():
@@ -253,23 +274,90 @@ def placeholder_gun(name, loc, m_metal):
     return join([base, shield, barrel], name)
 
 
+def smoothstep(a, b, x):
+    t = min(max((x - a) / (b - a), 0.0), 1.0)
+    return t * t * (3 - 2 * t)
+
+
+def mountain(m_rock):
+    """Rock ridge along X with a noisy face; calm near the bunker so it keeps covering it."""
+    from mathutils import noise
+    full = [Vector(p) for p in MOUNTAIN_FULL]
+    cut = [Vector(p) for p in MOUNTAIN_CUT]
+    # same subdivision for every column so the rings line up
+    steps = [max(1, math.ceil(max((f1 - f0).length, (c1 - c0).length) / (0.8 if f0.x < 20 else 4.0)))
+             for f0, f1, c0, c1 in zip(full[:-1], full[1:], cut[:-1], cut[1:])]
+    xs = []
+    x = -MOUNTAIN_HALF
+    while x < MOUNTAIN_HALF:
+        xs.append(x)
+        x += 1.0 if abs(x) < 45 else 3.0
+    xs.append(MOUNTAIN_HALF)
+    bm = bmesh.new()
+    rings = []
+    for x in xs:
+        w = smoothstep(CUT_HALF, CUT_HALF + CUT_BLEND, abs(x))
+        ctrl = [c.lerp(f, w) for c, f in zip(cut, full)]
+        ctrl_noise = [cn + (1 - cn) * w for cn in MOUNTAIN_CUT_NOISE]
+        prof, prof_noise = [], []
+        for i, n in enumerate(steps):
+            prof += [ctrl[i].lerp(ctrl[i + 1], k / n) for k in range(n)]
+            prof_noise += [ctrl_noise[i] + (ctrl_noise[i + 1] - ctrl_noise[i]) * k / n for k in range(n)]
+        prof.append(ctrl[-1])
+        prof_noise.append(ctrl_noise[-1])
+        far = smoothstep(42, 65, abs(x))
+        end = 0.0 if abs(x) >= MOUNTAIN_HALF else 1.0
+        shift = far * 8.0 * noise.noise(Vector((x * 0.02, 3.1, 0.0))) * end
+        ring = []
+        for i, p in enumerate(prof):
+            t = prof[min(i + 1, len(prof) - 1)] - prof[max(i - 1, 0)]
+            n = Vector((-t.y, t.x)).normalized()  # toward the air
+            d, z = p.x, p.y
+            if i > 0:
+                d += shift
+            if z > 0.05 and end:
+                amp = (0.35 + 2.2 * far + 1.2 * smoothstep(24, 40, z)) * prof_noise[i]
+                k = noise.fractal(Vector((x * 0.18, p.x * 0.18, p.y * 0.18)), 0.6, 2.0, 4)
+                d += n.x * amp * k
+                z += n.y * amp * k
+            ring.append(bm.verts.new((x, d, z)))
+        ring.append(bm.verts.new((x, prof[-1].x + shift, -0.5)))  # bottom-back corner closes the section
+        rings.append(ring)
+    m = len(rings[0])
+    for a, b in zip(rings[:-1], rings[1:]):
+        for i in range(m):
+            j = (i + 1) % m
+            bm.faces.new((a[i], a[j], b[j], b[i]))
+    bm.faces.new(rings[0])
+    bm.faces.new(list(reversed(rings[-1])))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    me = bpy.data.meshes.new("Mountain")
+    bm.to_mesh(me)
+    bm.free()
+    ob = bpy.data.objects.new("Mountain", me)
+    bpy.context.collection.objects.link(ob)
+    me.materials.append(m_rock)
+    return ob
+
+
 def build():
     m_conc = mat("Concrete", (0.46, 0.45, 0.43), 0.95)
     m_dark = mat("ConcreteDark", (0.25, 0.25, 0.25), 0.95)
     m_metal = mat("Metal", (0.18, 0.19, 0.2), 0.5, 0.8)
     m_hatch = mat("HatchOrange", (0.8, 0.35, 0.08), 0.6, 0.3)
-    m_rock = mat("Rock", (0.3, 0.28, 0.25), 1.0)
+    m_rock = mat("Rock", (0.17, 0.15, 0.13), 1.0)
 
     total = MODULES * BAY
     root = bpy.data.objects.new("Stronghold", None)
     bpy.context.collection.objects.link(root)
 
     body = prism("Body", BODY, -total / 2 - END_CHAMFER - 2, total / 2 + END_CHAMFER + 2, m_conc)
-    slab = prism("Slab", SLAB, -total / 2 - END_CHAMFER - 2, total / 2 + END_CHAMFER + 2, m_dark)
-    depth_max = P(1078, 0)[0]
-    for ob in (body, slab):
-        for c in end_cutters(total, depth_max):
-            boolean(ob, c)
+    for c in end_cutters(total, P(1078, 0)[0]):
+        boolean(body, c)
+    # the rock is hollowed out by the bunker's outer shape, before the interior is carved
+    envelope = body.copy()
+    envelope.data = body.data.copy()
+    bpy.context.collection.objects.link(envelope)
 
     # spawn hall runs along the whole ridge
     boolean(body, prism("hall", SPAWN_HALL, -total / 2 + 1.0, total / 2 - 1.0))
@@ -313,7 +401,7 @@ def build():
     # brutalist dressing: bevels so edges catch light
     for ob in ladders:
         ob.parent = root
-    for ob in [body, slab] + stair_objs + spawn_ramps:
+    for ob in [body] + stair_objs + spawn_ramps:
         bv = ob.modifiers.new("bevel", "BEVEL")
         bv.width = 0.06
         bv.segments = 1
@@ -322,7 +410,7 @@ def build():
         bpy.ops.object.modifier_apply(modifier=bv.name)
         ob.parent = root
 
-    # vents (hood on two fins, cantilevered off the slab over hatch A), open hatch lids, door B lintels
+    # vents (hood on two fins over hatch A, running back into the rock), open hatch lids, door B lintels
     for i in range(MODULES):
         cx = bay_center(i)
         vx = cx + sum(HATCH_X) / 2
@@ -344,43 +432,32 @@ def build():
                    (DOOR_X[1] - DOOR_X[0] + 0.4, 0.15, 0.25), m_hatch)
         door.parent = root
 
-    # parapets
+    # parapets run the full length of the cut-out, into the rock at both ends
     fr, _ = P(485, 340)
-    back, _ = P(694, 340)
-    para_r = box("RoofParapet", (0, fr + 0.25, ROOF_Z + 0.5), (total - 2, 0.5, 1.0), m_conc)
+    para_r = box("RoofParapet", (0, fr + 0.25, ROOF_Z + 0.5), (2 * PARAPET_HALF, 0.5, 1.0), m_conc)
     gd, _ = P(450, 540)
-    para_g = box("DeckParapet", (0, gd + 0.25, DECK_Z + 0.55), (total - 2, 0.5, 1.1), m_conc)
+    para_g = box("DeckParapet", (0, gd + 0.25, DECK_Z + 0.55), (2 * PARAPET_HALF, 0.5, 1.1), m_conc)
     for ob in (para_r, para_g):
         ob.parent = root
 
-    # cliff behind the slab (separate mesh): a noisy sheet parallel to the slab's back face
-    import random
-    random.seed(7)
-    foot = Vector(P(1078, 762))
-    up = (Vector(P(640, 95)) - foot).normalized()
-    into = Vector((up.y, -up.x))
-    bm = bmesh.new()
-    nu, nx = 24, 60
-    grid = []
-    for iu in range(nu + 1):
-        row = []
-        for ix in range(nx + 1):
-            x = -(total / 2 + 30) + (total + 60) * ix / nx
-            u = 40.0 * iu / nu
-            off = 0.4 + (random.uniform(0, 1.2) if 0 < iu else 0)
-            d, z = foot + up * u + into * off
-            row.append(bm.verts.new((x, d, max(z, 0.0))))
-        grid.append(row)
-    for iu in range(nu):
-        for ix in range(nx):
-            bm.faces.new((grid[iu][ix], grid[iu][ix + 1], grid[iu + 1][ix + 1], grid[iu + 1][ix]))
-    me = bpy.data.meshes.new("Cliff")
-    bm.to_mesh(me)
-    bm.free()
-    cliff = bpy.data.objects.new("Cliff", me)
-    bpy.context.collection.objects.link(cliff)
-    me.materials.append(m_rock)
-    cliff.parent = root
+    # exit C portals: concrete frames set into the rock face
+    for i in C_BAYS:
+        cx = bay_center(i)
+        x0, x1 = cx + TUNNEL_X[0], cx + TUNNEL_X[1]
+        dc, dl = sum(PORTAL) / 2, PORTAL[1] - PORTAL[0]
+        parts = [box(f"Portal_{i + 1}", (x0 - 0.45, dc, 1.9), (0.9, dl, 3.8), m_dark),
+                 box("jamb", (x1 + 0.45, dc, 1.9), (0.9, dl, 3.8), m_dark),
+                 box("lintel", ((x0 + x1) / 2, dc, TUNNEL_H + 0.5), (x1 - x0, dl, 1.0), m_dark)]
+        join(parts, f"Portal_{i + 1}").parent = root
+
+    # rock ridge: hollowed by the bunker and opened at the tunnel mouths
+    rock = mountain(m_rock)
+    boolean(rock, envelope)
+    for i in C_BAYS:
+        cx = bay_center(i)
+        boolean(rock, box("portal_cut", (cx + sum(TUNNEL_X) / 2, 0.0, TUNNEL_H / 2 - 0.1),
+                          (TUNNEL_X[1] - TUNNEL_X[0], 6.0, TUNNEL_H + 0.2)))
+    rock.parent = root
 
     # markers + placeholder weapons
     for i in range(MODULES):
