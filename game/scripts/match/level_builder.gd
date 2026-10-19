@@ -1,21 +1,29 @@
 class_name LevelBuilder
 extends Node3D
-## Builds the test map: open field, square stronghold with three gates, the keep,
-## defender posts and attacker spawn points. Everything static lives under the
-## navigation region so it gets baked into the navmesh.
+## Builds the map: open field around the mountain stronghold (four bunker faces dug into
+## one mountain, see tools/blender/build_stronghold.py), blast-door gates on three faces,
+## the keep (reactor) in the core hall under the peak, defender posts on the gun decks and
+## roofs, and attacker spawn points. Everything static lives under the navigation region
+## so it gets baked into the navmesh.
 
 signal navigation_ready
 
-const MAP_HALF := 120.0
-const FORT_HALF := 30.0
-const WALL_H := 7.0
-const WALL_T := 2.5
-const GATE_W := 8.0
-const GATE_H := 6.0
+const MAP_HALF := 200.0
+const STRONGHOLD := "res://assets/stronghold/stronghold.glb"
+## stronghold.glb has face S's front at z = 0 and its core 78 m behind it; this puts the core
+## at the map center.
+const STRONGHOLD_OFFSET := Vector3(0, 0, 78)
+## Map center to the foot of the rock below each face, and half the mountain's footprint.
+const FACE_DIST := 80.0
+const MOUNTAIN_HALF := 86.0
 const GATE_HP := 1500.0
 const KEEP_HP := 4000.0
+## Blast door filling an exit C tunnel portal (between the concrete jambs, under the lintel).
+const DOOR_SIZE := Vector3(3.0, 2.8, 0.4)
+## Bay whose ground tunnel is the side's gate; every other tunnel is welded shut.
+const GATE_BAY := 3
 
-## Defender garrison models, one per wall post (rigged, with Idle/Running clips).
+## Defender garrison models, one per rifle post (rigged, with Idle/Running clips).
 const DEFENDER_MODELS := [
 	"res://assets/defenders/armored_sentinel/armored_sentinel.glb",
 	"res://assets/defenders/harpy_vanguard/harpy_vanguard.glb",
@@ -25,13 +33,16 @@ const DEFENDER_MODELS := [
 	"res://assets/defenders/cyber_orc_sentinel/cyber_orc_sentinel.glb",
 ]
 
-## side name -> {"dir": outward Vector3, "along_x": bool}
+## side name -> outward direction and the bunker face (stronghold.glb node suffix) on that side
 const SIDES := {
-	"south": {"dir": Vector3(0, 0, 1), "along_x": true, "gate": true},
-	"north": {"dir": Vector3(0, 0, -1), "along_x": true, "gate": false},
-	"east": {"dir": Vector3(1, 0, 0), "along_x": false, "gate": true},
-	"west": {"dir": Vector3(-1, 0, 0), "along_x": false, "gate": true},
+	"south": {"dir": Vector3(0, 0, 1), "face": "S", "gate": true},
+	"north": {"dir": Vector3(0, 0, -1), "face": "N", "gate": false},
+	"east": {"dir": Vector3(1, 0, 0), "face": "E", "gate": true},
+	"west": {"dir": Vector3(-1, 0, 0), "face": "W", "gate": true},
 }
+## Rifle posts on the gun decks: [side, bay].
+const RIFLE_POSTS := [["south", 2], ["south", 4], ["east", 2], ["west", 4], ["north", 3], ["east", 4]]
+const MORTAR_MOUNT := "MOUNT_AA_S3_1"
 
 var nav_region: NavigationRegion3D
 var keep: Structure
@@ -39,6 +50,7 @@ var gates := {}  # side -> Structure
 var stations := []  # possessable defender stations, in hotkey order
 var spawn_points: Array[Vector3] = []
 var spawn_names: Array[String] = []
+var _stronghold: Node3D
 
 var _baking := false
 var _rebake_queued := false
@@ -51,25 +63,29 @@ func build() -> void:
 	var nm := NavigationMesh.new()
 	nm.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
 	nm.geometry_collision_mask = GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES
-	nm.cell_size = 0.4
-	nm.cell_height = 0.2
-	nm.agent_radius = 0.8
+	# Fine cells and a slim agent so the 2 m passages inside the bunker stay walkable.
+	nm.cell_size = 0.25
+	nm.cell_height = 0.25
+	nm.agent_radius = 0.5
 	nm.agent_height = 2.0
-	nm.agent_max_climb = 0.6
+	nm.agent_max_climb = 0.5
 	nm.agent_max_slope = 40.0
-	nm.filter_baking_aabb = AABB(Vector3(-MAP_HALF, -2, -MAP_HALF), Vector3(MAP_HALF * 2, 30, MAP_HALF * 2))
+	# Up to the bunker roofs; the mountain above is unreachable anyway.
+	nm.filter_baking_aabb = AABB(Vector3(-MAP_HALF, -2, -MAP_HALF), Vector3(MAP_HALF * 2, 22, MAP_HALF * 2))
 	nav_region.navigation_mesh = nm
 	nav_region.bake_finished.connect(_on_bake_finished)
 	add_child(nav_region)
 
 	_build_ground()
+	_build_stronghold()
 	for side in SIDES:
-		_build_wall(side)
-	_build_towers()
+		if SIDES[side].gate:
+			_build_gate(side)
+	_seal_tunnels()
 	_build_keep()
 	_build_scenery()
 	_build_spawns()
-	_build_stations()
+	_build_mounts(_build_stations())
 	rebake_navigation()
 
 
@@ -108,15 +124,6 @@ func _box(size: Vector3, pos: Vector3, mat: Material, rot := Vector3.ZERO, paren
 	body.add_child(Mats.box_mesh(size, Vector3.ZERO, mat))
 	(parent if parent else nav_region).add_child(body)
 	return body
-
-
-## Position on a wall: `t` along the wall, `off` outward from the wall center line.
-func _wall_point(side: String, t: float, off: float, y: float) -> Vector3:
-	var s: Dictionary = SIDES[side]
-	var line := FORT_HALF + off
-	if s.along_x:
-		return Vector3(t, y, line * s.dir.z)
-	return Vector3(line * s.dir.x, y, t)
 
 
 # ---------------------------------------------------------------- build steps
@@ -159,7 +166,7 @@ func _build_environment() -> void:
 	sun.light_energy = 1.3
 	sun.rotation = Vector3(deg_to_rad(-48.0), deg_to_rad(35.0), 0)
 	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 220.0
+	sun.directional_shadow_max_distance = 320.0
 	sun.directional_shadow_blend_splits = true
 	add_child(sun)
 
@@ -178,124 +185,115 @@ func _build_ground() -> void:
 	add_child(skirt)
 
 
-func _build_wall(side: String) -> void:
-	var s: Dictionary = SIDES[side]
-	var stone := Mats.stone()
-	var half_len := FORT_HALF + WALL_T * 0.5
-	var segments := [[-half_len, half_len]]
-	if s.gate:
-		segments = [[-half_len, -GATE_W * 0.5], [GATE_W * 0.5, half_len]]
-	for seg in segments:
-		var length: float = seg[1] - seg[0]
-		var mid: float = (seg[0] + seg[1]) * 0.5
-		var size := Vector3(length, WALL_H, WALL_T) if s.along_x else Vector3(WALL_T, WALL_H, length)
-		_box(size, _wall_point(side, mid, 0.0, WALL_H * 0.5), stone).name = "Wall_%s" % side
-
-	if s.gate:
-		var lintel_h := WALL_H - GATE_H
-		var lsize := Vector3(GATE_W, lintel_h, WALL_T) if s.along_x else Vector3(WALL_T, lintel_h, GATE_W)
-		_box(lsize, _wall_point(side, 0.0, 0.0, GATE_H + lintel_h * 0.5), stone)
-		_build_gate(side)
-
-	# Battlements on the outer edge, with a gap where the gun sits above the gate.
-	var t := -half_len + 1.0
-	while t < half_len - 0.5:
-		if not (s.gate and absf(t) < 2.6):
-			var msize := Vector3(1.2, 1.2, 0.8) if s.along_x else Vector3(0.8, 1.2, 1.2)
-			_box(msize, _wall_point(side, t, WALL_T * 0.5 - 0.4, WALL_H + 0.6), stone)
-		t += 2.4
-
-	# Ramp up to the walkway on the inner side.
-	var rise := WALL_H
-	var run := 16.0
-	var slope_len := sqrt(rise * rise + run * run)
-	var angle := atan2(rise, run)
-	var rsize := Vector3(slope_len, 0.5, 3.0) if s.along_x else Vector3(3.0, 0.5, slope_len)
-	var rrot := Vector3(0, 0, angle) if s.along_x else Vector3(-angle, 0, 0)
-	_box(rsize, _wall_point(side, 16.0, -(WALL_T * 0.5 + 1.5), rise * 0.5 - 0.2), stone, rrot)
+func _build_stronghold() -> void:
+	_stronghold = (load(STRONGHOLD) as PackedScene).instantiate() as Node3D
+	_stronghold.position = STRONGHOLD_OFFSET
+	nav_region.add_child(_stronghold)
+	# Placeholder weapons on the mounts make way for turret models (_build_mounts).
+	for n in _stronghold.find_children("PH_*", "", true, false):
+		n.free()
+	# The keep brings its own collision for the reactor.
+	for mi in _stronghold.find_children("*", "MeshInstance3D", true, false):
+		if not mi.name.begins_with("Reactor"):
+			_add_collision(mi)
 
 
+## Static trimesh collision for one of the stronghold's meshes.
+func _add_collision(mi: MeshInstance3D) -> void:
+	var body := StaticBody3D.new()
+	body.collision_layer = GameConfig.LAYER_WORLD
+	body.collision_mask = 0
+	var cs := CollisionShape3D.new()
+	cs.shape = mi.mesh.create_trimesh_shape()
+	body.add_child(cs)
+	mi.add_child(body)
+
+
+func _marker(marker_name: String) -> Node3D:
+	return _stronghold.find_child(marker_name, true, false) as Node3D
+
+
+## Steel door with hazard stripes, centered on `parent`, facing out along its +Z.
+func _blast_door(parent: Node3D, stripe_color: Color) -> void:
+	parent.add_child(Mats.box_mesh(DOOR_SIZE, Vector3.ZERO, Mats.flat(Color(0.2, 0.21, 0.22), 0.8, 0.4)))
+	var stripe := Mats.flat(stripe_color, 0.3, 0.6)
+	for y in [-0.9, 0.0, 0.9]:
+		parent.add_child(Mats.box_mesh(Vector3(DOOR_SIZE.x, 0.18, DOOR_SIZE.z + 0.08), Vector3(0, y, 0), stripe))
+
+
+## Blast door on the side's gate tunnel (exit C of the middle bay).
 func _build_gate(side: String) -> void:
-	var s: Dictionary = SIDES[side]
+	var exit := _marker("EXIT_C_%s%d" % [SIDES[side].face, GATE_BAY])
 	var gate := Structure.new()
-	gate.setup("%s Gate" % side.capitalize(), GATE_HP, GATE_W * 0.5)
+	gate.setup("%s Gate" % side.capitalize(), GATE_HP, 2.5)
 	gate.name = "Gate_%s" % side
-	gate.position = _wall_point(side, 0.0, 0.0, GATE_H * 0.5)
-	var size := Vector3(GATE_W, GATE_H, 1.2) if s.along_x else Vector3(1.2, GATE_H, GATE_W)
+	gate.transform = Transform3D(exit.global_basis, exit.global_position + Vector3.UP * DOOR_SIZE.y * 0.5)
 	var cs := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
-	shape.size = size
+	shape.size = DOOR_SIZE + Vector3(0.2, 0.2, 0.0)
 	cs.shape = shape
 	gate.add_child(cs)
 	var visual := Node3D.new()
 	gate.add_child(visual)
-	visual.add_child(Mats.box_mesh(size, Vector3.ZERO, Mats.wood()))
-	var iron := Mats.flat(Color(0.18, 0.18, 0.2), 0.8, 0.4)
-	for y in [-1.8, 0.0, 1.8]:
-		var band := Vector3(GATE_W, 0.25, 1.35) if s.along_x else Vector3(1.35, 0.25, GATE_W)
-		visual.add_child(Mats.box_mesh(band, Vector3(0, y, 0), iron))
+	_blast_door(visual, Color(0.8, 0.35, 0.08))
 	gate.visual = visual
-	gate.visual_half_height = GATE_H * 0.5
+	gate.visual_half_height = DOOR_SIZE.y * 0.5
 	gate.destroyed.connect(func(_g): rebake_navigation())
 	nav_region.add_child(gate)
 	gates[side] = gate
 
 
-func _build_towers() -> void:
-	var stone := Mats.stone()
-	for x in [-1, 1]:
-		for z in [-1, 1]:
-			var p := Vector3(x * FORT_HALF, 0, z * FORT_HALF)
-			_box(Vector3(6.5, 11, 6.5), p + Vector3(0, 5.5, 0), stone)
-			for i in 4:
-				var a := i * PI * 0.5
-				var o := Vector3(sin(a), 0, cos(a)) * 2.7
-				_box(Vector3(1.4, 1.3, 1.4), p + o + Vector3(0, 11.65, 0), stone)
-			var spire := Props.instance(Props.SENTINEL_SPIRE, 4.5)
-			spire.position = p + Vector3(0, 11, 0)
-			spire.rotation.y = atan2(float(-x), float(-z))  # face out across the corner
-			add_child(spire)
+## Every tunnel that isn't a gate gets a door that can't be broken.
+func _seal_tunnels() -> void:
+	var gate_exits := []
+	for side in gates:
+		gate_exits.append("EXIT_C_%s%d" % [SIDES[side].face, GATE_BAY])
+	for exit in _stronghold.find_children("EXIT_C_*", "", true, false):
+		if String(exit.name) in gate_exits:
+			continue
+		var body := StaticBody3D.new()
+		body.collision_layer = GameConfig.LAYER_WORLD
+		body.collision_mask = 0
+		body.transform = Transform3D(exit.global_basis, exit.global_position + Vector3.UP * DOOR_SIZE.y * 0.5)
+		var cs := CollisionShape3D.new()
+		var shape := BoxShape3D.new()
+		shape.size = DOOR_SIZE + Vector3(0.2, 0.2, 0.0)
+		cs.shape = shape
+		body.add_child(cs)
+		_blast_door(body, Color(0.12, 0.12, 0.13))
+		nav_region.add_child(body)
 
 
+## The keep is the reactor in the core hall under the peak. Attackers have to get inside
+## the mountain to hit it (Structure.buried).
 func _build_keep() -> void:
+	var reactor := _marker("Reactor") as MeshInstance3D
 	keep = Structure.new()
-	keep.setup("The Keep", KEEP_HP, 7.0)
+	keep.setup("The Keep", KEEP_HP, 5.0)
+	keep.buried = true
 	keep.name = "Keep"
-	keep.position = Vector3(0, 5, 0)
+	keep.position = reactor.global_position
 	var cs := CollisionShape3D.new()
-	var shape := BoxShape3D.new()
-	shape.size = Vector3(12, 10, 12)
+	var shape := CylinderShape3D.new()
+	shape.radius = 4.0
+	shape.height = 7.0
 	cs.shape = shape
 	keep.add_child(cs)
 	var visual := Node3D.new()
 	keep.add_child(visual)
-	visual.add_child(Mats.box_mesh(Vector3(12, 10, 12), Vector3.ZERO, Mats.dark_stone()))
-	visual.add_child(Mats.box_mesh(Vector3(8, 4, 8), Vector3(0, 7, 0), Mats.dark_stone()))
-	var crystal := MeshInstance3D.new()
-	var prism := CylinderMesh.new()
-	prism.top_radius = 0.0
-	prism.bottom_radius = 1.4
-	prism.height = 4.0
-	prism.radial_segments = 6
-	crystal.mesh = prism
-	crystal.material_override = Mats.glow(Color(0.3, 0.7, 1.0), 4.0)
-	crystal.position = Vector3(0, 11, 0)
-	visual.add_child(crystal)
-	var light := OmniLight3D.new()
-	light.light_color = Color(0.4, 0.7, 1.0)
-	light.light_energy = 3.0
-	light.omni_range = 18.0
-	light.position = Vector3(0, 11, 0)
-	visual.add_child(light)
-	var banner_mat := Mats.flat(Color(0.15, 0.3, 0.65), 0.0, 0.9)
-	for i in 4:
-		var a := i * PI * 0.5
-		var b := Mats.box_mesh(Vector3(2.0, 5.0, 0.1), Vector3(sin(a) * 6.06, 1.0, cos(a) * 6.06), banner_mat)
-		b.rotation.y = a
-		visual.add_child(b)
-	keep.visual = visual
-	keep.visual_half_height = 5.0
 	nav_region.add_child(keep)
+	reactor.reparent(visual)
+	var band := _marker("ReactorBand") as MeshInstance3D
+	band.reparent(visual)
+	band.material_override = Mats.glow(Color(1.0, 0.45, 0.1), 3.0)
+	var light := OmniLight3D.new()
+	light.light_color = Color(1.0, 0.6, 0.3)
+	light.light_energy = 3.0
+	light.omni_range = 22.0
+	light.position = Vector3(0, 4.0, 0)
+	visual.add_child(light)
+	keep.visual = visual
+	keep.visual_half_height = 3.5
 
 
 func _build_scenery() -> void:
@@ -304,17 +302,17 @@ func _build_scenery() -> void:
 	var lanes := []
 	for side in gates:
 		var out: Vector3 = SIDES[side].dir
-		lanes.append([out * FORT_HALF, out * MAP_HALF])
+		lanes.append([out * FACE_DIST, out * MAP_HALF])
 	var placed := 0
 	var tries := 0
-	while placed < 70 and tries < 2000:
+	while placed < 140 and tries < 4000:
 		tries += 1
 		var p := Vector3(rng.randf_range(-MAP_HALF + 5, MAP_HALF - 5), 0, rng.randf_range(-MAP_HALF + 5, MAP_HALF - 5))
-		if absf(p.x) < FORT_HALF + 14 and absf(p.z) < FORT_HALF + 14:
+		if absf(p.x) < MOUNTAIN_HALF + 4 and absf(p.z) < MOUNTAIN_HALF + 4:
 			continue
 		var blocked := false
 		for lane in lanes:
-			if _dist_to_segment(p, lane[0], lane[1]) < 14.0:
+			if _dist_to_segment(p, lane[0], lane[1]) < 18.0:
 				blocked = true
 				break
 		if blocked:
@@ -370,9 +368,9 @@ func _rock(p: Vector3, rng: RandomNumberGenerator) -> void:
 
 ## Visual-only ground cover; no collision so it never blocks units or the navmesh.
 func _build_ground_cover(rng: RandomNumberGenerator) -> void:
-	for i in 160:
+	for i in 360:
 		var p := Vector3(rng.randf_range(-MAP_HALF, MAP_HALF), 0, rng.randf_range(-MAP_HALF, MAP_HALF))
-		if absf(p.x) < FORT_HALF + 4 and absf(p.z) < FORT_HALF + 4:
+		if absf(p.x) < MOUNTAIN_HALF - 2 and absf(p.z) < MOUNTAIN_HALF - 2:
 			continue
 		var model := Props.instance(Props.BUSHES[rng.randi() % Props.BUSHES.size()], rng.randf_range(0.4, 1.1))
 		model.position = p
@@ -399,35 +397,62 @@ func _build_spawns() -> void:
 		add_child(flag)
 
 
-func _build_stations() -> void:
-	# Machine guns over each gate.
+## Builds the possessable stations on the bunker's mounts and gun decks; returns the mounts used.
+func _build_stations() -> Array:
+	var used := []
+	# Machine guns on the gun deck above each gate, pushed up to the parapet and raised so
+	# they can fire down to within ~5 m of the rock foot (the doorway itself is dead ground).
 	for side in ["south", "east", "west"]:
+		var mount := _marker("MOUNT_GUN_%s%d_1" % [SIDES[side].face, GATE_BAY])
+		used.append(String(mount.name))
 		var mg := MountedGun.new()
 		mg.model_path = Props.SENTINEL_BASTION if side == "south" else Props.ORBITAL_SENTRY_GUN
+		mg.pivot_height = 1.5
 		mg.station_name = "MG · %s Gate" % side.capitalize()
 		mg.name = "MG_%s" % side
-		_place_facing_out(mg, side, _wall_point(side, 0.0, 0.0, WALL_H))
+		_place_facing_out(mg, side, mount.global_position + mount.global_basis.z * 0.6)
 		add_child(mg)
 		stations.append(mg)
 
+	var mortar := _marker(MORTAR_MOUNT)
+	used.append(String(mortar.name))
 	var art := ArtilleryStation.new()
 	art.name = "Artillery"
-	art.station_name = "Mortar · Courtyard"
+	art.station_name = "Mortar · South Roof"
 	art.map_half = MAP_HALF
-	art.position = Vector3(0, 0, -18)
+	art.spotter_home = SIDES.south.dir * (FACE_DIST + 30.0)
+	art.position = mortar.global_position
 	add_child(art)
 	stations.append(art)
 
-	var posts := [["south", -16.0], ["south", 16.0], ["east", -14.0], ["west", 14.0], ["north", 0.0], ["east", 14.0]]
-	for i in posts.size():
-		var p: Array = posts[i]
+	# Riflemen on the gun decks, between a bay's two gun mounts and up against the parapet.
+	for i in RIFLE_POSTS.size():
+		var side: String = RIFLE_POSTS[i][0]
+		var mount := _marker("MOUNT_GUN_%s%d_1" % [SIDES[side].face, RIFLE_POSTS[i][1]])
 		var soldier := DefenderSoldier.new()
 		soldier.model_path = DEFENDER_MODELS[i % DEFENDER_MODELS.size()]
-		soldier.station_name = "Rifleman · %s Wall" % p[0].capitalize()
-		soldier.name = "Soldier_%s_%d" % [p[0], int(p[1])]
-		_place_facing_out(soldier, p[0], _wall_point(p[0], p[1], -0.2, WALL_H + 0.1))
+		soldier.station_name = "Rifleman · %s Deck" % side.capitalize()
+		soldier.name = "Soldier_%s_%d" % [side, RIFLE_POSTS[i][1]]
+		var pos := mount.global_position + mount.global_basis.x * 3.0 + mount.global_basis.z * 0.8 + Vector3.UP * 0.1
+		_place_facing_out(soldier, side, pos)
 		add_child(soldier)
 		stations.append(soldier)
+	return used
+
+
+## Turret models on every weapon mount no station uses: guns on the gun decks, launchers on
+## the roofs. Unmanned dressing, no collision.
+func _build_mounts(used: Array) -> void:
+	for mount in _stronghold.find_children("MOUNT_*", "", true, false):
+		if String(mount.name) in used:
+			continue
+		var model: Node3D
+		if mount.name.begins_with("MOUNT_GUN"):
+			model = Props.instance(Props.ORBITAL_SENTRY_GUN if mount.name.ends_with("_1") else Props.SENTINEL_BASTION, 2.0)
+		else:
+			model = Props.instance(Props.SENTINEL_SPIRE, 3.0)
+		model.transform = Transform3D(Basis.looking_at(mount.global_basis.z), mount.global_position)
+		add_child(model)
 
 
 func _place_facing_out(node: Node3D, side: String, pos: Vector3) -> void:

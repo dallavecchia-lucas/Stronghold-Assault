@@ -15,6 +15,8 @@ var last_damaged_msec := -100000
 ## Visual node squashed into rubble on destruction; its half height keeps the rubble on the ground.
 var visual: Node3D
 var visual_half_height := 3.0
+## Inside the mountain: attackers need line of sight to hit it, and flyers can't get at it.
+var buried := false
 
 
 func setup(p_name: String, p_hp: float, p_radius: float) -> void:

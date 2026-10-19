@@ -37,7 +37,7 @@ func _ready() -> void:
 	_overview_cam = Camera3D.new()
 	_overview_cam.far = 900.0
 	level.add_child(_overview_cam)
-	_overview_cam.global_transform = Transform3D(Basis.from_euler(Vector3(deg_to_rad(-55.0), 0, 0)), Vector3(0, 85, 70))
+	_overview_cam.global_transform = Transform3D(Basis.from_euler(Vector3(deg_to_rad(-40.0), 0, 0)), Vector3(0, 150, 230))
 
 	_build_hud()
 	select_station(0, true)

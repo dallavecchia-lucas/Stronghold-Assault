@@ -14,6 +14,8 @@ const SHELL_RADIUS := 7.0
 const AI_ERROR := 5.0
 const REPAIR_TIME := 30.0
 
+## Where the spotter view starts (and returns to), looking away from the map center.
+var spotter_home := Vector3(0, 0, 45)
 var station_name := "Artillery"
 var station_kind := "artillery"
 var team := GameConfig.TEAM_DEFENDER
@@ -88,8 +90,8 @@ func _ready() -> void:
 
 
 func _reset_spotter() -> void:
-	# Look out over the southern approach from behind the walls by default.
-	_spotter.global_position = Vector3(0, 0, 45)
+	# Look out over the approach in front of the station by default.
+	_spotter.global_position = spotter_home
 	_spotter.rotation.y = PI
 	_apply_spotter()
 

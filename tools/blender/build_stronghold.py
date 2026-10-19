@@ -108,6 +108,7 @@ RING_STRAIGHT = 38.5                # straight run is +-this; diagonals cut the 
 RING_DOOR_W = 2.0                   # roof terrace -> roof ring doors, one per bay
 CORRIDOR = (4.0, 3.5)               # ground corridors to the core: width, height
 CORRIDOR_D0 = 21.0                  # starts inside the spawn hall
+CORRIDOR_D1 = P(1000, 0)[0] + 1.0   # ... and cuts clean out the back of the body (no sill to trip on)
 CORE_SIZE = (28.0, 28.0, 9.0)       # central core hall (the keep) under the peak
 LIFT = 4.0                          # corner lift shafts: ground <-> gun ring <-> roof ring
 
@@ -382,8 +383,8 @@ def build_face(key, root, m_conc, m_dark, m_metal, m_hatch):
     boolean(body, prism("hall", SPAWN_HALL, -total / 2 + 1.0, total / 2 - 1.0))
     # links to the rest of the mountain: corridor from the spawn hall to the core, and the gun
     # ring's run behind this face (reached from every bay's deck-level stair landing)
-    boolean(body, box("core_corridor", (0, (CORRIDOR_D0 + RING_D[1] + 6) / 2, CORRIDOR[1] / 2),
-                      (CORRIDOR[0], RING_D[1] + 6 - CORRIDOR_D0, CORRIDOR[1])))
+    boolean(body, box("core_corridor", (0, (CORRIDOR_D0 + CORRIDOR_D1) / 2, CORRIDOR[1] / 2),
+                      (CORRIDOR[0], CORRIDOR_D1 - CORRIDOR_D0, CORRIDOR[1])))
     boolean(body, box("gun_ring", (0, sum(RING_D) / 2, DECK_Z + RING_H / 2),
                       (2 * RING_STRAIGHT + RING_D[1] - RING_D[0], RING_D[1] - RING_D[0], RING_H)))
 

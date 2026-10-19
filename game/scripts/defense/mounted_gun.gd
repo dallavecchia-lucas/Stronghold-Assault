@@ -19,6 +19,8 @@ const REPAIR_TIME := 25.0
 ## Turret model shown while the AI crews the gun (empty = sandbags + gunner capsule).
 ## The player always sees the simple first-person gun instead, so the model never blocks the view.
 var model_path := ""
+## Height of the gun's swivel above the node; raised to fire over a tall parapet.
+var pivot_height := 1.15
 var station_name := "Machine Gun"
 var station_kind := "mg"
 var team := GameConfig.TEAM_DEFENDER
@@ -72,7 +74,7 @@ func _ready() -> void:
 		add_child(Mats.cylinder_mesh(0.08, 1.1, Vector3(0, 0.55, 0), metal, 8))
 
 	_yaw_pivot = Node3D.new()
-	_yaw_pivot.position.y = 1.15
+	_yaw_pivot.position.y = pivot_height
 	add_child(_yaw_pivot)
 	_pitch_pivot = Node3D.new()
 	_yaw_pivot.add_child(_pitch_pivot)
