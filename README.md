@@ -91,6 +91,25 @@ This puts the pivot at the feet (or the bounding-box center with `--pivot bbox`,
 | serpent_sniper | 0.9 | `--rotate-z 56 --pivot bbox` |
 | armored_rhino_unit | 2.4 | `--pivot bbox` |
 
+Static props (scenery, turrets) skip Blender: they go through [glTF-Transform](https://gltf-transform.dev) to put the pivot at the bottom center and shrink textures to 1024 px, and `game/scripts/match/props.gd` scales them to height at load time:
+
+```sh
+npx @gltf-transform/cli center assets_src/environment/trees/majestic_oak/majestic_oak_meshy.glb t1.glb --pivot below
+npx @gltf-transform/cli resize t1.glb t2.glb --width 1024 --height 1024
+npx @gltf-transform/cli jpeg t2.glb t3.glb --quality 85 --slots "{baseColorTexture,metallicRoughnessTexture,occlusionTexture}"
+npx @gltf-transform/cli weld t3.glb game/assets/environment/majestic_oak/majestic_oak.glb
+```
+
+| Prop | Used for |
+|---|---|
+| birch_tree, silver_birch, white_birch_majesty, majestic_oak, solitary_evergreen | trees around the map |
+| mossy_berry_rock, mossy_mountain_garden | rocks (with collision) |
+| meadow_garden, meadow_tuft, wild_meadow_tangle, berry_woodland_miniature | ground cover (visual only) |
+| sentinel_bastion | south gate machine gun |
+| orbital_sentry_gun | east/west gate machine guns |
+| arctic_sentinel_cannon | courtyard mortar |
+| sentinel_spire | corner tower tops |
+
 ## Asset layout
 
 - `assets_src/` — raw exports from Meshy (untouched originals)

@@ -251,17 +251,10 @@ func _build_towers() -> void:
 				var a := i * PI * 0.5
 				var o := Vector3(sin(a), 0, cos(a)) * 2.7
 				_box(Vector3(1.4, 1.3, 1.4), p + o + Vector3(0, 11.65, 0), stone)
-			var roof := MeshInstance3D.new()
-			var cone := CylinderMesh.new()
-			cone.top_radius = 0.0
-			cone.bottom_radius = 4.0
-			cone.height = 4.0
-			cone.radial_segments = 4
-			roof.mesh = cone
-			roof.material_override = Mats.flat(Color(0.45, 0.16, 0.12), 0.0, 0.8)
-			roof.position = p + Vector3(0, 13.8, 0)
-			roof.rotation.y = PI * 0.25
-			add_child(roof)
+			var spire := Props.instance(Props.SENTINEL_SPIRE, 4.5)
+			spire.position = p + Vector3(0, 11, 0)
+			spire.rotation.y = atan2(float(-x), float(-z))  # face out across the corner
+			add_child(spire)
 
 
 func _build_keep() -> void:
@@ -331,27 +324,60 @@ func _build_scenery() -> void:
 		else:
 			_rock(p, rng)
 		placed += 1
+	_build_ground_cover(rng)
 
 
 func _tree(p: Vector3, rng: RandomNumberGenerator) -> void:
-	var h := rng.randf_range(5.0, 9.0)
-	var trunk := _box(Vector3(0.6, h * 0.4, 0.6), p + Vector3(0, h * 0.2, 0), Mats.wood())
-	for i in 2:
-		var leaves := MeshInstance3D.new()
-		var cone := CylinderMesh.new()
-		cone.top_radius = 0.0
-		cone.bottom_radius = h * (0.32 - i * 0.08)
-		cone.height = h * 0.55
-		cone.radial_segments = 7
-		leaves.mesh = cone
-		leaves.material_override = Mats.flat(Color(0.16, 0.3 + i * 0.04, 0.14), 0.0, 0.9)
-		leaves.position = Vector3(0, h * (0.35 + i * 0.25), 0)
-		trunk.add_child(leaves)
+	var h := rng.randf_range(6.0, 11.0)
+	var body := StaticBody3D.new()
+	body.collision_layer = GameConfig.LAYER_WORLD
+	body.collision_mask = 0
+	body.position = p
+	var cs := CollisionShape3D.new()
+	var trunk := CylinderShape3D.new()
+	trunk.radius = 0.4
+	trunk.height = h * 0.5
+	cs.shape = trunk
+	cs.position.y = h * 0.25
+	body.add_child(cs)
+	var model := Props.instance(Props.TREES[rng.randi() % Props.TREES.size()], h)
+	model.rotation.y = rng.randf() * TAU
+	body.add_child(model)
+	nav_region.add_child(body)
 
 
 func _rock(p: Vector3, rng: RandomNumberGenerator) -> void:
-	var s := Vector3(rng.randf_range(1.5, 4.5), rng.randf_range(1.0, 2.8), rng.randf_range(1.5, 4.5))
-	_box(s, p + Vector3(0, s.y * 0.4, 0), Mats.rock(), Vector3(rng.randf_range(-0.2, 0.2), rng.randf() * TAU, rng.randf_range(-0.2, 0.2)))
+	var path: String = Props.ROCKS[rng.randi() % Props.ROCKS.size()]
+	var h := rng.randf_range(1.2, 3.0)
+	var model := Props.instance(path, h)
+	var fp := Props.footprint(path, h)
+	var r := minf(fp.x, fp.y) * 0.4
+	var body := StaticBody3D.new()
+	body.collision_layer = GameConfig.LAYER_WORLD
+	body.collision_mask = 0
+	body.position = p
+	body.rotation.y = rng.randf() * TAU
+	var cs := CollisionShape3D.new()
+	var shape := CylinderShape3D.new()
+	shape.radius = r
+	shape.height = h * 0.8
+	cs.shape = shape
+	cs.position.y = h * 0.4
+	body.add_child(cs)
+	body.add_child(model)
+	nav_region.add_child(body)
+
+
+## Visual-only ground cover; no collision so it never blocks units or the navmesh.
+func _build_ground_cover(rng: RandomNumberGenerator) -> void:
+	for i in 160:
+		var p := Vector3(rng.randf_range(-MAP_HALF, MAP_HALF), 0, rng.randf_range(-MAP_HALF, MAP_HALF))
+		if absf(p.x) < FORT_HALF + 4 and absf(p.z) < FORT_HALF + 4:
+			continue
+		var model := Props.instance(Props.BUSHES[rng.randi() % Props.BUSHES.size()], rng.randf_range(0.4, 1.1))
+		model.position = p
+		model.rotation.y = rng.randf() * TAU
+		add_child(model)
 
 
 static func _dist_to_segment(p: Vector3, a: Vector3, b: Vector3) -> float:
@@ -377,6 +403,7 @@ func _build_stations() -> void:
 	# Machine guns over each gate.
 	for side in ["south", "east", "west"]:
 		var mg := MountedGun.new()
+		mg.model_path = Props.SENTINEL_BASTION if side == "south" else Props.ORBITAL_SENTRY_GUN
 		mg.station_name = "MG · %s Gate" % side.capitalize()
 		mg.name = "MG_%s" % side
 		_place_facing_out(mg, side, _wall_point(side, 0.0, 0.0, WALL_H))
