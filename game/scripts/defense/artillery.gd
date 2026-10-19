@@ -14,6 +14,8 @@ const SHELL_RADIUS := 7.0
 const AI_ERROR := 5.0
 const REPAIR_TIME := 30.0
 
+## Where the spotter view starts (and returns to), looking away from the map center.
+var spotter_home := Vector3(0, 0, 45)
 var station_name := "Artillery"
 var station_kind := "artillery"
 var team := GameConfig.TEAM_DEFENDER
@@ -48,17 +50,17 @@ func _ready() -> void:
 	shape.position.y = 0.8
 	add_child(shape)
 
-	var metal := Mats.flat(Color(0.22, 0.25, 0.2), 0.7, 0.45)
-	add_child(Mats.cylinder_mesh(1.3, 0.35, Vector3(0, 0.17, 0), Mats.dark_stone(), 16))
-	add_child(Mats.box_mesh(Vector3(1.6, 0.25, 1.6), Vector3(0, 0.45, 0), metal))
+	add_child(Mats.cylinder_mesh(1.9, 0.35, Vector3(0, 0.17, 0), Mats.dark_stone(), 16))
 	_barrel_pivot = Node3D.new()
 	_barrel_pivot.position.y = 0.7
 	add_child(_barrel_pivot)
+	# The whole cannon turns toward the target; shells still leave from the muzzle below.
+	var cannon := Props.instance(Props.ARCTIC_SENTINEL_CANNON, 1.9)
+	cannon.position.y = 0.35 - _barrel_pivot.position.y
+	_barrel_pivot.add_child(cannon)
 	var tilt := Node3D.new()
 	tilt.rotation.x = deg_to_rad(50.0)
 	_barrel_pivot.add_child(tilt)
-	var barrel := Mats.cylinder_mesh(0.22, 2.2, Vector3(0, 1.0, 0), metal, 12)
-	tilt.add_child(barrel)
 	_muzzle = Node3D.new()
 	_muzzle.position = Vector3(0, 2.2, 0)
 	tilt.add_child(_muzzle)
@@ -88,8 +90,8 @@ func _ready() -> void:
 
 
 func _reset_spotter() -> void:
-	# Look out over the southern approach from behind the walls by default.
-	_spotter.global_position = Vector3(0, 0, 45)
+	# Look out over the approach in front of the station by default.
+	_spotter.global_position = spotter_home
 	_spotter.rotation.y = PI
 	_apply_spotter()
 

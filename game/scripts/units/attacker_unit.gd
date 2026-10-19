@@ -37,6 +37,8 @@ var _hp_bar: Node3D
 var _hp_fill: MeshInstance3D
 var _fire_cd := 0.0
 var _retarget_cd := 0.0
+## False while the target is a buried structure out of sight: keep closing in instead of firing.
+var _sees_target := true
 var _anim_t := 0.0
 var _recoil := 0.0
 var _desired_velocity := Vector3.ZERO
@@ -54,6 +56,11 @@ func setup(p_type: String, p_id: int) -> void:
 
 func is_flying() -> bool:
 	return role == "flying"
+
+
+## Small enough for the stronghold's tunnels (2.8 m high) and inner passages (2 m wide).
+func fits_inside() -> bool:
+	return not is_flying() and stats.radius <= 0.8 and stats.height <= 2.6
 
 
 func _ready() -> void:
@@ -169,6 +176,8 @@ func _eye() -> Vector3:
 
 
 func _can_see(t: Node3D) -> bool:
+	if t.get("buried"):
+		return not is_flying() and Combat.has_line_of_sight(self, _eye(), Combat.aim_point(t), t)
 	if role == "artillery" or t.is_in_group("structures"):
 		return true  # shells arc over walls; buildings are big enough to always hit
 	return Combat.has_line_of_sight(self, _eye(), Combat.aim_point(t), t)
@@ -206,7 +215,7 @@ func _find_enemy() -> Node3D:
 	for s in get_tree().get_nodes_in_group("structures"):
 		if s.is_alive() and s.team != team:
 			var d := _range_to(s)
-			if d <= stats.range + 2.0 and d >= stats.get("min_range", 0.0) and d < best_d:
+			if d <= stats.range + 2.0 and d >= stats.get("min_range", 0.0) and d < best_d and _can_see(s):
 				best_d = d
 				best = s
 	return best
@@ -269,12 +278,13 @@ func _physics_process(delta: float) -> void:
 	if _retarget_cd <= 0.0:
 		_retarget_cd = 0.3
 		_update_target()
+		_sees_target = not (Combat.is_valid_target(target) and target.get("buried")) or _can_see(target)
 
 	var move_to = null
 	if role == "healer":
 		if _fire_cd <= 0.0:
 			_heal_tick()
-	if Combat.is_valid_target(target) and _in_range(target):
+	if Combat.is_valid_target(target) and _in_range(target) and _sees_target:
 		_face(target.global_position, delta)
 		if _fire_cd <= 0.0:
 			_fire_at(target)
@@ -315,10 +325,18 @@ func _fly(move_to, delta: float) -> void:
 			order = {"type": "idle"}
 	velocity.x = lerpf(velocity.x, want.x, delta * 2.0)
 	velocity.z = lerpf(velocity.z, want.z, delta * 2.0)
-	velocity.y = clampf((UnitTypes.FLY_HEIGHT - global_position.y) * 1.5, -6.0, 6.0)
+	velocity.y = clampf((_ground_height() + UnitTypes.FLY_HEIGHT - global_position.y) * 1.5, -6.0, 6.0)
 	global_position += velocity * delta
 	if want.length() > 0.3 and not Combat.is_valid_target(target):
 		rotation.y = lerp_angle(rotation.y, atan2(-velocity.x, -velocity.z), 4.0 * delta)
+
+
+## Height of the terrain (the mountain included) under a flyer, so it cruises over the peak.
+func _ground_height() -> float:
+	var p := global_position
+	var q := PhysicsRayQueryParameters3D.create(Vector3(p.x, 200.0, p.z), Vector3(p.x, -5.0, p.z), GameConfig.LAYER_WORLD)
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	return maxf(hit.position.y, 0.0) if not hit.is_empty() else 0.0
 
 
 func _on_velocity_computed(safe: Vector3) -> void:
@@ -376,8 +394,9 @@ func _process(delta: float) -> void:
 	match stats.anim:
 		"hop":
 			var hop := absf(sin(_anim_t * 1.2)) if moving else 0.0
-			_model.position.y = lerpf(_model.position.y, hop * 0.45, delta * 15.0)
-			_model.rotation.x = lerpf(_model.rotation.x, -hop * 0.15, delta * 10.0)
+			# Weights capped at 1: a long frame (e.g. a navmesh rebake) would overshoot and blow up.
+			_model.position.y = lerpf(_model.position.y, hop * 0.45, minf(delta * 15.0, 1.0))
+			_model.rotation.x = lerpf(_model.rotation.x, -hop * 0.15, minf(delta * 10.0, 1.0))
 		"stomp":
 			_model.position.y = absf(sin(_anim_t * 1.6)) * 0.06 if moving else lerpf(_model.position.y, 0.0, delta * 5.0)
 			_model.rotation.z = sin(_anim_t * 1.6) * 0.025 if moving else lerpf(_model.rotation.z, 0.0, delta * 5.0)

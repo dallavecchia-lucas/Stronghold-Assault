@@ -16,6 +16,11 @@ const AI_RANGE := 60.0
 const HEAT_PER_SHOT := 0.032
 const REPAIR_TIME := 25.0
 
+## Turret model shown while the AI crews the gun (empty = sandbags + gunner capsule).
+## The player always sees the simple first-person gun instead, so the model never blocks the view.
+var model_path := ""
+## Height of the gun's swivel above the node; raised to fire over a tall parapet.
+var pivot_height := 1.15
 var station_name := "Machine Gun"
 var station_kind := "mg"
 var team := GameConfig.TEAM_DEFENDER
@@ -39,6 +44,8 @@ var _pitch_pivot: Node3D
 var _camera: Camera3D
 var _muzzle: Node3D
 var _gunner: Node3D
+var _viewmodel: Node3D
+var _turret: Node3D
 var _smoke: CPUParticles3D
 
 
@@ -56,27 +63,30 @@ func _ready() -> void:
 	add_child(shape)
 
 	var metal := Mats.flat(Color(0.16, 0.17, 0.18), 0.8, 0.35)
-	var sand := Mats.flat(Color(0.55, 0.5, 0.38), 0.0, 1.0)
-	# Sandbag horseshoe in front of the gun.
-	for i in 5:
-		var a := lerpf(-1.1, 1.1, i / 4.0)
-		var bag := Mats.box_mesh(Vector3(0.9, 0.45, 0.45), Vector3(sin(a) * 1.1, 0.22, -cos(a) * 1.1), sand)
-		bag.rotation.y = -a
-		add_child(bag)
-	add_child(Mats.cylinder_mesh(0.08, 1.1, Vector3(0, 0.55, 0), metal, 8))
+	if model_path == "":
+		var sand := Mats.flat(Color(0.55, 0.5, 0.38), 0.0, 1.0)
+		# Sandbag horseshoe in front of the gun.
+		for i in 5:
+			var a := lerpf(-1.1, 1.1, i / 4.0)
+			var bag := Mats.box_mesh(Vector3(0.9, 0.45, 0.45), Vector3(sin(a) * 1.1, 0.22, -cos(a) * 1.1), sand)
+			bag.rotation.y = -a
+			add_child(bag)
+		add_child(Mats.cylinder_mesh(0.08, 1.1, Vector3(0, 0.55, 0), metal, 8))
 
 	_yaw_pivot = Node3D.new()
-	_yaw_pivot.position.y = 1.15
+	_yaw_pivot.position.y = pivot_height
 	add_child(_yaw_pivot)
 	_pitch_pivot = Node3D.new()
 	_yaw_pivot.add_child(_pitch_pivot)
-	_pitch_pivot.add_child(Mats.box_mesh(Vector3(0.18, 0.2, 0.7), Vector3(0, 0, 0.05), metal))
+	_viewmodel = Node3D.new()
+	_pitch_pivot.add_child(_viewmodel)
+	_viewmodel.add_child(Mats.box_mesh(Vector3(0.18, 0.2, 0.7), Vector3(0, 0, 0.05), metal))
 	var barrel := Mats.cylinder_mesh(0.05, 1.1, Vector3(0, 0.02, -0.85), metal, 8)
 	barrel.rotation.x = PI * 0.5
-	_pitch_pivot.add_child(barrel)
-	_pitch_pivot.add_child(Mats.box_mesh(Vector3(0.05, 0.12, 0.05), Vector3(0, 0.15, -0.6), metal))  # front sight
+	_viewmodel.add_child(barrel)
+	_viewmodel.add_child(Mats.box_mesh(Vector3(0.05, 0.12, 0.05), Vector3(0, 0.15, -0.6), metal))  # front sight
 	for x in [-0.12, 0.12]:
-		_pitch_pivot.add_child(Mats.box_mesh(Vector3(0.04, 0.14, 0.04), Vector3(x, -0.05, 0.45), metal))  # grips
+		_viewmodel.add_child(Mats.box_mesh(Vector3(0.04, 0.14, 0.04), Vector3(x, -0.05, 0.45), metal))  # grips
 	_muzzle = Node3D.new()
 	_muzzle.position = Vector3(0, 0.02, -1.42)
 	_pitch_pivot.add_child(_muzzle)
@@ -90,14 +100,21 @@ func _ready() -> void:
 	_gunner = Node3D.new()
 	_gunner.position = Vector3(0, 0, 0.9)
 	_yaw_pivot.add_child(_gunner)
-	var gm := MeshInstance3D.new()
-	var cm := CapsuleMesh.new()
-	cm.radius = 0.3
-	cm.height = 1.4
-	gm.mesh = cm
-	gm.material_override = Mats.flat(Color(0.18, 0.28, 0.5), 0.1, 0.8)
-	gm.position.y = -0.45
-	_gunner.add_child(gm)
+	if model_path == "":
+		var gm := MeshInstance3D.new()
+		var cm := CapsuleMesh.new()
+		cm.radius = 0.3
+		cm.height = 1.4
+		gm.mesh = cm
+		gm.material_override = Mats.flat(Color(0.18, 0.28, 0.5), 0.1, 0.8)
+		gm.position.y = -0.45
+		_gunner.add_child(gm)
+	else:
+		# The turret swivels with the yaw pivot; its base sits on the walkway.
+		_turret = Props.instance(model_path, 2.0)
+		_turret.position.y = -_yaw_pivot.position.y
+		_yaw_pivot.add_child(_turret)
+		_viewmodel.visible = false
 
 	_smoke = CPUParticles3D.new()
 	var q := QuadMesh.new()
@@ -130,6 +147,7 @@ func possess() -> void:
 	possessed = true
 	_camera.current = true
 	_gunner.visible = false
+	_show_turret(false)
 
 
 func unpossess() -> void:
@@ -137,6 +155,13 @@ func unpossess() -> void:
 	_camera.current = false
 	_camera.fov = 70.0
 	_gunner.visible = hp > 0.0
+	_show_turret(true)
+
+
+func _show_turret(show: bool) -> void:
+	if _turret:
+		_turret.visible = show
+		_viewmodel.visible = not show
 
 
 func wants_captured_mouse() -> bool:

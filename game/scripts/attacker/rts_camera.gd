@@ -9,7 +9,7 @@ var camera: Camera3D
 var bounds := 120.0
 var zoom := 38.0
 var min_zoom := 15.0
-var max_zoom := 120.0
+var max_zoom := 180.0
 var pitch := deg_to_rad(-58.0)
 var edge_scroll := true
 
@@ -41,6 +41,9 @@ func _process(delta: float) -> void:
 	position += move
 	position.x = clampf(position.x, -bounds, bounds)
 	position.z = clampf(position.z, -bounds, bounds)
+	# Ride up over the mountain, and keep the camera itself (behind the rig) out of the rock.
+	var lift := maxf(_ground_height(global_position), _ground_height(camera.global_position) - camera.position.y + 4.0)
+	position.y = lerpf(position.y, lift, minf(delta * 3.0, 1.0))
 	var turn := Input.get_axis("cam_rotate_right", "cam_rotate_left")
 	rotation.y += turn * delta * 1.8
 	zoom = lerpf(zoom, _target_zoom, delta * 10.0)
@@ -57,6 +60,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			_rotating = event.pressed
 	elif event is InputEventMouseMotion and _rotating:
 		rotation.y -= event.relative.x * 0.006
+
+
+## Terrain height (the mountain included) under a point.
+func _ground_height(p: Vector3) -> float:
+	var q := PhysicsRayQueryParameters3D.create(Vector3(p.x, 200.0, p.z), Vector3(p.x, -5.0, p.z), GameConfig.LAYER_WORLD)
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	return maxf(hit.position.y, 0.0) if not hit.is_empty() else 0.0
 
 
 func focus(point: Vector3) -> void:

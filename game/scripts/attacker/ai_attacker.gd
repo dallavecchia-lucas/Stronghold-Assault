@@ -90,14 +90,53 @@ func _launch_wave() -> void:
 		# Infantry, medics and flyers push up to the gate and suppress the walls, rams go
 		# for the gate, artillery shells it from range.
 		var out: Vector3 = LevelBuilder.SIDES[_wave_side].dir
-		commander.submit({"type": "move", "units": infantry, "pos": out * (LevelBuilder.FORT_HALF + 14.0), "attack": true})
+		commander.submit({"type": "move", "units": infantry, "pos": out * (LevelBuilder.FACE_DIST + 14.0), "attack": true})
 		commander.submit({"type": "attack", "units": siege + artillery, "target": gate.get_path()})
 	else:
 		_push_keep(ids)
 
 
 func _push_keep(ids: Array) -> void:
-	commander.submit({"type": "attack", "units": ids, "target": level.keep.get_path()})
+	# The keep is deep inside the mountain and only units that fit the tunnels can get to it.
+	# Flyers hover over the breached side's gun deck, big units hold in front of that face
+	# (off to one side, clear of the tunnel), both picking off the defenders on it; rams go
+	# for any gate still standing.
+	var inside := []
+	var flyers := []
+	var big := []
+	var rams := []
+	for id in ids:
+		var u = commander.units.get(id)
+		if u == null:
+			continue
+		if u.fits_inside():
+			inside.append(id)
+		elif u.is_flying():
+			flyers.append(id)
+		elif u.role == "siege":
+			rams.append(id)
+		else:
+			big.append(id)
+	var out: Vector3 = LevelBuilder.SIDES[_breached_side()].dir
+	if not inside.is_empty():
+		commander.submit({"type": "attack", "units": inside, "target": level.keep.get_path()})
+	if not flyers.is_empty():
+		commander.submit({"type": "move", "units": flyers, "pos": out * (LevelBuilder.FACE_DIST - 8.0), "attack": true})
+	var standing: Array = level.gates.values().filter(func(g): return g.is_alive())
+	if not standing.is_empty() and not rams.is_empty():
+		commander.submit({"type": "attack", "units": rams, "target": standing[0].get_path()})
+	else:
+		big.append_array(rams)
+	if not big.is_empty():
+		var hold := out * (LevelBuilder.FACE_DIST + 16.0) + out.cross(Vector3.UP) * 14.0
+		commander.submit({"type": "move", "units": big, "pos": hold, "attack": true})
+
+
+func _breached_side() -> String:
+	for side in level.gates:
+		if not level.gates[side].is_alive():
+			return side
+	return _wave_side
 
 
 ## Units with nothing to do look for the next objective.
