@@ -9,7 +9,7 @@ extends Node3D
 ## aims salvos and only as many elephants fire as each kill takes). Each quits when it is over.
 ## The defenders have no aircraft yet, so TargetDrones stand in for them.
 
-const LENGTH := {"walk": 15.0, "flak": 15.5, "missiles": 16.0}
+const LENGTH := {"walk": 15.0, "flak": 15.5, "missiles": 13.0}
 ## Where the shots take place: the open lane in front of the south gate.
 const SPOT := Vector3(-8, 0, 152)
 
@@ -93,11 +93,11 @@ func _start() -> void:
 			# Looking west: the elephants on the left, the drones on the right.
 			var rig := controller.camera_rig
 			rig.edge_scroll = false
-			rig.focus(SPOT + Vector3(0, 0, -17))
+			rig.focus(SPOT + Vector3(-7, 0, -20))
 			rig.rotation.y = PI * 0.5
 			rig.pitch = deg_to_rad(-45.0)
-			rig._target_zoom = 40.0
-			rig.zoom = 40.0
+			rig._target_zoom = 42.0
+			rig.zoom = 42.0
 			_build_cursor()
 
 
