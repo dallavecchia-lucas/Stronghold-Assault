@@ -12,6 +12,8 @@ extends Node
 ##   {"type": "cluster", "units": [ids], "pos": Vector3}   rhinos bomb around pos (RhinoAim)
 ##   {"type": "smoke", "units": [ids], "pos": Vector3}   the ready hippo closest to pos lays a
 ##                                                     smoke screen toward it (HippoSmoke)
+##   {"type": "missile", "units": [ids], "target": NodePath}   elephants fire missile salvos at
+##               an enemy flyer, only as many as the kill takes (ElephantMissiles)
 ##   {"type": "scout", "units": [ids]}   toggle scout formation: the rhinos in the selection
 ##                                       ring the rest of it so their anti-air covers the mass
 
@@ -61,6 +63,8 @@ func submit(cmd: Dictionary) -> int:
 			_cluster(cmd.units, cmd.pos)
 		"smoke":
 			_smoke(cmd.units, cmd.pos)
+		"missile":
+			_missiles(cmd.units, cmd.target)
 		"scout":
 			_toggle_scout(cmd.units)
 	return 0
@@ -122,6 +126,14 @@ func _smoke(ids: Array, pos: Vector3) -> void:
 		hippo.start_smoke(pos)
 
 
+func _missiles(ids: Array, target_path: NodePath) -> void:
+	var target := get_node_or_null(target_path) as Node3D
+	if not Combat.is_valid_target(target):
+		return
+	for e in ElephantMissiles.allocate(_resolve(ids).filter(func(u): return u.has_missiles()), target):
+		e.start_missiles(target)
+
+
 # ---------------------------------------------------------------- scout formation
 
 func is_scouting(u: AttackerUnit) -> bool:
@@ -131,8 +143,8 @@ func is_scouting(u: AttackerUnit) -> bool:
 ## Turns scout formation on for the selection, or off if its rhinos are all scouting already.
 func _toggle_scout(ids: Array) -> void:
 	var list := _resolve(ids)
-	var rhinos := list.filter(func(u): return u.role == "anti_air").map(func(u): return u.unit_id)
-	var escorts := list.filter(func(u): return u.role != "anti_air").map(func(u): return u.unit_id)
+	var rhinos := list.filter(func(u): return u.stats.get("scouts", false)).map(func(u): return u.unit_id)
+	var escorts := list.filter(func(u): return not u.stats.get("scouts", false)).map(func(u): return u.unit_id)
 	if rhinos.is_empty():
 		return
 	var all_scouting := rhinos.all(func(id): return is_scouting(units[id]))
