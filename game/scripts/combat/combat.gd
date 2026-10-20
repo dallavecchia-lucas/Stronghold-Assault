@@ -10,6 +10,8 @@ extends RefCounted
 const ATTACKER_TRACER := Color(1.0, 0.55, 0.15)
 const DEFENDER_TRACER := Color(0.45, 0.85, 1.0)
 const BULLET_SPEED := 350.0
+## How far out from the stronghold attackers stand to go after a post on its decks or roofs.
+const WALL_APPROACH := 15.0
 
 static var _tracer_mats := {}
 static var _flash_mat: StandardMaterial3D
@@ -35,6 +37,13 @@ static func aim_point(t: Node3D) -> Vector3:
 	if t.has_method("get_aim_point"):
 		return t.get_aim_point()
 	return t.global_position + Vector3.UP
+
+
+## Ground out in front of a post on the stronghold's gun decks or roofs (the mountain is centered
+## on the map), where attackers outside walk to when they go after it.
+static func wall_approach(post: Vector3) -> Vector3:
+	var out := Vector3(post.x, 0.0, post.z).normalized()
+	return Vector3(post.x, 0.0, post.z) + out * WALL_APPROACH
 
 
 ## True if nothing static blocks the line between two points (ignores `target` itself).
