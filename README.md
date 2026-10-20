@@ -21,7 +21,7 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
 
 - **Attacker wins** by destroying the Keep. **Defender wins** by holding for 10 minutes.
 
-**The map.** The stronghold is a mountain with a bunker dug into each of its four faces (`game/assets/stronghold/stronghold.glb`). The Keep is the reactor in the core hall under the peak. Attackers come from the south, east and west. Each of those faces has a blast-door gate on its middle ground tunnel; every other tunnel is welded shut. Once a gate is down, only Chimps and War Rams can get inside; everyone else fights from outside. Inside, they can also climb the stair shafts to the gun decks and the ladders to the roofs. Forest groves stand off to the sides of the attack lanes. The defenders hold the gun decks and roofs: a machine gun over each gate, riflemen along the decks and the mortar on the south roof. The guns can't fire into the doorway right below them; the mortar covers it.
+**The map.** The stronghold is a mountain with a bunker dug into each of its four faces (`game/assets/stronghold/stronghold.glb`). The Keep is the reactor in the core hall under the peak. Attackers come from the south, east and west. Each of those faces has a blast-door gate on its middle ground tunnel; every other tunnel is welded shut. Once a gate is down, only Chimps and Breaching Rams can get inside; everyone else fights from outside. Inside, they can also climb the stair shafts to the gun decks and the ladders to the roofs. Forest groves stand off to the sides of the attack lanes. The defenders hold the gun decks and roofs: a machine gun over each gate, riflemen along the decks and the mortar on the south roof. The guns can't fire into the doorway right below them; the mortar covers it.
 
 **Defender (first person)**
 - `1`–`9`: take over a post (machine guns, mortar, riflemen) · `Tab`: jump to the post with the most enemies nearby
@@ -32,7 +32,7 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
 
 **Attacker (RTS)**
 - `LMB` click/drag to select, `Shift` to add · `RMB` attack-move, or attack a gate/defender you click on · `Ctrl+RMB` move without stopping
-- Spawn: `Z` Bear Rifleman · `X` Kangaroo Commando (fast) · `C` Wolf Medic (heals) · `V` Sky Talon (flies over the mountain) · `N` Mule Artillery (long-range shells) · `M` Breaching Ram (gates only)
+- Spawn: `Z` Bear Rifleman · `X` Kangaroo Commando (fast) · `C` Wolf Medic (heals) · `V` Sky Talon (flies over the mountain) · `N` Mule Artillery (long-range shells)
 - `B` War Elephant: the real anti-air unit. Heavy and slow, with no basic attack.
   - Passive flak: the cannons on its flanks swing up at one enemy flyer in its dashed ring (26 m) and stay on it until it dies or leaves. They take turns firing shells that burst around it. One elephant hits about as hard as five rhinos.
   - `O` missiles: then `LMB` an enemy aircraft (`RMB` or `O` cancels). The pods lift and eight homing missiles leave one after another (range 60 m, reload 25 s). With several elephants selected, only as many fire as it takes to bring the target down, counting missiles already on their way to it, nearest first. The rest stay ready and you keep aiming, so you can click the next target. If all of them together can't kill it, they all fire. The cursor says how many will fire.
@@ -43,11 +43,16 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
 - `K` Hippo Heavy Gunner: heavy, slow, sprays suppressive fire from mounted machine guns.
   - The guns are inaccurate: rounds land around the target and can hit whatever stands next to it. They fire for 8 s in total (resting cools them at the same rate), then overheat and go silent for 2 s.
   - `R` smoke screen: aim, then `LMB` to fire (`RMB` or `R` cancels). The cone shows where the curtain will stand (the green band at its tip). The hippo fires three grenades at once. Each one bursts high up, then drops and bursts twice more on the way down, leaving a tall pillar. Together the pillars make a curtain that blocks line of sight for both sides for 30 s. Cooldown is 90 s. With several hippos selected, the one closest to the cursor fires.
-- `J` Night Ops Chimp: fast melee fighter, and with the War Ram the only unit that can get inside the stronghold.
+- `M` Breaching Ram (big horn sheep): breaks gates, and with the Chimp the only unit that can get inside the stronghold.
+  - Basic attack: shotgun. Each blast throws 7 pellets into a small cone in front of it (range 7 m).
+  - `Space` ram: a surge of speed (2.2×) for 6 s. Cooldown is 60 s. Enemy soldiers it runs over lose health and are tossed out of its way.
+  - Gate charge: `RMB` a ground gate while ramming, and the rams line up across its doorway and slam into it once each for a heavy hit (350). Only 3 fit in front of a doorway at a time: the nearest ones that can still get there before their ram runs out take the places (rams already charging it keep theirs). The rest call their ram off and go at the gate with their shotguns.
+  - Infiltration: once a gate is down, `RMB` next to it sends selected rams in, on to the Keep.
+- `J` Night Ops Chimp: fast melee fighter, and with the Breaching Ram the only unit that can get inside the stronghold.
   - Basic attack: melee, it strikes whatever is within arm's reach.
   - Passive: moves 60% faster inside forests.
   - Infiltration: once a gate is down, `RMB` next to it sends selected Chimps in. Inside, you lose control of them. They hunt the defenders anywhere in the stronghold, climbing to the gun decks and up the ladders to the roofs. When no defender is left standing, they wreck the machines: the gate machine guns and the mortar. Respawned defenders draw them back.
-- Models in, roles still to be designed (placeholder stats): `G` War Ram (can go inside through a broken gate; `RMB` next to it sends it to the Keep) · `H` Savanna Signal Scout · `L` Bison Field Gun · `Y` Armored Lioness · `U` Serpent Sniper
+- Models in, roles still to be designed (placeholder stats): `H` Savanna Signal Scout · `L` Bison Field Gun · `Y` Armored Lioness · `U` Serpent Sniper
 - `Tab` cycles spawn point · `Ctrl+1`–`5` save a group, `1`–`5` recall it
 - Camera: `WASD`/arrows/screen edge to pan, `Q`/`E` or middle mouse to rotate, wheel to zoom
 - `Esc` pauses (both sides)

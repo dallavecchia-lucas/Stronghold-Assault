@@ -5,16 +5,18 @@ extends CanvasLayer
 ##
 ## LMB click/drag: select · Shift adds · RMB: attack-move / attack target
 ## Ctrl+RMB: move without stopping to fight · Ctrl+1-5 assign group · 1-5 recall
-## Z X C V B N M G H J K L Y U I: spawn units · Tab: cycle spawn point
+## Z X C V B N M H J K L Y U I: spawn units · Tab: cycle spawn point
 ## F: aim the selected rhinos' cluster bombing (LMB fire, RMB/F cancel) · T: scout formation
 ## R: aim a selected hippo's smoke screen (LMB fire, RMB/R cancel)
 ## O: aim the selected elephants' missiles: LMB an enemy aircraft (RMB/O cancel)
+## Space: the selected breaching rams ram (then RMB a gate to charge it)
 
 const DRAG_THRESHOLD := 6.0
 const CLUSTER_KEY := KEY_F
 const SCOUT_KEY := KEY_T
 const SMOKE_KEY := KEY_R
 const MISSILE_KEY := KEY_O
+const RAM_KEY := KEY_SPACE
 const SMOKE_FILL := Color(0.2, 0.9, 0.6, 0.35)
 const SMOKE_LINE := Color(0.3, 1.0, 0.7)
 const MISSILE_LINE := Color(1.0, 0.35, 0.3)
@@ -122,6 +124,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if event.physical_keycode == MISSILE_KEY:
 			_set_aiming("missile" if _aiming != "missile" and not _ready_elephants().is_empty() else "")
+			return
+		if event.physical_keycode == RAM_KEY:
+			_alive_selection()
+			commander.submit({"type": "ram", "units": selected.map(func(u): return u.unit_id)})
 			return
 		if event.physical_keycode == SCOUT_KEY:
 			_alive_selection()
@@ -455,11 +461,11 @@ func _build_hud() -> void:
 	row.add_child(sp)
 	set_spawn_point(0)
 
-	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Chimps / War Rams: RMB next to a broken gate to send them in",
+	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nChimps / Rams: RMB next to a broken gate to send them in",
 			13, Color(0.85, 0.85, 0.85, 0.75))
 	help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	help.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	help.position = Vector2(14, help.position.y - 150)
+	help.position = Vector2(14, help.position.y - 168)
 	root.add_child(help)
 
 	_aim_label = UIKit.label("", 15, MISSILE_LINE)
@@ -502,6 +508,20 @@ func _process(_delta: float) -> void:
 		if ready == 0:
 			var soonest: float = elephants.map(func(u): return u.missile_cd).min()
 			_selection_label.text += "  %ds" % ceili(soonest)
+	var rams := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_ram())
+	if not rams.is_empty():
+		var ready := rams.filter(func(u): return u.ram_ready()).size()
+		_selection_label.text += "\nRam %d/%d [Space]" % [ready, rams.size()]
+		if ready == 0:
+			var soonest: float = rams.map(func(u): return u.ram_cd).min()
+			_selection_label.text += "  %ds" % ceili(soonest)
+		var ramming := rams.filter(func(u): return u.is_ramming())
+		if not ramming.is_empty():
+			var charging := ramming.filter(func(u): return u.charge_gate != null).size()
+			var left: float = ramming.map(func(u): return u.ram_left()).max()
+			_selection_label.text += "\nRamming %d  %ds" % [ramming.size(), ceili(left)]
+			if charging > 0:
+				_selection_label.text += " · %d charging the gate" % charging
 	if _aiming == "cluster":
 		_update_aim_preview()
 	elif _aiming == "smoke":

@@ -44,6 +44,7 @@ func _think() -> void:
 		_launch_wave()
 
 	_reassign_idle()
+	_ram_gates()
 
 
 func _plan_wave() -> void:
@@ -84,10 +85,12 @@ func _launch_wave() -> void:
 			var u = commander.units.get(id)
 			if u == null:
 				continue
-			match u.role:
-				"siege": siege.append(id)
-				"artillery": artillery.append(id)
-				_: infantry.append(id)
+			if u.has_ram():
+				siege.append(id)
+			elif u.role == "artillery":
+				artillery.append(id)
+			else:
+				infantry.append(id)
 		# Infantry, medics and flyers push up to the gate and suppress the walls, rams go
 		# for the gate, artillery shells it from range.
 		var out: Vector3 = LevelBuilder.SIDES[_wave_side].dir
@@ -101,12 +104,10 @@ func _push_keep(ids: Array) -> void:
 	# The keep is deep inside the mountain and only infiltrators can get to it. Chimps that make it
 	# in go raiding on their own (AttackerUnit._raid_target).
 	# Flyers hover over the breached side's gun deck, big units hold in front of that face
-	# (off to one side, clear of the tunnel), both picking off the defenders on it; rams go
-	# for any gate still standing.
+	# (off to one side, clear of the tunnel), both picking off the defenders on it.
 	var inside := []
 	var flyers := []
 	var big := []
-	var rams := []
 	for id in ids:
 		var u = commander.units.get(id)
 		if u == null:
@@ -115,8 +116,6 @@ func _push_keep(ids: Array) -> void:
 			inside.append(id)
 		elif u.is_flying():
 			flyers.append(id)
-		elif u.role == "siege":
-			rams.append(id)
 		else:
 			big.append(id)
 	var out: Vector3 = LevelBuilder.SIDES[_breached_side()].dir
@@ -124,11 +123,6 @@ func _push_keep(ids: Array) -> void:
 		commander.submit({"type": "attack", "units": inside, "target": level.keep.get_path()})
 	if not flyers.is_empty():
 		commander.submit({"type": "move", "units": flyers, "pos": out * (LevelBuilder.FACE_DIST - 8.0), "attack": true})
-	var standing: Array = level.gates.values().filter(func(g): return g.is_alive())
-	if not standing.is_empty() and not rams.is_empty():
-		commander.submit({"type": "attack", "units": rams, "target": standing[0].get_path()})
-	else:
-		big.append_array(rams)
 	if not big.is_empty():
 		var hold := out * (LevelBuilder.FACE_DIST + 16.0) + out.cross(Vector3.UP) * 14.0
 		commander.submit({"type": "move", "units": big, "pos": hold, "attack": true})
@@ -139,6 +133,23 @@ func _breached_side() -> String:
 		if not level.gates[side].is_alive():
 			return side
 	return _wave_side
+
+
+## Rams closing in on a gate ram it once it is within reach of the charge.
+func _ram_gates() -> void:
+	var by_gate := {}
+	for u in commander.units.values():
+		if not u.ram_ready() or u.order.type != "attack" or not RamCharge.is_gate(u.order.target):
+			continue
+		var gate: Structure = u.order.target
+		var reach: float = u.stats.ram_duration * u.stats.speed * u.stats.ram_speed * 0.6
+		if u.global_position.distance_to(gate.get_approach_point()) <= reach:
+			if not by_gate.has(gate):
+				by_gate[gate] = []
+			by_gate[gate].append(u.unit_id)
+	for gate in by_gate:
+		commander.submit({"type": "ram", "units": by_gate[gate]})
+		commander.submit({"type": "attack", "units": by_gate[gate], "target": gate.get_path()})
 
 
 ## Units with nothing to do look for the next objective.

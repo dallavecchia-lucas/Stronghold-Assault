@@ -134,6 +134,7 @@ func _autotest_step(delta: float) -> void:
 			var ids := commander.units.keys()
 			var gate: Structure = level.gates.values()[step % 3]
 			if gate.is_alive():
+				commander.submit({"type": "ram", "units": ids})
 				commander.submit({"type": "attack", "units": ids, "target": gate.get_path()})
 			else:
 				commander.submit({"type": "attack", "units": ids, "target": level.keep.get_path()})
