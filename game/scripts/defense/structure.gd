@@ -41,6 +41,15 @@ func get_aim_point() -> Vector3:
 	return global_position
 
 
+## Where attackers walk to: in front of a gate (it faces out along +Z), the keep itself.
+func get_approach_point() -> Vector3:
+	if buried:
+		return global_position
+	var p := global_position + global_basis.z * target_radius
+	p.y = 0.0
+	return p
+
+
 func recently_damaged(seconds := 3.0) -> bool:
 	return Time.get_ticks_msec() - last_damaged_msec < seconds * 1000.0
 

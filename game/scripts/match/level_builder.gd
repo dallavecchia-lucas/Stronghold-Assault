@@ -3,8 +3,14 @@ extends Node3D
 ## Builds the map: open field around the mountain stronghold (four bunker faces dug into
 ## one mountain, see tools/blender/build_stronghold.py), blast-door gates on three faces,
 ## the keep (reactor) in the core hall under the peak, defender posts on the gun decks and
-## roofs, and attacker spawn points. Everything static lives under the navigation region
-## so it gets baked into the navmesh.
+## roofs, forests and attacker spawn points. Everything static lives under the navigation
+## region so it gets baked into the navmesh.
+##
+## Only infiltrators (UnitTypes) get inside. The gate tunnels stay plugged on the navmesh
+## (LAYER_NAV_BLOCK) and a navigation link on NAV_INFILTRATORS opens through each gate once it
+## falls. The stair shafts and ladders are too tight for the navmesh, so every bay has two more
+## links: junction -> gun deck and gun deck -> roof. Each link carries the "route" its units
+## climb along (AttackerUnit._follow_route).
 
 signal navigation_ready
 
@@ -43,6 +49,28 @@ const SIDES := {
 ## Rifle posts on the gun decks: [side, bay].
 const RIFLE_POSTS := [["south", 2], ["south", 4], ["east", 2], ["west", 4], ["north", 3], ["east", 4]]
 const MORTAR_MOUNT := "MOUNT_AA_S3_1"
+## Navigation layer bit for the links only infiltrators may take.
+const NAV_INFILTRATORS := 2
+## Stair shaft and ladder in every bay, as [x along the bay, depth behind the front, floor height]
+## (tools/blender/build_stronghold.py). DECK_ROUTE: junction -> switchback stair -> deck landing
+## -> door B onto the gun deck. ROOF_ROUTE: gun deck -> door B -> upper flights -> top landing ->
+## ladder through hatch A -> roof.
+const DECK_ROUTE := [[4.8, 13.55, 2.8], [4.1, 12.875, 2.8], [-0.4, 12.875, 5.425], [-1.1, 13.55, 5.425],
+		[-0.4, 14.225, 5.425], [4.1, 14.225, 8.05], [4.8, 13.2, 8.05], [4.8, 12.0, 8.05], [4.8, 10.9, 8.05]]
+const ROOF_ROUTE := [[4.8, 10.9, 8.05], [4.8, 12.0, 8.05], [4.8, 13.2, 8.05], [4.1, 12.875, 8.05],
+		[0.8, 12.875, 9.975], [0.1, 13.55, 9.975], [0.8, 14.225, 9.975], [4.1, 14.225, 11.9],
+		[4.75, 12.7, 11.9], [4.75, 12.7, 15.05], [4.75, 11.0, 15.05]]
+## Door B's marker (EXIT_B_*) in those coordinates.
+const DOOR_B := Vector3(4.8, 11.125, 8.05)
+## The roofs are clear of the rock only this far either side of a face's middle (CUT_HALF): the
+## end bays' hatches open into the mountain.
+const ROOF_EXPOSED_HALF := 27.0
+## Forest groves as [center x, center z, radius]: off the attack lanes, dense with trees.
+const FORESTS := [[42.0, 140.0, 16.0], [-44.0, 150.0, 18.0], [135.0, 125.0, 24.0], [-130.0, 120.0, 22.0],
+		[145.0, -50.0, 20.0], [-140.0, -55.0, 20.0], [110.0, -140.0, 24.0], [-120.0, -135.0, 22.0]]
+## Ground per tree in a grove (m²), and the closest two grove trees stand.
+const FOREST_AREA_PER_TREE := 45.0
+const FOREST_TREE_SPACING := 4.5
 
 var nav_region: NavigationRegion3D
 var keep: Structure
@@ -62,7 +90,7 @@ func build() -> void:
 	nav_region = NavigationRegion3D.new()
 	var nm := NavigationMesh.new()
 	nm.geometry_parsed_geometry_type = NavigationMesh.PARSED_GEOMETRY_STATIC_COLLIDERS
-	nm.geometry_collision_mask = GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES
+	nm.geometry_collision_mask = GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES | GameConfig.LAYER_NAV_BLOCK
 	# Fine cells and a slim agent so the 2 m passages inside the bunker stay walkable.
 	nm.cell_size = 0.25
 	nm.cell_height = 0.25
@@ -82,6 +110,7 @@ func build() -> void:
 		if SIDES[side].gate:
 			_build_gate(side)
 	_seal_tunnels()
+	_build_climbs()
 	_build_keep()
 	_build_scenery()
 	_build_spawns()
@@ -213,6 +242,25 @@ func _marker(marker_name: String) -> Node3D:
 	return _stronghold.find_child(marker_name, true, false) as Node3D
 
 
+## True if `p` stands inside one of the forest groves.
+static func in_forest(p: Vector3) -> bool:
+	for f in FORESTS:
+		if Vector2(p.x - f[0], p.z - f[1]).length() <= f[2]:
+			return true
+	return false
+
+
+## Link for infiltrators only, along `route` (world points, walked or climbed in order).
+func _route_link(route: Array[Vector3]) -> NavigationLink3D:
+	var link := NavigationLink3D.new()
+	link.navigation_layers = NAV_INFILTRATORS
+	link.start_position = route[0]
+	link.end_position = route[-1]
+	link.set_meta("route", route)
+	add_child(link)
+	return link
+
+
 ## Steel door with hazard stripes, centered on `parent`, facing out along its +Z.
 func _blast_door(parent: Node3D, stripe_color: Color) -> void:
 	parent.add_child(Mats.box_mesh(DOOR_SIZE, Vector3.ZERO, Mats.flat(Color(0.2, 0.21, 0.22), 0.8, 0.4)))
@@ -238,9 +286,18 @@ func _build_gate(side: String) -> void:
 	_blast_door(visual, Color(0.8, 0.35, 0.08))
 	gate.visual = visual
 	gate.visual_half_height = DOOR_SIZE.y * 0.5
-	gate.destroyed.connect(func(_g): rebake_navigation())
 	nav_region.add_child(gate)
 	gates[side] = gate
+
+	# The tunnel stays plugged on the navmesh after the gate falls (nothing collides with the
+	# plug): only infiltrators go in, over the breach link it opens.
+	_nav_plug(gate.transform, DOOR_SIZE + Vector3(0.2, 0.2, 0.6))
+	var out := exit.global_basis.z
+	var breach := _route_link([exit.global_position + out * 3.0, exit.global_position - out * 3.5])
+	breach.enabled = false
+	breach.set_meta("breach", true)
+	breach.add_to_group("breaches")
+	gate.destroyed.connect(func(_g): breach.enabled = true)
 
 
 ## Every tunnel that isn't a gate gets a door that can't be broken.
@@ -262,6 +319,37 @@ func _seal_tunnels() -> void:
 		body.add_child(cs)
 		_blast_door(body, Color(0.12, 0.12, 0.13))
 		nav_region.add_child(body)
+
+
+## Box that only the navmesh sees (LAYER_NAV_BLOCK), centered on `xf`.
+func _nav_plug(xf: Transform3D, size: Vector3) -> void:
+	var plug := StaticBody3D.new()
+	plug.collision_layer = GameConfig.LAYER_NAV_BLOCK
+	plug.collision_mask = 0
+	plug.transform = xf
+	var cs := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = size
+	cs.shape = shape
+	plug.add_child(cs)
+	nav_region.add_child(plug)
+
+
+## Climbing links in every bay: junction -> gun deck and gun deck -> roof.
+func _build_climbs() -> void:
+	for door in _stronghold.find_children("EXIT_B_*", "", true, false):
+		_route_link(_bay_route(door, DECK_ROUTE))
+		var roof := _bay_route(door, ROOF_ROUTE)
+		if absf(roof[-1].dot(door.global_basis.x)) <= ROOF_EXPOSED_HALF:
+			_route_link(roof)
+
+
+## Bay coordinates (DECK_ROUTE / ROOF_ROUTE) to world points, via the bay's door B marker.
+func _bay_route(door: Node3D, points: Array) -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	for p in points:
+		out.append(door.global_transform * Vector3(p[0] - DOOR_B.x, p[2] - DOOR_B.z, DOOR_B.y - p[1]))
+	return out
 
 
 ## The keep is the reactor in the core hall under the peak. Attackers have to get inside
@@ -303,19 +391,13 @@ func _build_scenery() -> void:
 	for side in gates:
 		var out: Vector3 = SIDES[side].dir
 		lanes.append([out * FACE_DIST, out * MAP_HALF])
+	_build_forests(rng, lanes)
 	var placed := 0
 	var tries := 0
-	while placed < 140 and tries < 4000:
+	while placed < 100 and tries < 4000:
 		tries += 1
 		var p := Vector3(rng.randf_range(-MAP_HALF + 5, MAP_HALF - 5), 0, rng.randf_range(-MAP_HALF + 5, MAP_HALF - 5))
-		if absf(p.x) < MOUNTAIN_HALF + 4 and absf(p.z) < MOUNTAIN_HALF + 4:
-			continue
-		var blocked := false
-		for lane in lanes:
-			if _dist_to_segment(p, lane[0], lane[1]) < 18.0:
-				blocked = true
-				break
-		if blocked:
+		if _off_limits(p, lanes) or in_forest(p):
 			continue
 		if rng.randf() < 0.55:
 			_tree(p, rng)
@@ -323,6 +405,34 @@ func _build_scenery() -> void:
 			_rock(p, rng)
 		placed += 1
 	_build_ground_cover(rng)
+
+
+## Clear of the mountain and the attack lanes.
+func _off_limits(p: Vector3, lanes: Array) -> bool:
+	if absf(p.x) < MOUNTAIN_HALF + 4 and absf(p.z) < MOUNTAIN_HALF + 4:
+		return true
+	for lane in lanes:
+		if _dist_to_segment(p, lane[0], lane[1]) < 18.0:
+			return true
+	return false
+
+
+## Trees packed into every grove, never closer than FOREST_TREE_SPACING.
+func _build_forests(rng: RandomNumberGenerator, lanes: Array) -> void:
+	for f in FORESTS:
+		var centre := Vector3(f[0], 0, f[1])
+		var r: float = f[2]
+		var want := int(PI * r * r / FOREST_AREA_PER_TREE)
+		var trees: Array[Vector3] = []
+		for k in want * 20:
+			if trees.size() >= want:
+				break
+			var a := rng.randf() * TAU
+			var p := centre + Vector3(cos(a), 0, sin(a)) * r * sqrt(rng.randf())
+			if _off_limits(p, lanes) or trees.any(func(t): return t.distance_to(p) < FOREST_TREE_SPACING):
+				continue
+			trees.append(p)
+			_tree(p, rng)
 
 
 func _tree(p: Vector3, rng: RandomNumberGenerator) -> void:
@@ -413,6 +523,8 @@ func _build_stations() -> Array:
 		_place_facing_out(mg, side, mount.global_position + mount.global_basis.z * 0.6)
 		add_child(mg)
 		stations.append(mg)
+		# Raiders on the deck walk around the gun instead of into it.
+		_nav_plug(mg.transform.translated_local(Vector3.UP * 0.8), Vector3(1.4, 1.6, 1.4))
 
 	var mortar := _marker(MORTAR_MOUNT)
 	used.append(String(mortar.name))
@@ -424,6 +536,7 @@ func _build_stations() -> Array:
 	art.position = mortar.global_position
 	add_child(art)
 	stations.append(art)
+	_nav_plug(art.transform.translated_local(Vector3.UP * 0.8), Vector3(2.6, 1.6, 2.6))
 
 	# Riflemen on the gun decks, between a bay's two gun mounts and up against the parapet.
 	for i in RIFLE_POSTS.size():

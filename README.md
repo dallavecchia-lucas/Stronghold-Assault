@@ -21,7 +21,7 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
 
 - **Attacker wins** by destroying the Keep. **Defender wins** by holding for 10 minutes.
 
-**The map.** The stronghold is a mountain with a bunker dug into each of its four faces (`game/assets/stronghold/stronghold.glb`). The Keep is the reactor in the core hall under the peak. Attackers come from the south, east and west. Each of those faces has a blast-door gate on its middle ground tunnel; every other tunnel is welded shut. Once a gate is down, units that fit the tunnels (2.8 m high, 2 m wide passages inside) can walk in to the reactor. Big units, flyers and artillery can't reach it, so they fight outside. The defenders hold the gun decks and roofs: a machine gun over each gate, riflemen along the decks and the mortar on the south roof. The guns can't fire into the doorway right below them; the mortar covers it.
+**The map.** The stronghold is a mountain with a bunker dug into each of its four faces (`game/assets/stronghold/stronghold.glb`). The Keep is the reactor in the core hall under the peak. Attackers come from the south, east and west. Each of those faces has a blast-door gate on its middle ground tunnel; every other tunnel is welded shut. Once a gate is down, only Chimps and War Rams can get inside; everyone else fights from outside. Inside, they can also climb the stair shafts to the gun decks and the ladders to the roofs. Forest groves stand off to the sides of the attack lanes. The defenders hold the gun decks and roofs: a machine gun over each gate, riflemen along the decks and the mortar on the south roof. The guns can't fire into the doorway right below them; the mortar covers it.
 
 **Defender (first person)**
 - `1`–`9`: take over a post (machine guns, mortar, riflemen) · `Tab`: jump to the post with the most enemies nearby
@@ -43,7 +43,11 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
 - `K` Hippo Heavy Gunner: heavy, slow, sprays suppressive fire from mounted machine guns.
   - The guns are inaccurate: rounds land around the target and can hit whatever stands next to it. They fire for 8 s in total (resting cools them at the same rate), then overheat and go silent for 2 s.
   - `R` smoke screen: aim, then `LMB` to fire (`RMB` or `R` cancels). The cone shows where the curtain will stand (the green band at its tip). The hippo fires three grenades at once. Each one bursts high up, then drops and bursts twice more on the way down, leaving a tall pillar. Together the pillars make a curtain that blocks line of sight for both sides for 30 s. Cooldown is 90 s. With several hippos selected, the one closest to the cursor fires.
-- Models in, roles still to be designed (placeholder stats): `G` War Ram · `H` Savanna Signal Scout · `J` Night Ops Chimp · `L` Bison Field Gun · `Y` Armored Lioness · `U` Serpent Sniper
+- `J` Night Ops Chimp: fast melee fighter, and with the War Ram the only unit that can get inside the stronghold.
+  - Basic attack: melee, it strikes whatever is within arm's reach.
+  - Passive: moves 60% faster inside forests.
+  - Infiltration: once a gate is down, `RMB` next to it sends selected Chimps in. Inside, you lose control of them. They hunt the defenders anywhere in the stronghold, climbing to the gun decks and up the ladders to the roofs. When no defender is left standing, they wreck the machines: the gate machine guns and the mortar. Respawned defenders draw them back.
+- Models in, roles still to be designed (placeholder stats): `G` War Ram (can go inside through a broken gate; `RMB` next to it sends it to the Keep) · `H` Savanna Signal Scout · `L` Bison Field Gun · `Y` Armored Lioness · `U` Serpent Sniper
 - `Tab` cycles spawn point · `Ctrl+1`–`5` save a group, `1`–`5` recall it
 - Camera: `WASD`/arrows/screen edge to pan, `Q`/`E` or middle mouse to rotate, wheel to zoom
 - `Esc` pauses (both sides)

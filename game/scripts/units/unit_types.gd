@@ -8,6 +8,7 @@ extends RefCounted
 ##   "artillery" lobs explosive shells, no line of sight needed, has a minimum range
 ##   "healer"    doesn't fight, heals the most damaged ally in range
 ##   "flying"    ignores walls and pathfinding, hovers at FLY_HEIGHT
+##   "melee"     strikes whatever is within reach (range), no line of sight needed
 ##   "anti_air"  no basic attack. Passive: locks onto one enemy flyer within aa_range and
 ##               chips at it (aa_dps) until it dies or leaves. Active: cluster bombing (rhino)
 ##               or a missile salvo (elephant).
@@ -29,6 +30,12 @@ extends RefCounted
 ##   smoke_min_range to smoke_range away. Each bursts at smoke_height, then drops and bursts twice
 ##   more on the way down, leaving a pillar of smoke_radius clouds. The curtain blocks line of
 ##   sight for smoke_duration seconds.
+## infiltrator: one of the only units that can get inside the stronghold, through a broken gate.
+##   Infiltrators also climb the stair shafts to the gun decks and the ladders to the roofs.
+## raider: once inside, the player loses control of it. It hunts the defenders in the stronghold
+##   and, when none are left standing, goes up to the gun decks and roofs to wreck the machines.
+## forest_speed: movement speed multiplier inside a forest (LevelBuilder.FORESTS).
+## climb_speed: m/s up and down stairs and ladders.
 ## structure_mult: damage multiplier against gates / the keep.
 ## anim: procedural animation style until models are rigged (walk, hop, stomp, hover, roll),
 ##   or "rigged" to play the model's own clips: anim_move / anim_idle, with the move clip
@@ -97,12 +104,21 @@ const DATA := {
 		"role": "siege", "anim": "roll", "hotkey": KEY_M,
 		"model": "ram",
 	},
+	"chimp": {
+		"name": "Night Ops Chimp", "cost": 80, "hp": 160.0, "speed": 5.5,
+		"range": 1.8, "damage": 30.0, "fire_interval": 0.7, "spread": 0.0,
+		"structure_mult": 0.3, "radius": 0.5, "height": 1.7,
+		"role": "melee", "anim": "rigged", "hotkey": KEY_J,
+		"anim_move": "Running", "anim_idle": "Idle", "anim_ref_speed": 4.5,
+		"infiltrator": true, "raider": true, "forest_speed": 1.6, "climb_speed": 4.0,
+		"model": "res://assets/units/night_ops_chimpanzee/night_ops_chimpanzee_rigged.glb",
+	},
 	# ---- Placeholder stats: models are in, roles still to be designed.
 	"war_ram": {
 		"name": "War Ram", "cost": 80, "hp": 150.0, "speed": 5.5,
 		"range": 24.0, "damage": 9.0, "fire_interval": 0.5, "spread": 0.04,
 		"structure_mult": 0.5, "radius": 0.6, "height": 1.6,
-		"role": "infantry", "anim": "rigged", "hotkey": KEY_G,
+		"role": "infantry", "anim": "rigged", "hotkey": KEY_G, "infiltrator": true,
 		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 3.0,
 		"model": "res://assets/units/war_ram/war_ram_rigged.glb",
 	},
@@ -112,14 +128,6 @@ const DATA := {
 		"structure_mult": 0.3, "radius": 0.8, "height": 4.5,
 		"role": "infantry", "anim": "stomp", "hotkey": KEY_H,
 		"model": "res://assets/units/savanna_signal_scout/savanna_signal_scout_rigged.glb",
-	},
-	"chimp": {
-		"name": "Night Ops Chimp", "cost": 70, "hp": 110.0, "speed": 5.5,
-		"range": 24.0, "damage": 10.0, "fire_interval": 0.55, "spread": 0.04,
-		"structure_mult": 0.5, "radius": 0.5, "height": 1.7,
-		"role": "infantry", "anim": "rigged", "hotkey": KEY_J,
-		"anim_move": "Running", "anim_idle": "Idle", "anim_ref_speed": 4.5,
-		"model": "res://assets/units/night_ops_chimpanzee/night_ops_chimpanzee_rigged.glb",
 	},
 	"bison_gun": {
 		"name": "Bison Field Gun", "cost": 260, "hp": 600.0, "speed": 3.0,
