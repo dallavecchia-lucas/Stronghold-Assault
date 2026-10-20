@@ -10,6 +10,8 @@ extends Node
 ##   {"type": "move", "units": [ids], "pos": Vector3, "attack": bool}
 ##   {"type": "attack", "units": [ids], "target": NodePath}
 ##   {"type": "cluster", "units": [ids], "pos": Vector3}   rhinos bomb around pos (RhinoAim)
+##   {"type": "smoke", "units": [ids], "pos": Vector3}   the ready hippo closest to pos lays a
+##                                                     smoke screen toward it (HippoSmoke)
 ##   {"type": "scout", "units": [ids]}   toggle scout formation: the rhinos in the selection
 ##                                       ring the rest of it so their anti-air covers the mass
 
@@ -57,6 +59,8 @@ func submit(cmd: Dictionary) -> int:
 			_attack(cmd.units, cmd.target)
 		"cluster":
 			_cluster(cmd.units, cmd.pos)
+		"smoke":
+			_smoke(cmd.units, cmd.pos)
 		"scout":
 			_toggle_scout(cmd.units)
 	return 0
@@ -110,6 +114,12 @@ func _cluster(ids: Array, pos: Vector3) -> void:
 	var aims := RhinoAim.solve(rhinos, pos)
 	for i in rhinos.size():
 		rhinos[i].start_cluster(aims[i])
+
+
+func _smoke(ids: Array, pos: Vector3) -> void:
+	var hippo := HippoSmoke.pick(_resolve(ids).filter(func(u): return u.smoke_ready()), pos)
+	if hippo:
+		hippo.start_smoke(pos)
 
 
 # ---------------------------------------------------------------- scout formation

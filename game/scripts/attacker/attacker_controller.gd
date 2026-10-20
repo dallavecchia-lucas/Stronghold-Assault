@@ -7,10 +7,14 @@ extends CanvasLayer
 ## Ctrl+RMB: move without stopping to fight · Ctrl+1-5 assign group · 1-5 recall
 ## Z X C V B N M G H J K L Y U I: spawn units · Tab: cycle spawn point
 ## F: aim the selected rhinos' cluster bombing (LMB fire, RMB/F cancel) · T: scout formation
+## R: aim a selected hippo's smoke screen (LMB fire, RMB/R cancel)
 
 const DRAG_THRESHOLD := 6.0
 const CLUSTER_KEY := KEY_F
 const SCOUT_KEY := KEY_T
+const SMOKE_KEY := KEY_R
+const SMOKE_FILL := Color(0.2, 0.9, 0.6, 0.35)
+const SMOKE_LINE := Color(0.3, 1.0, 0.7)
 
 var level: LevelBuilder
 var commander: AttackerCommander
@@ -29,10 +33,14 @@ var _selection_label: Label
 var _spawn_buttons := {}
 var _spawn_point_buttons: Array[Button] = []
 var _marker: MeshInstance3D
-## Cluster bombing aim mode: preview of every rhino's aim zone and where its bombs will land.
-var _aiming := false
+## Ability aim mode: "" (off), "cluster" (rhinos) or "smoke" (hippos).
+## Cluster: preview of every rhino's aim zone and where its bombs will land.
+## Smoke: the firing hippo's aim cone, with the band where the curtain will stand.
+var _aiming := ""
 var _aim_preview: MeshInstance3D
 var _aim_mesh: ImmediateMesh
+var _smoke_preview: MeshInstance3D
+var _smoke_mesh: ImmediateMesh
 
 
 func _ready() -> void:
@@ -46,6 +54,7 @@ func _ready() -> void:
 	commander.unit_died.connect(func(u): selected.erase(u))
 	_build_marker()
 	_build_aim_preview()
+	_build_smoke_preview()
 	_build_hud()
 
 
@@ -58,11 +67,14 @@ func restore_mouse() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if get_tree().paused:
 		return
-	if _aiming and event is InputEventMouseButton and event.pressed:
+	if _aiming != "" and event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_LEFT:
-			_fire_cluster(event.position)
+			if _aiming == "cluster":
+				_fire_cluster(event.position)
+			else:
+				_fire_smoke(event.position)
 		if event.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT]:
-			_set_aiming(false)
+			_set_aiming("")
 			return
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
@@ -89,7 +101,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			_select_rect.visible = true
 	elif event is InputEventKey and event.pressed and not event.echo:
 		if event.physical_keycode == CLUSTER_KEY:
-			_set_aiming(not _aiming and not _ready_rhinos().is_empty())
+			_set_aiming("cluster" if _aiming != "cluster" and not _ready_rhinos().is_empty() else "")
+			return
+		if event.physical_keycode == SMOKE_KEY:
+			_set_aiming("smoke" if _aiming != "smoke" and not _ready_hippos().is_empty() else "")
 			return
 		if event.physical_keycode == SCOUT_KEY:
 			_alive_selection()
@@ -180,9 +195,10 @@ func _ready_rhinos() -> Array:
 	return selected.filter(func(u): return u.cluster_ready())
 
 
-func _set_aiming(on: bool) -> void:
-	_aiming = on
-	_aim_preview.visible = on
+func _set_aiming(mode: String) -> void:
+	_aiming = mode
+	_aim_preview.visible = mode == "cluster"
+	_smoke_preview.visible = mode == "smoke"
 
 
 func _fire_cluster(screen_pos: Vector2) -> void:
@@ -207,7 +223,7 @@ func _build_aim_preview() -> void:
 func _update_aim_preview() -> void:
 	var rhinos := _ready_rhinos()
 	if rhinos.is_empty():
-		_set_aiming(false)
+		_set_aiming("")
 		return
 	_aim_mesh.clear_surfaces()
 	var hit := _ray(get_viewport().get_mouse_position(), GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES)
@@ -223,6 +239,45 @@ func _update_aim_preview() -> void:
 		_aim_mesh.surface_add_vertex(r.global_position + lift)
 		_aim_mesh.surface_add_vertex(aims[i] + lift)
 	_aim_mesh.surface_end()
+
+
+# ---------------------------------------------------------------- hippo smoke screen
+
+func _ready_hippos() -> Array:
+	_alive_selection()
+	return selected.filter(func(u): return u.smoke_ready())
+
+
+func _fire_smoke(screen_pos: Vector2) -> void:
+	var hit := _ray(screen_pos, GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES)
+	var hippos := _ready_hippos()
+	if hit.is_empty() or hippos.is_empty():
+		return
+	commander.submit({"type": "smoke", "units": hippos.map(func(u): return u.unit_id), "pos": hit.position})
+	_ping(hit.position, SMOKE_LINE)
+
+
+func _build_smoke_preview() -> void:
+	_smoke_mesh = ImmediateMesh.new()
+	_smoke_preview = MeshInstance3D.new()
+	_smoke_preview.mesh = _smoke_mesh
+	_smoke_preview.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_smoke_preview.visible = false
+	level.add_child(_smoke_preview)
+
+
+func _update_smoke_preview() -> void:
+	var hippos := _ready_hippos()
+	if hippos.is_empty():
+		_set_aiming("")
+		return
+	_smoke_mesh.clear_surfaces()
+	var hit := _ray(get_viewport().get_mouse_position(), GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES)
+	if hit.is_empty():
+		return
+	var hippo := HippoSmoke.pick(hippos, hit.position)
+	HippoSmoke.draw_preview(_smoke_mesh, hippo, HippoSmoke.solve(hippo, hit.position),
+			Mats.unshaded(SMOKE_FILL, true), Mats.unshaded(SMOKE_LINE, true))
 
 
 func spawn(type_id: String) -> void:
@@ -328,7 +383,7 @@ func _build_hud() -> void:
 	row.add_child(sp)
 	set_spawn_point(0)
 
-	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation",
+	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)",
 			13, Color(0.85, 0.85, 0.85, 0.75))
 	help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	help.grow_vertical = Control.GROW_DIRECTION_BEGIN
@@ -349,7 +404,21 @@ func _process(_delta: float) -> void:
 			_selection_label.text += "  %ds" % ceili(soonest)
 		if rhinos.any(func(u): return commander.is_scouting(u)):
 			_selection_label.text += "\nScout formation [T]"
-	if _aiming:
+	var hippos := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_smoke())
+	if not hippos.is_empty():
+		var ready := hippos.filter(func(u): return u.smoke_ready()).size()
+		_selection_label.text += "\nSmoke screen %d/%d [R]" % [ready, hippos.size()]
+		if ready == 0:
+			var soonest: float = hippos.map(func(u): return u.smoke_cd).min()
+			_selection_label.text += "  %ds" % ceili(soonest)
+		if hippos.any(func(u): return u.is_overheated()):
+			_selection_label.text += "\nGuns overheated"
+		else:
+			var hottest: float = hippos.map(func(u): return u.heat / u.stats.overheat_time).max()
+			_selection_label.text += "\nGuns heat %d%%" % int(hottest * 100.0)
+	if _aiming == "cluster":
 		_update_aim_preview()
+	elif _aiming == "smoke":
+		_update_smoke_preview()
 	for type_id in _spawn_buttons:
 		_spawn_buttons[type_id].disabled = not commander.can_afford(type_id)

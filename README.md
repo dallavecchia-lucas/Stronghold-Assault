@@ -37,7 +37,10 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
   - Passive anti-air: locks onto one enemy flyer in its dashed ring and stays on it until it dies or leaves. One rhino is weak; it takes about five to bring a flyer down fast.
   - `F` cluster bombing: aim, then `LMB` to fire (`RMB` or `F` cancels). Each rhino shells a spot inside its 40 m zone for 8 s. Cooldown is 45 s. With several rhinos selected, the preview shows where each one's bombs will land. Rhinos that were moved together keep their formation's shape. Scattered rhinos aim as close to the cursor as their zones allow and spread around it instead of piling onto one spot.
   - `T` scout formation: with rhinos and other units selected, the rhinos ring the outside of the group so their anti-air covers it. Orders to the whole group keep the ring. Ordering a rhino on its own takes it out of the ring, and `T` again turns it off.
-- Models in, roles still to be designed (placeholder stats): `G` War Ram · `H` Savanna Signal Scout · `J` Night Ops Chimp · `K` Hippo Heavy Gunner · `L` Bison Field Gun · `Y` Armored Lioness · `U` Serpent Sniper
+- `K` Hippo Heavy Gunner: heavy, slow, sprays suppressive fire from mounted machine guns.
+  - The guns are inaccurate: rounds land around the target and can hit whatever stands next to it. They fire for 8 s in total (resting cools them at the same rate), then overheat and go silent for 2 s.
+  - `R` smoke screen: aim, then `LMB` to fire (`RMB` or `R` cancels). The cone shows where the curtain will stand (the green band at its tip). The hippo fires three grenades at once. Each one bursts high up, then drops and bursts twice more on the way down, leaving a tall pillar. Together the pillars make a curtain that blocks line of sight for both sides for 30 s. Cooldown is 90 s. With several hippos selected, the one closest to the cursor fires.
+- Models in, roles still to be designed (placeholder stats): `G` War Ram · `H` Savanna Signal Scout · `J` Night Ops Chimp · `L` Bison Field Gun · `Y` Armored Lioness · `U` Serpent Sniper
 - `Tab` cycles spawn point · `Ctrl+1`–`5` save a group, `1`–`5` recall it
 - Camera: `WASD`/arrows/screen edge to pan, `Q`/`E` or middle mouse to rotate, wheel to zoom
 - `Esc` pauses (both sides)

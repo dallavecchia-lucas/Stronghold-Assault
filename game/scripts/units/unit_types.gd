@@ -12,6 +12,14 @@ extends RefCounted
 ##               chips at it (aa_dps) until it dies or leaves. Active: cluster bombing.
 ## cluster_*: cluster bombing ability. Fires a shell every cluster_interval for cluster_duration
 ##   seconds at a ground point within cluster_range, scattered over cluster_spread.
+## suppress_radius: shots are aimed at a random point this far around the target, so the spray
+##   can hit whatever stands next to it.
+## overheat_*: the guns fire for overheat_time seconds in total (resting cools them at the same
+##   rate), then overheat and stay silent for overheat_cooldown seconds.
+## smoke_*: smoke screen ability. Three grenades land side by side, smoke_spacing apart, on an arc
+##   smoke_min_range to smoke_range away. Each bursts at smoke_height, then drops and bursts twice
+##   more on the way down, leaving a pillar of smoke_radius clouds. The curtain blocks line of
+##   sight for smoke_duration seconds.
 ## structure_mult: damage multiplier against gates / the keep.
 ## anim: procedural animation style until models are rigged (walk, hop, stomp, hover, roll),
 ##   or "rigged" to play the model's own clips: anim_move / anim_idle, with the move clip
@@ -99,14 +107,6 @@ const DATA := {
 		"anim_move": "Running", "anim_idle": "Idle", "anim_ref_speed": 4.5,
 		"model": "res://assets/units/night_ops_chimpanzee/night_ops_chimpanzee_rigged.glb",
 	},
-	"hippo": {
-		"name": "Hippo Heavy Gunner", "cost": 260, "hp": 1000.0, "speed": 3.2,
-		"range": 26.0, "damage": 8.0, "fire_interval": 0.15, "spread": 0.05,
-		"structure_mult": 1.0, "radius": 1.4, "height": 2.6,
-		"role": "infantry", "anim": "rigged", "hotkey": KEY_K,
-		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 2.4,
-		"model": "res://assets/units/hippopotamus_heavy_gunner/hippopotamus_heavy_gunner_rigged.glb",
-	},
 	"bison_gun": {
 		"name": "Bison Field Gun", "cost": 260, "hp": 600.0, "speed": 3.0,
 		"range": 40.0, "damage": 40.0, "fire_interval": 2.0, "spread": 0.02,
@@ -142,5 +142,17 @@ const DATA := {
 		"cluster_range": 40.0, "cluster_duration": 8.0, "cluster_cooldown": 45.0,
 		"cluster_interval": 0.25, "cluster_damage": 28.0, "cluster_splash": 3.5, "cluster_spread": 6.0,
 		"model": "res://assets/units/armored_rhino_unit/armored_rhino_unit_rigged.glb",
+	},
+	"hippo": {
+		"name": "Hippo Heavy Gunner", "cost": 260, "hp": 1000.0, "speed": 3.2,
+		"range": 26.0, "damage": 8.0, "fire_interval": 0.12, "spread": 0.02,
+		"structure_mult": 1.0, "radius": 1.4, "height": 2.6,
+		"role": "infantry", "anim": "rigged", "hotkey": KEY_K,
+		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 2.4,
+		# Mounted machine guns: inaccurate suppressive fire that sprays around the target.
+		"suppress_radius": 2.2, "overheat_time": 8.0, "overheat_cooldown": 2.0,
+		"smoke_cooldown": 90.0, "smoke_range": 32.0, "smoke_min_range": 10.0,
+		"smoke_duration": 30.0, "smoke_spacing": 6.0, "smoke_radius": 3.5, "smoke_height": 10.0,
+		"model": "res://assets/units/hippopotamus_heavy_gunner/hippopotamus_heavy_gunner_rigged.glb",
 	},
 }
