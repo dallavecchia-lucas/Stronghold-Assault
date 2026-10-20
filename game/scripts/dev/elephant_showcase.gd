@@ -9,7 +9,7 @@ extends Node3D
 ## aims salvos and only as many elephants fire as each kill takes). Each quits when it is over.
 ## The defenders have no aircraft yet, so TargetDrones stand in for them.
 
-const LENGTH := {"walk": 15.0, "flak": 17.0, "missiles": 16.0}
+const LENGTH := {"walk": 15.0, "flak": 15.5, "missiles": 16.0}
 ## Where the shots take place: the open lane in front of the south gate.
 const SPOT := Vector3(-8, 0, 152)
 
@@ -152,7 +152,11 @@ func _follow(u: Node3D) -> void:
 
 
 func _flak_step() -> void:
-	# Drones fly in from the mountain, then circle over the elephants.
+	# Drones fly in from the mountain, then circle over the elephants. A straggler follows.
+	if t > 5.5 and drones.size() == 3:
+		var late := _drone(150.0, SPOT + Vector3(6, 0, -66))
+		late.heading = Vector3(0, 0, 1)
+		late.speed = 9.0
 	for d in drones:
 		if is_instance_valid(d) and d.heading != Vector3.ZERO:
 			var off := d.global_position - SPOT
@@ -163,13 +167,14 @@ func _flak_step() -> void:
 				d.radius = off.length()
 				d.angle = atan2(off.z, off.x)
 				d.speed = 8.0 if off.x >= 0.0 else -8.0
-	# Low behind the hero looking up past its guns, then beside it, then wide.
+	# Low behind the hero looking up past its guns as the drones come in; cut to beside it,
+	# looking up at the barrels; cut to both elephants from the sunlit side.
 	var shots := [[0.0, Vector3(-5.5, 1.5, 7.5), Vector3(2.0, 7.0, -14.0)],
-			[6.0, Vector3(-5.5, 1.5, 7.5), Vector3(2.0, 7.0, -14.0)],
-			[8.0, Vector3(-9.5, 1.3, -3.0), Vector3(0.0, 6.0, -3.0)],
-			[12.0, Vector3(-9.5, 1.3, -3.0), Vector3(0.0, 6.5, -1.0)],
-			[14.0, Vector3(12.0, 4.5, 14.0), Vector3(-1.0, 7.0, -6.0)],
-			[17.0, Vector3(12.0, 4.5, 14.0), Vector3(-1.0, 7.0, -6.0)]]
+			[5.5, Vector3(-5.5, 1.5, 7.5), Vector3(2.0, 7.0, -14.0)],
+			[5.501, Vector3(-9.5, 1.3, -3.0), Vector3(0.0, 6.0, -3.0)],
+			[10.5, Vector3(-9.0, 1.4, -1.0), Vector3(0.0, 6.5, -1.0)],
+			[10.501, Vector3(11.0, 1.7, 9.0), Vector3(-4.0, 5.0, 1.0)],
+			[15.5, Vector3(12.5, 2.0, 10.5), Vector3(-4.0, 5.5, 1.0)]]
 	var k := 0
 	while k < shots.size() - 2 and t > shots[k + 1][0]:
 		k += 1
