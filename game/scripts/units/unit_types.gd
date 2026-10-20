@@ -4,7 +4,6 @@ extends RefCounted
 ##
 ## role:
 ##   "infantry"  shoots defenders, falls back to gates/keep when nothing else is in range
-##   "siege"     only attacks buildings, in melee (ram)
 ##   "artillery" lobs explosive shells, no line of sight needed, has a minimum range
 ##   "healer"    doesn't fight, heals the most damaged ally in range
 ##   "flying"    ignores walls and pathfinding, hovers at FLY_HEIGHT
@@ -30,6 +29,12 @@ extends RefCounted
 ##   smoke_min_range to smoke_range away. Each bursts at smoke_height, then drops and bursts twice
 ##   more on the way down, leaving a pillar of smoke_radius clouds. The curtain blocks line of
 ##   sight for smoke_duration seconds.
+## pellets: shotgun. Each shot is this many pellets, spread over a cone of `spread` radians.
+## ram_*: ram ability (Breaching Ram). A surge to ram_speed times its speed for ram_duration
+##   seconds, reused after ram_cooldown. Enemy soldiers it runs over lose ram_trample_damage and are
+##   tossed away at ram_toss m/s. Ordered at a ground gate while ramming, up to ram_gate_slots rams
+##   charge it side by side and slam into it once each for ram_gate_damage; the others call their
+##   ram off (RamCharge).
 ## infiltrator: one of the only units that can get inside the stronghold, through a broken gate.
 ##   Infiltrators also climb the stair shafts to the gun decks and the ladders to the roofs.
 ## raider: once inside, the player loses control of it. It hunts the defenders in the stronghold
@@ -41,10 +46,10 @@ extends RefCounted
 ##   or "rigged" to play the model's own clips: anim_move / anim_idle, with the move clip
 ##   sped up or slowed to match ground speed relative to anim_ref_speed (m/s).
 ## steer: only move where the model faces, turning at turn_rate (rad/s), no strafing.
-## model: path to a processed GLB (front facing +Z, feet at origin), or "ram" for the built-in mesh.
+## model: path to a processed GLB (front facing +Z, feet at origin).
 
 const ORDER := ["rifleman", "kangaroo", "medic", "talon", "elephant", "mule", "breacher",
-		"war_ram", "giraffe", "chimp", "hippo", "bison_gun", "lioness", "serpent", "rhino"]
+		"giraffe", "chimp", "hippo", "bison_gun", "lioness", "serpent", "rhino"]
 const FLY_HEIGHT := 16.0
 
 const DATA := {
@@ -98,11 +103,16 @@ const DATA := {
 		"model": "res://assets/units/cyber_mule_artillery/cyber_mule_artillery.glb",
 	},
 	"breacher": {
-		"name": "Breaching Ram", "cost": 220, "hp": 700.0, "speed": 2.8,
-		"range": 3.5, "damage": 70.0, "fire_interval": 1.6, "spread": 0.0,
-		"structure_mult": 4.0, "radius": 1.4, "height": 2.2,
-		"role": "siege", "anim": "roll", "hotkey": KEY_M,
-		"model": "ram",
+		"name": "Breaching Ram", "cost": 150, "hp": 420.0, "speed": 5.0,
+		"range": 7.0, "damage": 7.0, "fire_interval": 1.1, "spread": 0.14,
+		"structure_mult": 1.0, "radius": 0.6, "height": 1.6,
+		"role": "infantry", "anim": "rigged", "hotkey": KEY_M, "infiltrator": true,
+		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 3.0,
+		# Big horn sheep with a shotgun: a blast of pellets into a small cone in front of it.
+		"pellets": 7,
+		"ram_duration": 6.0, "ram_cooldown": 60.0, "ram_speed": 2.2,
+		"ram_trample_damage": 55.0, "ram_toss": 9.0, "ram_gate_damage": 350.0, "ram_gate_slots": 3,
+		"model": "res://assets/units/war_ram/war_ram_rigged.glb",
 	},
 	"chimp": {
 		"name": "Night Ops Chimp", "cost": 80, "hp": 160.0, "speed": 5.5,
@@ -114,14 +124,6 @@ const DATA := {
 		"model": "res://assets/units/night_ops_chimpanzee/night_ops_chimpanzee_rigged.glb",
 	},
 	# ---- Placeholder stats: models are in, roles still to be designed.
-	"war_ram": {
-		"name": "War Ram", "cost": 80, "hp": 150.0, "speed": 5.5,
-		"range": 24.0, "damage": 9.0, "fire_interval": 0.5, "spread": 0.04,
-		"structure_mult": 0.5, "radius": 0.6, "height": 1.6,
-		"role": "infantry", "anim": "rigged", "hotkey": KEY_G, "infiltrator": true,
-		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 3.0,
-		"model": "res://assets/units/war_ram/war_ram_rigged.glb",
-	},
 	"giraffe": {
 		"name": "Savanna Signal Scout", "cost": 100, "hp": 160.0, "speed": 5.0,
 		"range": 30.0, "damage": 6.0, "fire_interval": 0.6, "spread": 0.04,

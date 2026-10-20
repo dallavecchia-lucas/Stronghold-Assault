@@ -6,8 +6,8 @@ extends CharacterBody3D
 ##   {"type": "attack_move", "pos": Vector3}   go there, fight anything in range
 ##   {"type": "attack", "target": Node3D}      chase and destroy a specific target
 ##   {"type": "raid"}                          raider inside the stronghold, on its own (_raid_target)
-## Behaviour differences per unit come from UnitTypes role (infantry, melee, siege,
-## artillery, healer, flying, anti_air).
+## Behaviour differences per unit come from UnitTypes role (infantry, melee, artillery,
+## healer, flying, anti_air).
 
 signal died(unit: AttackerUnit)
 
@@ -19,6 +19,10 @@ const BREACH_REACH := 12.0
 const INSIDE_RADIUS := 0.35
 ## Ledges infiltrators step up onto (the step between the stronghold's corridors and halls).
 const STEP_HEIGHT := 0.4
+## How far past its own radius a ramming unit runs enemy soldiers over.
+const TRAMPLE_REACH := 0.7
+## Seconds before a ram can run over the same soldier again.
+const TRAMPLE_REPEAT := 1.0
 
 static var _scenes := {}
 
@@ -40,6 +44,16 @@ var smoke_cd := 0.0
 var missile_cd := 0.0
 ## Seconds of firing the guns have built up toward overheat_time.
 var heat := 0.0
+## Seconds until the ram can be used again.
+var ram_cd := 0.0
+## Gate this ram is charging (RamCharge), and its slot across the doorway.
+var charge_gate: Structure = null:
+	set(g):
+		charge_gate = g
+		if _agent:
+			# Chargers run straight for their slots: avoidance would jam them in the doorway.
+			_agent.avoidance_enabled = g == null and is_alive() and not is_flying()
+var charge_slot := 0
 ## Raider inside the stronghold: fights on its own and takes no more orders.
 var raiding := false
 var selected := false:
@@ -68,6 +82,12 @@ var _cluster_left := 0.0
 var _cluster_cd_shot := 0.0
 var _cluster_aim := Vector3.ZERO
 var _overheat_left := 0.0
+var _ram_left := 0.0
+var _charge_pos := Vector3.ZERO
+## Soldiers run over during this ram: instance id -> msec, so each is hit once per pass.
+var _trampled := {}
+var _dust_cd := 0.0
+var _butt := 0.0
 var _wisp_cd := 0.0
 var _hp_bar: Node3D
 var _hp_fill: MeshInstance3D
@@ -98,7 +118,7 @@ func is_flying() -> bool:
 	return role == "flying"
 
 
-## Chimps and war rams are the only units that get inside the stronghold.
+## Chimps and breaching rams are the only units that get inside the stronghold.
 func fits_inside() -> bool:
 	return stats.get("infiltrator", false)
 
@@ -151,6 +171,27 @@ func in_missile_range(t: Node3D) -> bool:
 	return Vector2(d.x, d.z).length() <= stats.missile_range
 
 
+func has_ram() -> bool:
+	return stats.has("ram_cooldown")
+
+
+func ram_ready() -> bool:
+	return has_ram() and ram_cd <= 0.0 and is_alive()
+
+
+func is_ramming() -> bool:
+	return _ram_left > 0.0
+
+
+func ram_left() -> float:
+	return _ram_left
+
+
+## How far the ram still carries it: a charge at a gate further than this can't make it in time.
+func ram_reach() -> float:
+	return _ram_left * stats.speed * stats.ram_speed
+
+
 func _ready() -> void:
 	add_to_group("damageable")
 	add_to_group("attacker_units")
@@ -201,6 +242,7 @@ func _ready() -> void:
 func set_order(o: Dictionary) -> void:
 	if raiding:
 		return
+	charge_gate = null  # a new order calls off a charge (RamCharge hands slots out after this)
 	# Only infiltrators can reach the keep: the rest close in on the nearest broken gate.
 	if o.type == "attack" and o.target.get("buried") and not fits_inside():
 		var gate := _nearest_breach()
@@ -286,6 +328,7 @@ func _die() -> void:
 	remove_from_group("attacker_units")
 	remove_from_group("air_units")
 	_cluster_left = 0.0
+	end_ram()
 	_route.clear()
 	_end_salvo()
 	if _turrets:
@@ -350,15 +393,14 @@ func _update_target() -> void:
 
 
 func _find_enemy() -> Node3D:
-	if role != "siege":
-		var candidates := []
-		for d in get_tree().get_nodes_in_group("defender_targets"):
-			if d.is_alive() and _in_range(d):
-				candidates.append([global_position.distance_to(d.global_position), d])
-		candidates.sort_custom(func(a, b): return a[0] < b[0])
-		for c in candidates.slice(0, 3):
-			if _can_see(c[1]):
-				return c[1]
+	var candidates := []
+	for d in get_tree().get_nodes_in_group("defender_targets"):
+		if d.is_alive() and _in_range(d):
+			candidates.append([global_position.distance_to(d.global_position), d])
+	candidates.sort_custom(func(a, b): return a[0] < b[0])
+	for c in candidates.slice(0, 3):
+		if _can_see(c[1]):
+			return c[1]
 	var best: Node3D = null
 	var best_d := INF
 	for s in get_tree().get_nodes_in_group("structures"):
@@ -413,9 +455,6 @@ func _fire_at(t: Node3D) -> void:
 			var to := t.global_position - global_position
 			to.y = 0.0
 			Combat.spawn_impact(self, global_position + to.normalized() * (stats.radius + 0.5) + Vector3.UP * stats.height * 0.6, true)
-		"siege":
-			t.take_damage(stats.damage * stats.structure_mult, team)
-			Combat.spawn_impact(self, global_position + (t.global_position - global_position).normalized() * 2.5 + Vector3.UP, true)
 		"artillery":
 			var aim := Combat.aim_point(t)
 			var scatter: float = global_position.distance_to(aim) * stats.spread
@@ -436,8 +475,10 @@ func _fire_at(t: Node3D) -> void:
 				var r: float = stats.suppress_radius * sqrt(randf())
 				var a := randf() * TAU
 				aim += Vector3(cos(a) * r, randf_range(-0.4, 0.4) * stats.suppress_radius, sin(a) * r)
-			Combat.fire_hitscan(self, _eye(), aim, stats.spread, stats.damage, team,
-					stats.structure_mult, [get_rid()])
+			# Shotguns fire a blast of pellets, each on its own line within the cone.
+			for _pellet in stats.get("pellets", 1):
+				Combat.fire_hitscan(self, _eye(), aim, stats.spread, stats.damage, team,
+						stats.structure_mult, [get_rid()])
 
 
 ## Medic: patch up the most hurt ally in range.
@@ -628,6 +669,89 @@ func _heat_tick(delta: float, firing: bool) -> void:
 		heat = maxf(heat - delta, 0.0)
 
 
+## Breaching Ram active: a surge of speed for ram_duration seconds. False while on cooldown.
+func start_ram() -> bool:
+	if not ram_ready():
+		return false
+	ram_cd = stats.ram_cooldown
+	_ram_left = stats.ram_duration
+	_trampled.clear()
+	_agent.max_speed = _speed()
+	return true
+
+
+func end_ram() -> void:
+	_ram_left = 0.0
+	charge_gate = null
+	if _agent:
+		_agent.max_speed = _speed()
+
+
+## Charge `gate` from `slot` across its doorway (RamCharge.allocate).
+func charge(gate: Structure, slot: int) -> void:
+	charge_gate = gate
+	charge_slot = slot
+	_charge_pos = RamCharge.slot_position(gate, slot, stats.ram_gate_slots)
+
+
+func _ram_tick(delta: float) -> void:
+	_ram_left -= delta
+	if _ram_left <= 0.0:
+		end_ram()
+		return
+	if charge_gate:
+		if not RamCharge.is_gate(charge_gate):
+			charge_gate = null  # already down: keep running
+		elif _range_to(charge_gate) <= RamCharge.REACH:
+			_slam()
+			return
+	var flat := Vector3(velocity.x, 0.0, velocity.z)
+	if flat.length() < stats.speed:
+		return  # only a running ram knocks anyone over
+	_trample(flat.normalized())
+	_dust_cd -= delta
+	if _dust_cd <= 0.0:
+		_dust_cd = 0.08
+		SmokeCloud.wisp(self, global_position + Vector3(randf_range(-0.4, 0.4), 0.2, randf_range(-0.4, 0.4)), 0.9)
+
+
+## Enemy soldiers in the ram's way lose health and are tossed out of it, off to the side they
+## stood on.
+func _trample(fwd: Vector3) -> void:
+	var now := Time.get_ticks_msec()
+	for d in get_tree().get_nodes_in_group("defender_targets"):
+		if d.team == team or not d.is_alive() or not d.has_method("toss"):
+			continue
+		var id: int = d.get_instance_id()
+		if now - _trampled.get(id, -100000) < TRAMPLE_REPEAT * 1000.0:
+			continue
+		var to: Vector3 = d.global_position - global_position
+		var flat := Vector3(to.x, 0.0, to.z)
+		if absf(to.y) > stats.height or flat.length() > stats.radius + TRAMPLE_REACH or flat.dot(fwd) < 0.0:
+			continue
+		_trampled[id] = now
+		# Out of the way, to the side it stood on (either side if dead ahead).
+		var side := flat - fwd * flat.dot(fwd)
+		if side.length() < 0.05:
+			side = fwd.cross(Vector3.UP) * (1.0 if randf() < 0.5 else -1.0)
+		var away := (fwd * 0.6 + side.normalized()).normalized()
+		d.take_damage(stats.ram_trample_damage, team)
+		d.toss(away * stats.ram_toss + Vector3.UP * stats.ram_toss * 0.6)
+		Combat.spawn_impact(self, Combat.aim_point(d), true)
+		_butt = 0.6
+
+
+## The one hit a charge buys: the ram is spent, and the sheep goes back to its shotgun.
+func _slam() -> void:
+	var gate := charge_gate
+	var hit_at: Vector3 = global_position + (gate.global_position - global_position).normalized() * (stats.radius + 0.4) + Vector3.UP * stats.height * 0.5
+	gate.take_damage(stats.ram_gate_damage, team)
+	Combat.spawn_explosion(self, hit_at, 2.5)
+	end_ram()
+	_butt = 1.0
+	_fire_cd = maxf(_fire_cd, 0.6)
+
+
 # ---------------------------------------------------------------- movement
 
 func _physics_process(delta: float) -> void:
@@ -665,15 +789,22 @@ func _physics_process(delta: float) -> void:
 		missile_cd = maxf(missile_cd - delta, 0.0)
 		if not _salvo.is_empty():
 			_salvo_tick(delta)
+	if has_ram():
+		ram_cd = maxf(ram_cd - delta, 0.0)
+		if _ram_left > 0.0:
+			_ram_tick(delta)
 	if stats.has("aa_dps") and _fire_cd <= 0.0:
 		_aa_tick()
-	var engaged := Combat.is_valid_target(target) and _in_range(target) and _sees_target
+	# A charging ram doesn't stop to shoot: it runs for its slot in front of the gate.
+	var engaged := charge_gate == null and Combat.is_valid_target(target) and _in_range(target) and _sees_target
 	if stats.has("overheat_time"):
 		_heat_tick(delta, engaged and not is_overheated())
 	if engaged:
 		_face(target.global_position, delta)
 		if _fire_cd <= 0.0 and not is_overheated():
 			_fire_at(target)
+	elif charge_gate:
+		move_to = _charge_pos
 	elif order.type == "move" or order.type == "attack_move":
 		move_to = order.pos
 	elif (order.type == "attack" or order.type == "raid") and Combat.is_valid_target(target):
@@ -690,7 +821,7 @@ func _physics_process(delta: float) -> void:
 		if _agent.is_navigation_finished():
 			if order.type != "attack" and order.type != "raid":
 				order = {"type": "idle"}
-			elif role == "melee":
+			elif role == "melee" or charge_gate:
 				# Close the last stretch to the target straight on.
 				var dir: Vector3 = move_to - global_position
 				dir.y = 0.0
@@ -704,7 +835,10 @@ func _physics_process(delta: float) -> void:
 			dir.y = 0.0
 			if dir.length_squared() > 0.0001:
 				_desired_velocity = dir.normalized() * _speed()
-	_agent.velocity = _desired_velocity
+	if _agent.avoidance_enabled:
+		_agent.velocity = _desired_velocity
+	else:
+		_on_velocity_computed(_desired_velocity)  # charging: no avoidance pass to wait for
 
 
 ## Where to walk to reach `t`. A gate from outside its doorway (its middle is closest to the
@@ -719,7 +853,7 @@ func _approach(t: Node3D) -> Vector3:
 
 
 func _speed() -> float:
-	return stats.speed * (stats.forest_speed if _in_forest else 1.0)
+	return stats.speed * (stats.forest_speed if _in_forest else 1.0) * (stats.ram_speed if _ram_left > 0.0 else 1.0)
 
 
 ## Infiltrators cross the stronghold's navigation links along the route each one carries:
@@ -836,6 +970,7 @@ func _process(delta: float) -> void:
 	var spd := velocity.length() if not _route.is_empty() else Vector2(velocity.x, velocity.z).length()
 	var moving := spd > 0.3
 	_recoil = maxf(_recoil - delta * 6.0, 0.0)
+	_butt = maxf(_butt - delta * 3.0, 0.0)
 	if moving:
 		_anim_t += delta * spd
 	if _anim:
@@ -843,7 +978,7 @@ func _process(delta: float) -> void:
 		var clip: String = stats.anim_move if moving else stats.anim_idle
 		if _anim.current_animation != clip:
 			_anim.play(clip, 0.25)
-		_anim.speed_scale = clampf(spd / stats.anim_ref_speed, 0.6, 2.0) if moving else 1.0
+		_anim.speed_scale = clampf(spd / stats.anim_ref_speed, 0.6, 3.0 if is_ramming() else 2.0) if moving else 1.0
 	match stats.anim:
 		"hop":
 			var hop := absf(sin(_anim_t * 1.2)) if moving else 0.0
@@ -862,6 +997,8 @@ func _process(delta: float) -> void:
 		"rigged":
 			if role == "melee":
 				_model.position.z = -_recoil * 0.35  # lunge into the blow
+			elif has_ram():
+				_model.position.z = -sin(_butt * PI) * 0.5  # head-butt
 		_:
 			_model.position.y = absf(sin(_anim_t * 2.2)) * 0.08 if moving else lerpf(_model.position.y, 0.0, delta * 8.0)
 			_model.rotation.z = sin(_anim_t * 2.2) * 0.06 if moving else lerpf(_model.rotation.z, 0.0, delta * 8.0)
@@ -879,9 +1016,6 @@ func _process(delta: float) -> void:
 func _build_model() -> void:
 	_model = Node3D.new()
 	add_child(_model)
-	if stats.model == "ram":
-		_build_ram()
-		return
 	if not _scenes.has(stats.model):
 		_scenes[stats.model] = load(stats.model)
 	var m := (_scenes[stats.model] as PackedScene).instantiate() as Node3D
@@ -908,25 +1042,6 @@ func _build_model() -> void:
 		# Carried weapon placeholder until weapons get modeled.
 		_model.add_child(Mats.box_mesh(Vector3(0.12, 0.16, 0.9), Vector3(0.35, 1.15, -0.45),
 				Mats.flat(Color(0.12, 0.12, 0.13), 0.6, 0.4)))
-
-
-func _build_ram() -> void:
-	var wood := Mats.wood()
-	var iron := Mats.flat(Color(0.2, 0.2, 0.22), 0.8, 0.35)
-	_model.add_child(Mats.box_mesh(Vector3(2.2, 0.5, 3.6), Vector3(0, 0.7, 0), wood))
-	_model.add_child(Mats.box_mesh(Vector3(2.4, 0.15, 3.8), Vector3(0, 2.2, 0), wood))  # roof
-	for x in [-1.0, 1.0]:
-		for z in [-1.5, 1.5]:
-			_model.add_child(Mats.box_mesh(Vector3(0.15, 1.5, 0.15), Vector3(x, 1.45, z), wood))
-			var wheel := Mats.cylinder_mesh(0.45, 0.2, Vector3(x * 1.15, 0.45, z * 0.8), iron)
-			wheel.rotation.z = PI * 0.5
-			_model.add_child(wheel)
-	var log := Mats.cylinder_mesh(0.28, 4.6, Vector3(0, 1.4, -0.6), wood)
-	log.rotation.x = PI * 0.5
-	_model.add_child(log)
-	var head := Mats.cylinder_mesh(0.36, 0.5, Vector3(0, 1.4, -2.9), iron)
-	head.rotation.x = PI * 0.5
-	_model.add_child(head)
 
 
 func _build_ring() -> void:

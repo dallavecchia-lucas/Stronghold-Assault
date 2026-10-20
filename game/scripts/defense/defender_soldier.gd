@@ -34,6 +34,8 @@ var _respawn_cd := 0.0
 var _target: Node3D
 var _pitch := 0.0
 var _kick := 0.0
+## Knocked off its feet (run over by a ram): flies until it lands, no control meanwhile.
+var _tossed := false
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 
 var _head: Node3D
@@ -171,9 +173,20 @@ func take_damage(amount: float, from_team: int) -> void:
 		_die()
 
 
+## Run over: thrown along `v` (m/s), out of control until it lands.
+func toss(v: Vector3) -> void:
+	if hp <= 0.0:
+		return
+	velocity = v
+	_tossed = true
+	if possessed:
+		_kick += 0.1
+
+
 func _die() -> void:
 	hp = 0.0
 	_respawn_cd = RESPAWN_TIME
+	_tossed = false
 	_body.visible = false
 	_shape.set_deferred("disabled", true)
 	Combat.spawn_impact(self, get_aim_point(), true)
@@ -199,6 +212,10 @@ func _physics_process(delta: float) -> void:
 		return
 	if not is_on_floor():
 		velocity.y -= _gravity * delta
+	if _tossed:
+		move_and_slide()
+		_tossed = not (is_on_floor() and velocity.y <= 0.0)
+		return
 	_fire_cd -= delta
 	if _reloading > 0.0:
 		_reloading -= delta
