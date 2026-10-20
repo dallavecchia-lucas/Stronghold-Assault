@@ -38,7 +38,10 @@ static func aim_point(t: Node3D) -> Vector3:
 
 
 ## True if nothing static blocks the line between two points (ignores `target` itself).
+## Smoke screens block it too.
 static func has_line_of_sight(ctx: Node3D, from: Vector3, to: Vector3, target: Object = null) -> bool:
+	if SmokeCloud.blocks(from, to):
+		return false
 	var q := PhysicsRayQueryParameters3D.create(from, to, GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES)
 	var hit := ctx.get_world_3d().direct_space_state.intersect_ray(q)
 	return hit.is_empty() or hit.collider == target

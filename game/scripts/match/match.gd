@@ -137,6 +137,7 @@ func _autotest_step(delta: float) -> void:
 				commander.submit({"type": "attack", "units": ids, "target": gate.get_path()})
 			else:
 				commander.submit({"type": "attack", "units": ids, "target": level.keep.get_path()})
+			commander.submit({"type": "smoke", "units": ids, "pos": gate.global_position})
 	if GameConfig.screenshot_path != "" and not _autotest_shot and _autotest_t > GameConfig.autotest_duration * 0.8:
 		_autotest_shot = true
 		await RenderingServer.frame_post_draw
