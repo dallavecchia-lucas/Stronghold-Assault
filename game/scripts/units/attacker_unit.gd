@@ -29,6 +29,8 @@ var formation_id := 0
 var cluster_cd := 0.0
 ## Seconds until the smoke screen can be used again.
 var smoke_cd := 0.0
+## Seconds until the missile salvo can be fired again.
+var missile_cd := 0.0
 ## Seconds of firing the guns have built up toward overheat_time.
 var heat := 0.0
 var selected := false:
@@ -46,6 +48,13 @@ var _anim: AnimationPlayer  # set when the model is rigged and carries clips
 var _ring: MeshInstance3D
 var _aa_ring: MeshInstance3D
 var _aa_lock: Node3D = null
+var _turrets: ElephantTurrets  # set when the model carries flak cannons (stats.flak)
+var _next_gun := 0
+## Missile salvo under way: tubes still to fire, and at what.
+var _salvo: Array[int] = []
+var _salvo_target: Node3D
+var _salvo_target_id := 0
+var _salvo_cd := 0.0
 var _cluster_left := 0.0
 var _cluster_cd_shot := 0.0
 var _cluster_aim := Vector3.ZERO
@@ -81,7 +90,7 @@ func fits_inside() -> bool:
 	return not is_flying() and stats.radius <= 0.8 and stats.height <= 2.6
 
 
-## Medics and rhinos never shoot at what they are ordered to attack.
+## Medics, rhinos and elephants never shoot at what they are ordered to attack.
 func has_basic_attack() -> bool:
 	return role != "healer" and role != "anti_air"
 
@@ -104,6 +113,24 @@ func smoke_ready() -> bool:
 
 func is_overheated() -> bool:
 	return _overheat_left > 0.0
+
+
+func has_missiles() -> bool:
+	return stats.has("missile_cooldown")
+
+
+func missiles_ready() -> bool:
+	return has_missiles() and missile_cd <= 0.0 and is_alive()
+
+
+## Damage of one salvo if every missile hits.
+func salvo_damage() -> float:
+	return stats.missile_count * stats.missile_damage
+
+
+func in_missile_range(t: Node3D) -> bool:
+	var d := t.global_position - global_position
+	return Vector2(d.x, d.z).length() <= stats.missile_range
 
 
 func _ready() -> void:
@@ -195,6 +222,9 @@ func _die() -> void:
 	remove_from_group("attacker_units")
 	remove_from_group("air_units")
 	_cluster_left = 0.0
+	_end_salvo()
+	if _turrets:
+		_turrets.target = null
 	collision_layer = 0
 	collision_mask = GameConfig.LAYER_WORLD
 	_agent.avoidance_enabled = false
@@ -318,8 +348,8 @@ func _heal_tick() -> void:
 		Combat.spawn_tracer(self, _eye(), Combat.aim_point(best), HEAL_COLOR)
 
 
-## Rhino passive: stay locked on one enemy flyer until it dies or leaves aa_range, then pick
-## the nearest one in range.
+## Rhino and elephant passive: stay locked on one enemy flyer until it dies or leaves aa_range,
+## then pick the nearest one in range.
 func _aa_tick() -> void:
 	_fire_cd = stats.fire_interval
 	if not (Combat.is_valid_target(_aa_lock) and _in_aa_range(_aa_lock)):
@@ -331,9 +361,24 @@ func _aa_tick() -> void:
 				if d < best_d:
 					best_d = d
 					_aa_lock = a
-	if _aa_lock:
+	if _turrets:
+		_turrets.target = _aa_lock
+		_turrets.radar_speed = 4.0 if _aa_lock else 0.9
+		if _aa_lock:
+			_fire_flak()
+	elif _aa_lock:
 		_aa_lock.take_damage(stats.aa_dps * stats.fire_interval, team)
 		Combat.spawn_tracer(self, _eye(), Combat.aim_point(_aa_lock), AA_COLOR)
+
+
+## Elephant: the flak cannons take turns, each firing only once it is on target.
+func _fire_flak() -> void:
+	for gun in [_next_gun, 1 - _next_gun]:
+		if _turrets.aimed(gun):
+			_next_gun = 1 - gun
+			_turrets.kick(gun)
+			Flak.fire(self, _turrets.muzzle(gun), _aa_lock, stats.aa_dps * stats.fire_interval, team)
+			return
 
 
 func _in_aa_range(a: Node3D) -> bool:
@@ -394,6 +439,65 @@ func start_smoke(toward: Vector3) -> bool:
 	return true
 
 
+## Elephant active: a salvo of homing missiles at one enemy flyer. The pods lift, then the
+## missiles leave one tube at a time, alternating pods. False while reloading or out of range.
+func start_missiles(t: Node3D) -> bool:
+	if not missiles_ready() or not Combat.is_valid_target(t) or not in_missile_range(t):
+		return false
+	missile_cd = stats.missile_cooldown
+	_salvo_target = t
+	_salvo_target_id = t.get_instance_id()
+	_salvo.clear()
+	for k in stats.missile_count:
+		_salvo.append(k)
+	_salvo_cd = 0.0
+	ElephantMissiles.commit(_salvo_target_id, salvo_damage())
+	if _turrets:
+		_turrets.raised = true
+	return true
+
+
+func _salvo_tick(delta: float) -> void:
+	if not Combat.is_valid_target(_salvo_target):
+		_end_salvo()  # already down: the rest stay in their tubes
+		return
+	if _turrets and not _turrets.pods_up():
+		return
+	_salvo_cd -= delta
+	while _salvo_cd <= 0.0 and not _salvo.is_empty():
+		_salvo_cd += stats.missile_interval
+		_launch_missile(_salvo.pop_front())
+	if _salvo.is_empty():
+		_end_salvo()
+
+
+func _launch_missile(k: int) -> void:
+	var from: Vector3 = global_position + Vector3.UP * stats.height
+	var dir := (Vector3.UP - global_basis.z).normalized()
+	if _turrets and _turrets.tube_count() > 0:
+		# Tubes are numbered pod by pod: alternate between the two pods.
+		var half := maxi(_turrets.tube_count() / 2, 1)
+		var tube := _turrets.tube(((k % 2) * half + k / 2) % _turrets.tube_count())
+		from = tube.origin
+		dir = tube.basis.y.normalized()
+	var m := HomingMissile.new()
+	m.team = team
+	m.damage = stats.missile_damage
+	m.on_spent = ElephantMissiles.release.bind(_salvo_target_id, stats.missile_damage)
+	get_tree().current_scene.add_child(m)
+	m.launch(from, dir, _salvo_target)
+	SmokeCloud.wisp(self, from, 1.4)
+
+
+## Missiles left in the tubes are no longer on their way; the pods come down.
+func _end_salvo() -> void:
+	if not _salvo.is_empty():
+		ElephantMissiles.release(_salvo_target_id, _salvo.size() * stats.missile_damage)
+		_salvo.clear()
+	if _turrets:
+		_turrets.raised = false
+
+
 ## Guns heat up while firing and cool at the same rate while resting. Past overheat_time they
 ## go silent for overheat_cooldown seconds and come back cold.
 func _heat_tick(delta: float, firing: bool) -> void:
@@ -442,6 +546,10 @@ func _physics_process(delta: float) -> void:
 			_cluster_tick(delta)
 	if has_smoke():
 		smoke_cd = maxf(smoke_cd - delta, 0.0)
+	if has_missiles():
+		missile_cd = maxf(missile_cd - delta, 0.0)
+		if not _salvo.is_empty():
+			_salvo_tick(delta)
 	if stats.has("aa_dps") and _fire_cd <= 0.0:
 		_aa_tick()
 	var engaged := Combat.is_valid_target(target) and _in_range(target) and _sees_target
@@ -608,6 +716,11 @@ func _build_model() -> void:
 				a.set_meta("looped", true)
 		_anim.play(stats.anim_idle)
 		_anim.seek(randf() * _anim.current_animation_length)  # don't move in lockstep
+	if stats.get("flak", false):
+		var skeletons := m.find_children("*", "Skeleton3D", true, false)
+		if not skeletons.is_empty():
+			_turrets = ElephantTurrets.new()
+			skeletons[0].add_child(_turrets)
 	if stats.get("carry_gun", false):
 		# Carried weapon placeholder until weapons get modeled.
 		_model.add_child(Mats.box_mesh(Vector3(0.12, 0.16, 0.9), Vector3(0.35, 1.15, -0.45),

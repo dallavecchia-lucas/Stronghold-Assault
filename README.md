@@ -32,7 +32,10 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
 
 **Attacker (RTS)**
 - `LMB` click/drag to select, `Shift` to add · `RMB` attack-move, or attack a gate/defender you click on · `Ctrl+RMB` move without stopping
-- Spawn: `Z` Bear Rifleman · `X` Kangaroo Commando (fast) · `C` Wolf Medic (heals) · `V` Sky Talon (flies over the mountain) · `B` War Elephant (heavy) · `N` Mule Artillery (long-range shells) · `M` Breaching Ram (gates only)
+- Spawn: `Z` Bear Rifleman · `X` Kangaroo Commando (fast) · `C` Wolf Medic (heals) · `V` Sky Talon (flies over the mountain) · `N` Mule Artillery (long-range shells) · `M` Breaching Ram (gates only)
+- `B` War Elephant: the real anti-air unit. Heavy and slow, with no basic attack.
+  - Passive flak: the cannons on its flanks swing up at one enemy flyer in its dashed ring (26 m) and stay on it until it dies or leaves. They take turns firing shells that burst around it. One elephant hits about as hard as five rhinos.
+  - `O` missiles: then `LMB` an enemy aircraft (`RMB` or `O` cancels). The pods lift and eight homing missiles leave one after another (range 60 m, reload 25 s). With several elephants selected, only as many fire as it takes to bring the target down, counting missiles already on their way to it, nearest first. The rest stay ready and you keep aiming, so you can click the next target. If all of them together can't kill it, they all fire. The cursor says how many will fire.
 - `I` Combat Rhino: tanky and slow, with no basic attack.
   - Passive anti-air: locks onto one enemy flyer in its dashed ring and stays on it until it dies or leaves. One rhino is weak; it takes about five to bring a flyer down fast.
   - `F` cluster bombing: aim, then `LMB` to fire (`RMB` or `F` cancels). Each rhino shells a spot inside its 40 m zone for 8 s. Cooldown is 45 s. With several rhinos selected, the preview shows where each one's bombs will land. Rhinos that were moved together keep their formation's shape. Scattered rhinos aim as close to the cursor as their zones allow and spread around it instead of piling onto one spot.
@@ -71,6 +74,14 @@ godot --path game --headless -- --autotest=defender --duration=120
 godot --path game --headless -- --autotest=attacker --duration=120
 ```
 
+### Elephant showcase
+
+`game/scenes/dev/elephant_showcase.tscn` stages the War Elephant on the real map, with the garrison holding fire: `walk` (the camera circles a walking elephant), `flak` (drones fly in and the cannons shoot them down) and `missiles` (the RTS view: five elephants, two drones, salvos aimed with `O`). The defenders have no aircraft yet, so `TargetDrone`s stand in for them. Record a shot with Movie Maker:
+
+```sh
+godot --path game --resolution 1280x720 --write-movie walk.avi --fixed-fps 30 res://scenes/dev/elephant_showcase.tscn -- --shot=walk
+```
+
 ## Asset pipeline
 
 Meshy exports go in `assets_src/`, then get processed with Blender (headless):
@@ -99,6 +110,14 @@ This puts the pivot at the feet (or the bounding-box center with `--pivot bbox`,
 | armored_lioness_unit | 1.6 | |
 | serpent_sniper | 0.9 | `--rotate-z 56 --pivot bbox` |
 | armored_rhino_unit | 2.4 | `--pivot bbox` |
+
+The War Elephant's export has no rig, so `tools/blender/rig_elephant.py` builds one and bakes its clips. It scales the model to 3.8 m, puts its origin between the four feet, skins it (legs, trunk, ears and tail as bone chains) and bakes a looping `Walk` (feet planted by IK, the trunk swinging and curling) and `Idle`. The cannons, missile pods and radar get bones of their own that the game drives (`ElephantTurrets`). Run it with Blender 5.2, or with the `bpy` 5.2 pip package; `--preview DIR` also renders the clips:
+
+```sh
+python tools/blender/rig_elephant.py -- \
+    --input assets_src/units/war_elephant_sentinel/war_elephant_sentinel_meshy.glb \
+    --output game/assets/units/war_elephant_sentinel/war_elephant_sentinel_rigged.glb
+```
 
 Static props (scenery, turrets) skip Blender: they go through [glTF-Transform](https://gltf-transform.dev) to put the pivot at the bottom center and shrink textures to 1024 px, and `game/scripts/match/props.gd` scales them to height at load time:
 
