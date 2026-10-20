@@ -59,6 +59,7 @@ func _plan_wave() -> void:
 		"rifleman": mini(3 + _wave, 10),
 		"kangaroo": mini(1 + _wave / 2, 5),
 		"talon": 0 if _wave < 2 else mini(_wave - 1, 4),
+		"chimp": 0 if _wave < 3 else mini(1 + _wave / 3, 4),
 	}
 	# Interleave so a partly-spawned wave is still a sensible mix.
 	var remaining := true
@@ -97,7 +98,8 @@ func _launch_wave() -> void:
 
 
 func _push_keep(ids: Array) -> void:
-	# The keep is deep inside the mountain and only units that fit the tunnels can get to it.
+	# The keep is deep inside the mountain and only infiltrators can get to it. Chimps that make it
+	# in go raiding on their own (AttackerUnit._raid_target).
 	# Flyers hover over the breached side's gun deck, big units hold in front of that face
 	# (off to one side, clear of the tunnel), both picking off the defenders on it; rams go
 	# for any gate still standing.

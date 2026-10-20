@@ -5,13 +5,20 @@ extends CharacterBody3D
 ##   {"type": "move", "pos": Vector3}          go there, ignore enemies
 ##   {"type": "attack_move", "pos": Vector3}   go there, fight anything in range
 ##   {"type": "attack", "target": Node3D}      chase and destroy a specific target
-## Behaviour differences per unit come from UnitTypes role (infantry, siege,
+##   {"type": "raid"}                          raider inside the stronghold, on its own (_raid_target)
+## Behaviour differences per unit come from UnitTypes role (infantry, melee, siege,
 ## artillery, healer, flying, anti_air).
 
 signal died(unit: AttackerUnit)
 
 const HEAL_COLOR := Color(0.35, 1.0, 0.45)
 const AA_COLOR := Color(1.0, 0.9, 0.4)
+## How close to a broken gate an order has to land to send infiltrators in.
+const BREACH_REACH := 12.0
+## Collision radius of infiltrators (the navmesh is baked for 0.5 m).
+const INSIDE_RADIUS := 0.35
+## Ledges infiltrators step up onto (the step between the stronghold's corridors and halls).
+const STEP_HEIGHT := 0.4
 
 static var _scenes := {}
 
@@ -33,6 +40,8 @@ var smoke_cd := 0.0
 var missile_cd := 0.0
 ## Seconds of firing the guns have built up toward overheat_time.
 var heat := 0.0
+## Raider inside the stronghold: fights on its own and takes no more orders.
+var raiding := false
 var selected := false:
 	set(v):
 		selected = v
@@ -67,6 +76,10 @@ var _retarget_cd := 0.0
 ## False while the target is a buried structure out of sight: keep closing in instead of firing.
 var _sees_target := true
 var _anim_t := 0.0
+## Navigation link being crossed (LevelBuilder): points still to climb or walk through.
+var _route: Array[Vector3] = []
+var _route_breach_in := false
+var _in_forest := false
 var _recoil := 0.0
 var _desired_velocity := Vector3.ZERO
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
@@ -85,9 +98,14 @@ func is_flying() -> bool:
 	return role == "flying"
 
 
-## Small enough for the stronghold's tunnels (2.8 m high) and inner passages (2 m wide).
+## Chimps and war rams are the only units that get inside the stronghold.
 func fits_inside() -> bool:
-	return not is_flying() and stats.radius <= 0.8 and stats.height <= 2.6
+	return stats.get("infiltrator", false)
+
+
+## Raiders inside the stronghold are on their own.
+func is_controllable() -> bool:
+	return is_alive() and not raiding
 
 
 ## Medics, rhinos and elephants never shoot at what they are ordered to attack.
@@ -147,6 +165,10 @@ func _ready() -> void:
 	var shape := CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
 	cap.radius = stats.radius
+	if fits_inside():
+		# Slimmer than the navmesh's agent radius, so paths hugging the stronghold's inside
+		# corners don't snag on them.
+		cap.radius = minf(stats.radius, INSIDE_RADIUS)
 	cap.height = maxf(stats.height, stats.radius * 2.0 + 0.1)
 	shape.shape = cap
 	shape.position.y = cap.height * 0.5
@@ -163,6 +185,9 @@ func _ready() -> void:
 	_agent.max_neighbors = 8
 	_agent.time_horizon_agents = 1.0
 	_agent.velocity_computed.connect(_on_velocity_computed)
+	if fits_inside():
+		_agent.navigation_layers |= LevelBuilder.NAV_INFILTRATORS
+		_agent.link_reached.connect(_on_link_reached)
 	add_child(_agent)
 
 	_build_model()
@@ -174,9 +199,25 @@ func _ready() -> void:
 # ---------------------------------------------------------------- orders
 
 func set_order(o: Dictionary) -> void:
+	if raiding:
+		return
+	# Only infiltrators can reach the keep: the rest close in on the nearest broken gate.
+	if o.type == "attack" and o.target.get("buried") and not fits_inside():
+		var gate := _nearest_breach()
+		o = {"type": "attack_move", "pos": gate.start_position} if gate else {"type": "idle"}
 	# Medics and rhinos don't attack: follow the attack to its target instead.
 	if not has_basic_attack() and o.type == "attack":
-		o = {"type": "attack_move", "pos": o.target.global_position}
+		o = {"type": "attack_move", "pos": _approach(o.target)}
+	# Infiltrators sent to a broken gate go in: raiders as far as the tunnel (then they are on
+	# their own), the others on to the keep.
+	if fits_inside() and o.has("pos"):
+		var breach := _breach_near(o.pos)
+		if breach:
+			var keep := _keep()
+			if stats.get("raider", false) or keep == null:
+				o = {"type": "move", "pos": breach.end_position}
+			else:
+				o = {"type": "attack", "target": keep}
 	order = o
 	if o.type == "attack":
 		target = o.target
@@ -187,7 +228,30 @@ func set_order(o: Dictionary) -> void:
 
 
 func is_idle() -> bool:
-	return order.type == "idle" and not Combat.is_valid_target(target)
+	return not raiding and order.type == "idle" and not Combat.is_valid_target(target)
+
+
+## Open breach link whose outside end is near `pos`, or null.
+func _breach_near(pos: Vector3) -> NavigationLink3D:
+	for link in get_tree().get_nodes_in_group("breaches"):
+		if link.enabled and pos.distance_to(link.start_position) <= BREACH_REACH:
+			return link
+	return null
+
+
+func _nearest_breach() -> NavigationLink3D:
+	var best: NavigationLink3D = null
+	for link in get_tree().get_nodes_in_group("breaches"):
+		if link.enabled and (best == null or global_position.distance_to(link.start_position) < global_position.distance_to(best.start_position)):
+			best = link
+	return best
+
+
+func _keep() -> Structure:
+	for s in get_tree().get_nodes_in_group("structures"):
+		if s.buried and s.is_alive():
+			return s
+	return null
 
 
 # ---------------------------------------------------------------- combat
@@ -222,6 +286,7 @@ func _die() -> void:
 	remove_from_group("attacker_units")
 	remove_from_group("air_units")
 	_cluster_left = 0.0
+	_route.clear()
 	_end_salvo()
 	if _turrets:
 		_turrets.target = null
@@ -255,6 +320,8 @@ func _eye() -> Vector3:
 
 
 func _can_see(t: Node3D) -> bool:
+	if role == "melee":
+		return true  # within arm's reach
 	if t.get("buried"):
 		return not is_flying() and Combat.has_line_of_sight(self, _eye(), Combat.aim_point(t), t)
 	if role == "artillery" or t.is_in_group("structures"):
@@ -265,6 +332,9 @@ func _can_see(t: Node3D) -> bool:
 func _update_target() -> void:
 	if not has_basic_attack():
 		target = null
+		return
+	if raiding:
+		target = _raid_target()
 		return
 	if order.type == "attack":
 		if Combat.is_valid_target(order.target):
@@ -300,10 +370,49 @@ func _find_enemy() -> Node3D:
 	return best
 
 
+## Raider: the nearest defender in the stronghold (the gun decks, the roofs, the player's soldier
+## wherever they are). With all of them down, the nearest machine: the gate machine guns on the
+## decks and the mortar on the roof. Sticks to its pick until something it prefers shows up.
+func _raid_target() -> Node3D:
+	var soldiers := []
+	var machines := []
+	for d in get_tree().get_nodes_in_group("defender_targets"):
+		if not d.is_alive():
+			continue
+		match d.get("station_kind"):
+			"soldier": soldiers.append(d)
+			"mg", "artillery": machines.append(d)
+	var pool := soldiers if not soldiers.is_empty() else machines
+	if target in pool:
+		return target
+	var best: Node3D = null
+	var best_d := INF
+	for d in pool:
+		var dist := global_position.distance_to(d.global_position)
+		if dist < best_d:
+			best_d = dist
+			best = d
+	return best
+
+
+func _start_raid() -> void:
+	raiding = true
+	selected = false
+	formation_id = 0
+	order = {"type": "raid"}
+	target = _raid_target()
+
+
 func _fire_at(t: Node3D) -> void:
 	_fire_cd = stats.fire_interval * randf_range(0.9, 1.15)
 	_recoil = 1.0
 	match role:
+		"melee":
+			var mult: float = stats.structure_mult if t.is_in_group("structures") else 1.0
+			t.take_damage(stats.damage * mult, team)
+			var to := t.global_position - global_position
+			to.y = 0.0
+			Combat.spawn_impact(self, global_position + to.normalized() * (stats.radius + 0.5) + Vector3.UP * stats.height * 0.6, true)
 		"siege":
 			t.take_damage(stats.damage * stats.structure_mult, team)
 			Combat.spawn_impact(self, global_position + (t.global_position - global_position).normalized() * 2.5 + Vector3.UP, true)
@@ -535,6 +644,12 @@ func _physics_process(delta: float) -> void:
 		_retarget_cd = 0.3
 		_update_target()
 		_sees_target = not (Combat.is_valid_target(target) and target.get("buried")) or _can_see(target)
+		if stats.has("forest_speed"):
+			_in_forest = LevelBuilder.in_forest(global_position)
+			_agent.max_speed = _speed()
+	if not _route.is_empty():
+		_follow_route(delta)
+		return
 
 	var move_to = null
 	if role == "healer":
@@ -561,8 +676,8 @@ func _physics_process(delta: float) -> void:
 			_fire_at(target)
 	elif order.type == "move" or order.type == "attack_move":
 		move_to = order.pos
-	elif order.type == "attack" and Combat.is_valid_target(target):
-		move_to = target.global_position
+	elif (order.type == "attack" or order.type == "raid") and Combat.is_valid_target(target):
+		move_to = _approach(target)
 
 	if is_flying():
 		_fly(move_to, delta)
@@ -573,15 +688,72 @@ func _physics_process(delta: float) -> void:
 		if _agent.target_position.distance_to(move_to) > 1.5:
 			_agent.target_position = move_to
 		if _agent.is_navigation_finished():
-			if order.type != "attack":
+			if order.type != "attack" and order.type != "raid":
 				order = {"type": "idle"}
+			elif role == "melee":
+				# Close the last stretch to the target straight on.
+				var dir: Vector3 = move_to - global_position
+				dir.y = 0.0
+				if dir.length_squared() > 0.01:
+					_desired_velocity = dir.normalized() * _speed()
 		else:
 			var next := _agent.get_next_path_position()
+			if not _route.is_empty():
+				return  # just reached a link (_on_link_reached)
 			var dir := next - global_position
 			dir.y = 0.0
 			if dir.length_squared() > 0.0001:
-				_desired_velocity = dir.normalized() * stats.speed
+				_desired_velocity = dir.normalized() * _speed()
 	_agent.velocity = _desired_velocity
+
+
+## Where to walk to reach `t`. A gate from outside its doorway (its middle is closest to the
+## tunnel's navmesh). A post on the decks or roofs from the ground in front of it, unless this
+## is an infiltrator that can get up there: a raider, or anyone while a gate is down.
+func _approach(t: Node3D) -> Vector3:
+	if not t.has_method("get_approach_point"):
+		return t.global_position
+	if t.get("station_kind") != null and (raiding or (fits_inside() and _nearest_breach() != null)):
+		return t.global_position
+	return t.get_approach_point()
+
+
+func _speed() -> float:
+	return stats.speed * (stats.forest_speed if _in_forest else 1.0)
+
+
+## Infiltrators cross the stronghold's navigation links along the route each one carries:
+## climbing a stair shaft or ladder, or slipping in through a broken gate.
+func _on_link_reached(details: Dictionary) -> void:
+	var link := details.get("owner") as NavigationLink3D
+	if link == null or not link.has_meta("route") or not _route.is_empty():
+		return
+	var route: Array[Vector3] = link.get_meta("route").duplicate()
+	var entry: Vector3 = details.link_entry_position
+	var forward := entry.distance_to(route[0]) <= entry.distance_to(route[-1])
+	if not forward:
+		route.reverse()
+	_route = route
+	_route_breach_in = forward and link.has_meta("breach")
+
+
+## Moves straight from point to point, through the stair steps and ladder rungs: no collisions.
+func _follow_route(delta: float) -> void:
+	var to := _route[0] - global_position
+	var climbing := absf(to.y) > Vector2(to.x, to.z).length()
+	var speed: float = stats.get("climb_speed", stats.speed * 0.5) if climbing else stats.speed * 0.8
+	var step := speed * delta
+	if to.length() <= step:
+		global_position = _route.pop_front()
+		if _route.is_empty():
+			velocity = Vector3.ZERO
+			if _route_breach_in and stats.get("raider", false):
+				_start_raid()
+		return
+	velocity = to.normalized() * speed
+	global_position += velocity * delta
+	if not climbing:
+		rotation.y = lerp_angle(rotation.y, atan2(-to.x, -to.z), minf(10.0 * delta, 1.0))
 
 
 ## Flyers go in a straight line at cruising height and hover when they arrive.
@@ -611,7 +783,7 @@ func _ground_height() -> float:
 
 
 func _on_velocity_computed(safe: Vector3) -> void:
-	if hp <= 0.0 or is_flying():
+	if hp <= 0.0 or is_flying() or not _route.is_empty():
 		return
 	var dt := get_physics_process_delta_time()
 	if stats.get("steer", false):
@@ -621,9 +793,19 @@ func _on_velocity_computed(safe: Vector3) -> void:
 		velocity.z = safe.z
 	velocity.y = 0.0 if is_on_floor() else velocity.y - _gravity * dt
 	move_and_slide()
+	if fits_inside() and is_on_wall() and Vector2(safe.x, safe.z).length() > 0.5:
+		_step_up(Vector3(safe.x, 0.0, safe.z).normalized() * 0.3)
 	var flat := Vector2(velocity.x, velocity.z)
 	if not stats.get("steer", false) and flat.length() > 0.3 and not (Combat.is_valid_target(target) and _in_range(target)):
 		rotation.y = lerp_angle(rotation.y, atan2(-velocity.x, -velocity.z), 8.0 * dt)
+
+
+## move_and_slide stops dead at a ledge: hop onto it if it is low enough and there is room.
+func _step_up(motion: Vector3) -> void:
+	var up := Vector3.UP * STEP_HEIGHT
+	if test_move(global_transform, up) or test_move(global_transform.translated(up), motion):
+		return
+	global_position += up + motion
 
 
 ## Vehicle-style movement (snakes): turn toward the wanted direction at a limited rate and
@@ -651,7 +833,7 @@ func _process(delta: float) -> void:
 	if hp <= 0.0:
 		return
 	# Procedural animation until models are rigged.
-	var spd := Vector2(velocity.x, velocity.z).length()
+	var spd := velocity.length() if not _route.is_empty() else Vector2(velocity.x, velocity.z).length()
 	var moving := spd > 0.3
 	_recoil = maxf(_recoil - delta * 6.0, 0.0)
 	if moving:
@@ -678,7 +860,8 @@ func _process(delta: float) -> void:
 		"roll":
 			_model.position.y = randf_range(0.0, 0.02) if moving else 0.0
 		"rigged":
-			pass
+			if role == "melee":
+				_model.position.z = -_recoil * 0.35  # lunge into the blow
 		_:
 			_model.position.y = absf(sin(_anim_t * 2.2)) * 0.08 if moving else lerpf(_model.position.y, 0.0, delta * 8.0)
 			_model.rotation.z = sin(_anim_t * 2.2) * 0.06 if moving else lerpf(_model.rotation.z, 0.0, delta * 8.0)

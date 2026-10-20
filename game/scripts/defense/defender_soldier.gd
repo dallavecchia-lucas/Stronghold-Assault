@@ -153,6 +153,10 @@ func is_alive() -> bool:
 	return hp > 0.0
 
 
+func get_approach_point() -> Vector3:
+	return Combat.wall_approach(global_position)
+
+
 func get_aim_point() -> Vector3:
 	return global_position + Vector3.UP * 1.25
 

@@ -139,7 +139,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				if event.ctrl_pressed:
 					groups[i] = selected.duplicate()
 				else:
-					_set_selection(groups.get(i, []).filter(func(u): return is_instance_valid(u) and u.is_alive()))
+					_set_selection(groups.get(i, []).filter(func(u): return is_instance_valid(u) and u.is_controllable()))
 				return
 
 
@@ -155,7 +155,7 @@ func _click_select(pos: Vector2, add: bool) -> void:
 	var hit := _ray(pos, GameConfig.LAYER_ATTACKERS)
 	var u = Combat.find_damageable(hit.collider) if not hit.is_empty() else null
 	var list := selected.duplicate() if add else []
-	if u is AttackerUnit and u.is_alive():
+	if u is AttackerUnit and u.is_controllable():
 		if u in list:
 			list.erase(u)
 		else:
@@ -168,7 +168,7 @@ func _box_select(rect: Rect2, add: bool) -> void:
 	var list := selected.duplicate() if add else []
 	for u in commander.units.values():
 		var p: Vector3 = u.global_position + Vector3.UP
-		if cam.is_position_behind(p):
+		if cam.is_position_behind(p) or not u.is_controllable():
 			continue
 		if rect.has_point(cam.unproject_position(p)) and not u in list:
 			list.append(u)
@@ -184,8 +184,9 @@ func _set_selection(list: Array) -> void:
 		u.selected = true
 
 
+## Drops the dead, and raiders that have gone inside the stronghold.
 func _alive_selection() -> void:
-	selected = selected.filter(func(u): return is_instance_valid(u) and u.is_alive())
+	selected = selected.filter(func(u): return is_instance_valid(u) and u.is_controllable())
 
 
 func _issue_order(pos: Vector2, force_move: bool) -> void:
@@ -454,7 +455,7 @@ func _build_hud() -> void:
 	row.add_child(sp)
 	set_spawn_point(0)
 
-	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nElephants: O missiles (LMB an enemy aircraft, RMB cancel)",
+	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Chimps / War Rams: RMB next to a broken gate to send them in",
 			13, Color(0.85, 0.85, 0.85, 0.75))
 	help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	help.grow_vertical = Control.GROW_DIRECTION_BEGIN
@@ -468,6 +469,8 @@ func _build_hud() -> void:
 
 
 func _process(_delta: float) -> void:
+	if selected.any(func(u): return is_instance_valid(u) and u.raiding):
+		_alive_selection()
 	_supply_label.text = "Supply %d" % int(commander.supply)
 	_count_label.text = "Army %d / %d   (+%.0f/s)" % [commander.units.size(), AttackerCommander.UNIT_CAP, commander.income]
 	_selection_label.text = "Selected %d" % selected.size()
