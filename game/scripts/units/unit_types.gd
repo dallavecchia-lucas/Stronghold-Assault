@@ -8,6 +8,10 @@ extends RefCounted
 ##   "artillery" lobs explosive shells, no line of sight needed, has a minimum range
 ##   "healer"    doesn't fight, heals the most damaged ally in range
 ##   "flying"    ignores walls and pathfinding, hovers at FLY_HEIGHT
+##   "anti_air"  no basic attack. Passive: locks onto one enemy flyer within aa_range and
+##               chips at it (aa_dps) until it dies or leaves. Active: cluster bombing.
+## cluster_*: cluster bombing ability. Fires a shell every cluster_interval for cluster_duration
+##   seconds at a ground point within cluster_range, scattered over cluster_spread.
 ## structure_mult: damage multiplier against gates / the keep.
 ## anim: procedural animation style until models are rigged (walk, hop, stomp, hover, roll),
 ##   or "rigged" to play the model's own clips: anim_move / anim_idle, with the move clip
@@ -128,11 +132,15 @@ const DATA := {
 		"model": "res://assets/units/serpent_sniper/serpent_sniper_rigged.glb",
 	},
 	"rhino": {
-		"name": "Armored Rhino", "cost": 280, "hp": 1100.0, "speed": 3.6,
-		"range": 24.0, "damage": 8.0, "fire_interval": 0.2, "spread": 0.05,
+		"name": "Combat Rhino", "cost": 280, "hp": 1500.0, "speed": 3.0,
+		"range": 0.0, "damage": 0.0, "fire_interval": 0.25, "spread": 0.0,
 		"structure_mult": 1.2, "radius": 1.3, "height": 2.4,
-		"role": "infantry", "anim": "rigged", "hotkey": KEY_I,
+		"role": "anti_air", "anim": "rigged", "hotkey": KEY_I,
 		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 2.6,
+		# Weak on its own on purpose: it takes about five rhinos to bring a flyer down quickly.
+		"aa_range": 18.0, "aa_dps": 6.0,
+		"cluster_range": 40.0, "cluster_duration": 8.0, "cluster_cooldown": 45.0,
+		"cluster_interval": 0.25, "cluster_damage": 28.0, "cluster_splash": 3.5, "cluster_spread": 6.0,
 		"model": "res://assets/units/armored_rhino_unit/armored_rhino_unit_rigged.glb",
 	},
 }

@@ -6,11 +6,12 @@ extends CharacterBody3D
 ##   {"type": "attack_move", "pos": Vector3}   go there, fight anything in range
 ##   {"type": "attack", "target": Node3D}      chase and destroy a specific target
 ## Behaviour differences per unit come from UnitTypes role (infantry, siege,
-## artillery, healer, flying).
+## artillery, healer, flying, anti_air).
 
 signal died(unit: AttackerUnit)
 
 const HEAL_COLOR := Color(0.35, 1.0, 0.45)
+const AA_COLOR := Color(1.0, 0.9, 0.4)
 
 static var _scenes := {}
 
@@ -22,17 +23,28 @@ var team := GameConfig.TEAM_ATTACKER
 var hp := 100.0
 var order := {"type": "idle"}
 var target: Node3D = null
+## Set by the commander for units that were moved together; rhinos sharing one aim as a formation.
+var formation_id := 0
+## Seconds until the cluster bombing ability can be used again.
+var cluster_cd := 0.0
 var selected := false:
 	set(v):
 		selected = v
 		if _ring:
 			_ring.visible = v
+		if _aa_ring:
+			_aa_ring.visible = v
 		_update_hp_bar()
 
 var _agent: NavigationAgent3D
 var _model: Node3D
 var _anim: AnimationPlayer  # set when the model is rigged and carries clips
 var _ring: MeshInstance3D
+var _aa_ring: MeshInstance3D
+var _aa_lock: Node3D = null
+var _cluster_left := 0.0
+var _cluster_cd_shot := 0.0
+var _cluster_aim := Vector3.ZERO
 var _hp_bar: Node3D
 var _hp_fill: MeshInstance3D
 var _fire_cd := 0.0
@@ -63,9 +75,24 @@ func fits_inside() -> bool:
 	return not is_flying() and stats.radius <= 0.8 and stats.height <= 2.6
 
 
+## Medics and rhinos never shoot at what they are ordered to attack.
+func has_basic_attack() -> bool:
+	return role != "healer" and role != "anti_air"
+
+
+func has_cluster_bomb() -> bool:
+	return stats.has("cluster_cooldown")
+
+
+func cluster_ready() -> bool:
+	return has_cluster_bomb() and cluster_cd <= 0.0
+
+
 func _ready() -> void:
 	add_to_group("damageable")
 	add_to_group("attacker_units")
+	if is_flying():
+		add_to_group("air_units")
 	collision_layer = GameConfig.LAYER_ATTACKERS
 	# Attackers don't collide with each other; avoidance keeps them apart instead.
 	# Flyers don't collide with anything.
@@ -102,8 +129,8 @@ func _ready() -> void:
 # ---------------------------------------------------------------- orders
 
 func set_order(o: Dictionary) -> void:
-	# Medics don't attack: follow the attack to its target instead.
-	if role == "healer" and o.type == "attack":
+	# Medics and rhinos don't attack: follow the attack to its target instead.
+	if not has_basic_attack() and o.type == "attack":
 		o = {"type": "attack_move", "pos": o.target.global_position}
 	order = o
 	if o.type == "attack":
@@ -148,10 +175,14 @@ func _die() -> void:
 	hp = 0.0
 	remove_from_group("damageable")
 	remove_from_group("attacker_units")
+	remove_from_group("air_units")
+	_cluster_left = 0.0
 	collision_layer = 0
 	collision_mask = GameConfig.LAYER_WORLD
 	_agent.avoidance_enabled = false
 	_ring.visible = false
+	if _aa_ring:
+		_aa_ring.visible = false
 	_hp_bar.visible = false
 	died.emit(self)
 	var tw := create_tween()
@@ -184,7 +215,7 @@ func _can_see(t: Node3D) -> bool:
 
 
 func _update_target() -> void:
-	if role == "healer":
+	if not has_basic_attack():
 		target = null
 		return
 	if order.type == "attack":
@@ -263,6 +294,63 @@ func _heal_tick() -> void:
 		Combat.spawn_tracer(self, _eye(), Combat.aim_point(best), HEAL_COLOR)
 
 
+## Rhino passive: stay locked on one enemy flyer until it dies or leaves aa_range, then pick
+## the nearest one in range.
+func _aa_tick() -> void:
+	_fire_cd = stats.fire_interval
+	if not (Combat.is_valid_target(_aa_lock) and _in_aa_range(_aa_lock)):
+		_aa_lock = null
+		var best_d := INF
+		for a in get_tree().get_nodes_in_group("air_units"):
+			if a.team != team and a.is_alive() and _in_aa_range(a):
+				var d := global_position.distance_to(a.global_position)
+				if d < best_d:
+					best_d = d
+					_aa_lock = a
+	if _aa_lock:
+		_aa_lock.take_damage(stats.aa_dps * stats.fire_interval, team)
+		Combat.spawn_tracer(self, _eye(), Combat.aim_point(_aa_lock), AA_COLOR)
+
+
+func _in_aa_range(a: Node3D) -> bool:
+	var d := a.global_position - global_position
+	return Vector2(d.x, d.z).length() <= stats.aa_range
+
+
+## Rhino active: bomb a ground point for cluster_duration seconds. False while on cooldown.
+func start_cluster(aim: Vector3) -> bool:
+	if not cluster_ready() or not is_alive():
+		return false
+	cluster_cd = stats.cluster_cooldown
+	_cluster_left = stats.cluster_duration
+	_cluster_cd_shot = 0.0
+	_cluster_aim = aim
+	return true
+
+
+func is_bombing() -> bool:
+	return _cluster_left > 0.0
+
+
+func _cluster_tick(delta: float) -> void:
+	_cluster_left -= delta
+	_cluster_cd_shot -= delta
+	while _cluster_cd_shot <= 0.0 and _cluster_left > 0.0:
+		_cluster_cd_shot += stats.cluster_interval
+		var spread: float = stats.cluster_spread * sqrt(randf())
+		var a := randf() * TAU
+		var shell := Shell.new()
+		shell.team = team
+		shell.damage = stats.cluster_damage
+		shell.radius = stats.cluster_splash
+		shell.structure_mult = stats.structure_mult
+		get_tree().current_scene.add_child(shell)
+		var muzzle: Vector3 = global_position + Vector3.UP * (stats.height + 0.4) + global_basis.z * 0.6
+		shell.launch(muzzle, _cluster_aim + Vector3(cos(a), 0.0, sin(a)) * spread)
+		Combat.spawn_explosion(self, muzzle, 0.5)
+		_recoil = 1.0
+
+
 # ---------------------------------------------------------------- movement
 
 func _physics_process(delta: float) -> void:
@@ -284,6 +372,12 @@ func _physics_process(delta: float) -> void:
 	if role == "healer":
 		if _fire_cd <= 0.0:
 			_heal_tick()
+	if has_cluster_bomb():
+		cluster_cd = maxf(cluster_cd - delta, 0.0)
+		if _cluster_left > 0.0:
+			_cluster_tick(delta)
+	if stats.has("aa_dps") and _fire_cd <= 0.0:
+		_aa_tick()
 	if Combat.is_valid_target(target) and _in_range(target) and _sees_target:
 		_face(target.global_position, delta)
 		if _fire_cd <= 0.0:
@@ -484,6 +578,18 @@ func _build_ring() -> void:
 	_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_ring.visible = false
 	add_child(_ring)
+	if stats.has("aa_range"):
+		# Dashed circle showing how far the anti-air passive reaches.
+		var im := ImmediateMesh.new()
+		im.surface_begin(Mesh.PRIMITIVE_LINES)
+		RhinoAim.dashed_circle(im, Vector3.UP * 0.15, stats.aa_range, 48)
+		im.surface_end()
+		_aa_ring = MeshInstance3D.new()
+		_aa_ring.mesh = im
+		_aa_ring.material_override = Mats.unshaded(Color(0.55, 0.75, 1.0, 0.8))
+		_aa_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_aa_ring.visible = false
+		add_child(_aa_ring)
 
 
 func _build_hp_bar() -> void:
