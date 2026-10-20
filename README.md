@@ -33,7 +33,11 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
 **Attacker (RTS)**
 - `LMB` click/drag to select, `Shift` to add · `RMB` attack-move, or attack a gate/defender you click on · `Ctrl+RMB` move without stopping
 - Spawn: `Z` Bear Rifleman · `X` Kangaroo Commando (fast) · `C` Wolf Medic (heals) · `V` Sky Talon (flies over the mountain) · `B` War Elephant (heavy) · `N` Mule Artillery (long-range shells) · `M` Breaching Ram (gates only)
-- Models in, roles still to be designed (placeholder stats): `G` War Ram · `H` Savanna Signal Scout · `J` Night Ops Chimp · `K` Hippo Heavy Gunner · `L` Bison Field Gun · `Y` Armored Lioness · `U` Serpent Sniper · `I` Armored Rhino
+- `I` Combat Rhino: tanky and slow, with no basic attack.
+  - Passive anti-air: locks onto one enemy flyer in its dashed ring and stays on it until it dies or leaves. One rhino is weak; it takes about five to bring a flyer down fast.
+  - `F` cluster bombing: aim, then `LMB` to fire (`RMB` or `F` cancels). Each rhino shells a spot inside its 40 m zone for 8 s. Cooldown is 45 s. With several rhinos selected, the preview shows where each one's bombs will land. Rhinos that were moved together keep their formation's shape. Scattered rhinos aim as close to the cursor as their zones allow and spread around it instead of piling onto one spot.
+  - `T` scout formation: with rhinos and other units selected, the rhinos ring the outside of the group so their anti-air covers it. Orders to the whole group keep the ring. Ordering a rhino on its own takes it out of the ring, and `T` again turns it off.
+- Models in, roles still to be designed (placeholder stats): `G` War Ram · `H` Savanna Signal Scout · `J` Night Ops Chimp · `K` Hippo Heavy Gunner · `L` Bison Field Gun · `Y` Armored Lioness · `U` Serpent Sniper
 - `Tab` cycles spawn point · `Ctrl+1`–`5` save a group, `1`–`5` recall it
 - Camera: `WASD`/arrows/screen edge to pan, `Q`/`E` or middle mouse to rotate, wheel to zoom
 - `Esc` pauses (both sides)

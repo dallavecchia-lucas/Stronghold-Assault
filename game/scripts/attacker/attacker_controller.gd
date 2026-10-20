@@ -6,8 +6,11 @@ extends CanvasLayer
 ## LMB click/drag: select · Shift adds · RMB: attack-move / attack target
 ## Ctrl+RMB: move without stopping to fight · Ctrl+1-5 assign group · 1-5 recall
 ## Z X C V B N M G H J K L Y U I: spawn units · Tab: cycle spawn point
+## F: aim the selected rhinos' cluster bombing (LMB fire, RMB/F cancel) · T: scout formation
 
 const DRAG_THRESHOLD := 6.0
+const CLUSTER_KEY := KEY_F
+const SCOUT_KEY := KEY_T
 
 var level: LevelBuilder
 var commander: AttackerCommander
@@ -26,6 +29,10 @@ var _selection_label: Label
 var _spawn_buttons := {}
 var _spawn_point_buttons: Array[Button] = []
 var _marker: MeshInstance3D
+## Cluster bombing aim mode: preview of every rhino's aim zone and where its bombs will land.
+var _aiming := false
+var _aim_preview: MeshInstance3D
+var _aim_mesh: ImmediateMesh
 
 
 func _ready() -> void:
@@ -38,6 +45,7 @@ func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	commander.unit_died.connect(func(u): selected.erase(u))
 	_build_marker()
+	_build_aim_preview()
 	_build_hud()
 
 
@@ -50,6 +58,12 @@ func restore_mouse() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if get_tree().paused:
 		return
+	if _aiming and event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			_fire_cluster(event.position)
+		if event.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT]:
+			_set_aiming(false)
+			return
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:
@@ -74,6 +88,13 @@ func _unhandled_input(event: InputEvent) -> void:
 			_select_rect.size = r.size
 			_select_rect.visible = true
 	elif event is InputEventKey and event.pressed and not event.echo:
+		if event.physical_keycode == CLUSTER_KEY:
+			_set_aiming(not _aiming and not _ready_rhinos().is_empty())
+			return
+		if event.physical_keycode == SCOUT_KEY:
+			_alive_selection()
+			commander.submit({"type": "scout", "units": selected.map(func(u): return u.unit_id)})
+			return
 		for type_id in UnitTypes.ORDER:
 			if event.physical_keycode == UnitTypes.DATA[type_id].hotkey:
 				spawn(type_id)
@@ -131,8 +152,12 @@ func _set_selection(list: Array) -> void:
 		u.selected = true
 
 
-func _issue_order(pos: Vector2, force_move: bool) -> void:
+func _alive_selection() -> void:
 	selected = selected.filter(func(u): return is_instance_valid(u) and u.is_alive())
+
+
+func _issue_order(pos: Vector2, force_move: bool) -> void:
+	_alive_selection()
 	if selected.is_empty():
 		return
 	var ids := selected.map(func(u): return u.unit_id)
@@ -146,6 +171,58 @@ func _issue_order(pos: Vector2, force_move: bool) -> void:
 	else:
 		commander.submit({"type": "move", "units": ids, "pos": hit.position, "attack": not force_move})
 		_ping(hit.position, UIKit.GOOD if force_move else UIKit.WARN)
+
+
+# ---------------------------------------------------------------- rhino cluster bombing
+
+func _ready_rhinos() -> Array:
+	_alive_selection()
+	return selected.filter(func(u): return u.cluster_ready())
+
+
+func _set_aiming(on: bool) -> void:
+	_aiming = on
+	_aim_preview.visible = on
+
+
+func _fire_cluster(screen_pos: Vector2) -> void:
+	var hit := _ray(screen_pos, GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES)
+	var rhinos := _ready_rhinos()
+	if hit.is_empty() or rhinos.is_empty():
+		return
+	commander.submit({"type": "cluster", "units": rhinos.map(func(u): return u.unit_id), "pos": hit.position})
+	_ping(hit.position, UIKit.DANGER)
+
+
+func _build_aim_preview() -> void:
+	_aim_mesh = ImmediateMesh.new()
+	_aim_preview = MeshInstance3D.new()
+	_aim_preview.mesh = _aim_mesh
+	_aim_preview.material_override = Mats.unshaded(Color(1.0, 0.55, 0.2), true)
+	_aim_preview.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_aim_preview.visible = false
+	level.add_child(_aim_preview)
+
+
+func _update_aim_preview() -> void:
+	var rhinos := _ready_rhinos()
+	if rhinos.is_empty():
+		_set_aiming(false)
+		return
+	_aim_mesh.clear_surfaces()
+	var hit := _ray(get_viewport().get_mouse_position(), GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES)
+	if hit.is_empty():
+		return
+	var aims := RhinoAim.solve(rhinos, hit.position)
+	var lift := Vector3.UP * 0.3
+	_aim_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
+	for i in rhinos.size():
+		var r: AttackerUnit = rhinos[i]
+		RhinoAim.dashed_circle(_aim_mesh, r.global_position + lift, r.stats.cluster_range, 64)
+		RhinoAim.dashed_circle(_aim_mesh, aims[i] + lift, r.stats.cluster_spread, 16)
+		_aim_mesh.surface_add_vertex(r.global_position + lift)
+		_aim_mesh.surface_add_vertex(aims[i] + lift)
+	_aim_mesh.surface_end()
 
 
 func spawn(type_id: String) -> void:
@@ -251,7 +328,7 @@ func _build_hud() -> void:
 	row.add_child(sp)
 	set_spawn_point(0)
 
-	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera",
+	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation",
 			13, Color(0.85, 0.85, 0.85, 0.75))
 	help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	help.grow_vertical = Control.GROW_DIRECTION_BEGIN
@@ -263,5 +340,16 @@ func _process(_delta: float) -> void:
 	_supply_label.text = "Supply %d" % int(commander.supply)
 	_count_label.text = "Army %d / %d   (+%.0f/s)" % [commander.units.size(), AttackerCommander.UNIT_CAP, commander.income]
 	_selection_label.text = "Selected %d" % selected.size()
+	var rhinos := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_cluster_bomb())
+	if not rhinos.is_empty():
+		var ready := rhinos.filter(func(u): return u.cluster_ready()).size()
+		_selection_label.text += "\nCluster bombs %d/%d [F]" % [ready, rhinos.size()]
+		if ready == 0:
+			var soonest: float = rhinos.map(func(u): return u.cluster_cd).min()
+			_selection_label.text += "  %ds" % ceili(soonest)
+		if rhinos.any(func(u): return commander.is_scouting(u)):
+			_selection_label.text += "\nScout formation [T]"
+	if _aiming:
+		_update_aim_preview()
 	for type_id in _spawn_buttons:
 		_spawn_buttons[type_id].disabled = not commander.can_afford(type_id)
