@@ -27,6 +27,10 @@ var target: Node3D = null
 var formation_id := 0
 ## Seconds until the cluster bombing ability can be used again.
 var cluster_cd := 0.0
+## Seconds until the smoke screen can be used again.
+var smoke_cd := 0.0
+## Seconds of firing the guns have built up toward overheat_time.
+var heat := 0.0
 var selected := false:
 	set(v):
 		selected = v
@@ -45,6 +49,8 @@ var _aa_lock: Node3D = null
 var _cluster_left := 0.0
 var _cluster_cd_shot := 0.0
 var _cluster_aim := Vector3.ZERO
+var _overheat_left := 0.0
+var _wisp_cd := 0.0
 var _hp_bar: Node3D
 var _hp_fill: MeshInstance3D
 var _fire_cd := 0.0
@@ -86,6 +92,18 @@ func has_cluster_bomb() -> bool:
 
 func cluster_ready() -> bool:
 	return has_cluster_bomb() and cluster_cd <= 0.0
+
+
+func has_smoke() -> bool:
+	return stats.has("smoke_cooldown")
+
+
+func smoke_ready() -> bool:
+	return has_smoke() and smoke_cd <= 0.0
+
+
+func is_overheated() -> bool:
+	return _overheat_left > 0.0
 
 
 func _ready() -> void:
@@ -273,7 +291,13 @@ func _fire_at(t: Node3D) -> void:
 			shell.launch(muzzle, aim)
 			Combat.spawn_explosion(self, muzzle, 0.8)
 		_:
-			Combat.fire_hitscan(self, _eye(), Combat.aim_point(t), stats.spread, stats.damage, team,
+			var aim := Combat.aim_point(t)
+			if stats.has("suppress_radius"):
+				# Spray: aim somewhere around the target, so neighbours catch rounds too.
+				var r: float = stats.suppress_radius * sqrt(randf())
+				var a := randf() * TAU
+				aim += Vector3(cos(a) * r, randf_range(-0.4, 0.4) * stats.suppress_radius, sin(a) * r)
+			Combat.fire_hitscan(self, _eye(), aim, stats.spread, stats.damage, team,
 					stats.structure_mult, [get_rid()])
 
 
@@ -351,6 +375,46 @@ func _cluster_tick(delta: float) -> void:
 		_recoil = 1.0
 
 
+## Hippo active: three smoke grenades into the cone toward `toward` (HippoSmoke). False while
+## on cooldown.
+func start_smoke(toward: Vector3) -> bool:
+	if not smoke_ready() or not is_alive():
+		return false
+	smoke_cd = stats.smoke_cooldown
+	var aim := HippoSmoke.solve(self, toward)
+	var muzzle: Vector3 = global_position + Vector3.UP * (stats.height + 0.3)
+	for p in aim.points:
+		var g := SmokeGrenade.new()
+		g.cloud_radius = stats.smoke_radius
+		g.cloud_duration = stats.smoke_duration
+		get_tree().current_scene.add_child(g)
+		g.launch(muzzle, p, stats.smoke_height)
+	Combat.spawn_explosion(self, muzzle, 0.5)
+	_recoil = 1.0
+	return true
+
+
+## Guns heat up while firing and cool at the same rate while resting. Past overheat_time they
+## go silent for overheat_cooldown seconds and come back cold.
+func _heat_tick(delta: float, firing: bool) -> void:
+	if _overheat_left > 0.0:
+		_overheat_left -= delta
+		if _overheat_left <= 0.0:
+			heat = 0.0
+		# Smoke wisps off the gun mounts while they cool.
+		_wisp_cd -= delta
+		if _wisp_cd <= 0.0:
+			_wisp_cd = 0.15
+			var side: Vector3 = global_basis.x * stats.radius * 0.4 * (1.0 if randf() < 0.5 else -1.0)
+			SmokeCloud.wisp(self, global_position + Vector3.UP * stats.height * 0.95 + side)
+	elif firing:
+		heat += delta
+		if heat >= stats.overheat_time:
+			_overheat_left = stats.overheat_cooldown
+	else:
+		heat = maxf(heat - delta, 0.0)
+
+
 # ---------------------------------------------------------------- movement
 
 func _physics_process(delta: float) -> void:
@@ -376,11 +440,16 @@ func _physics_process(delta: float) -> void:
 		cluster_cd = maxf(cluster_cd - delta, 0.0)
 		if _cluster_left > 0.0:
 			_cluster_tick(delta)
+	if has_smoke():
+		smoke_cd = maxf(smoke_cd - delta, 0.0)
 	if stats.has("aa_dps") and _fire_cd <= 0.0:
 		_aa_tick()
-	if Combat.is_valid_target(target) and _in_range(target) and _sees_target:
+	var engaged := Combat.is_valid_target(target) and _in_range(target) and _sees_target
+	if stats.has("overheat_time"):
+		_heat_tick(delta, engaged and not is_overheated())
+	if engaged:
 		_face(target.global_position, delta)
-		if _fire_cd <= 0.0:
+		if _fire_cd <= 0.0 and not is_overheated():
 			_fire_at(target)
 	elif order.type == "move" or order.type == "attack_move":
 		move_to = order.pos
