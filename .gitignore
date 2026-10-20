@@ -12,6 +12,9 @@ exports/
 *.blend1
 *.blend2
 
+# Python bytecode from running the tools/ scripts
+__pycache__/
+
 # OS / editor junk
 .DS_Store
 Thumbs.db

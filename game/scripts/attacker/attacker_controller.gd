@@ -8,13 +8,16 @@ extends CanvasLayer
 ## Z X C V B N M G H J K L Y U I: spawn units · Tab: cycle spawn point
 ## F: aim the selected rhinos' cluster bombing (LMB fire, RMB/F cancel) · T: scout formation
 ## R: aim a selected hippo's smoke screen (LMB fire, RMB/R cancel)
+## O: aim the selected elephants' missiles: LMB an enemy aircraft (RMB/O cancel)
 
 const DRAG_THRESHOLD := 6.0
 const CLUSTER_KEY := KEY_F
 const SCOUT_KEY := KEY_T
 const SMOKE_KEY := KEY_R
+const MISSILE_KEY := KEY_O
 const SMOKE_FILL := Color(0.2, 0.9, 0.6, 0.35)
 const SMOKE_LINE := Color(0.3, 1.0, 0.7)
+const MISSILE_LINE := Color(1.0, 0.35, 0.3)
 
 var level: LevelBuilder
 var commander: AttackerCommander
@@ -33,14 +36,19 @@ var _selection_label: Label
 var _spawn_buttons := {}
 var _spawn_point_buttons: Array[Button] = []
 var _marker: MeshInstance3D
-## Ability aim mode: "" (off), "cluster" (rhinos) or "smoke" (hippos).
+## Ability aim mode: "" (off), "cluster" (rhinos), "smoke" (hippos) or "missile" (elephants).
 ## Cluster: preview of every rhino's aim zone and where its bombs will land.
 ## Smoke: the firing hippo's aim cone, with the band where the curtain will stand.
+## Missile: each ready elephant's missile range, the aircraft under the cursor and lines from
+## the elephants that would fire at it.
 var _aiming := ""
 var _aim_preview: MeshInstance3D
 var _aim_mesh: ImmediateMesh
 var _smoke_preview: MeshInstance3D
 var _smoke_mesh: ImmediateMesh
+var _missile_preview: MeshInstance3D
+var _missile_mesh: ImmediateMesh
+var _aim_label: Label
 
 
 func _ready() -> void:
@@ -55,6 +63,7 @@ func _ready() -> void:
 	_build_marker()
 	_build_aim_preview()
 	_build_smoke_preview()
+	_build_missile_preview()
 	_build_hud()
 
 
@@ -69,10 +78,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if _aiming != "" and event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_LEFT:
-			if _aiming == "cluster":
-				_fire_cluster(event.position)
-			else:
-				_fire_smoke(event.position)
+			match _aiming:
+				"cluster":
+					_fire_cluster(event.position)
+				"smoke":
+					_fire_smoke(event.position)
+				"missile":
+					# Elephants that didn't fire stay ready for the next target: keep aiming.
+					if _fire_missiles(event.position) and not _ready_elephants().is_empty():
+						return
 		if event.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT]:
 			_set_aiming("")
 			return
@@ -105,6 +119,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if event.physical_keycode == SMOKE_KEY:
 			_set_aiming("smoke" if _aiming != "smoke" and not _ready_hippos().is_empty() else "")
+			return
+		if event.physical_keycode == MISSILE_KEY:
+			_set_aiming("missile" if _aiming != "missile" and not _ready_elephants().is_empty() else "")
 			return
 		if event.physical_keycode == SCOUT_KEY:
 			_alive_selection()
@@ -199,6 +216,8 @@ func _set_aiming(mode: String) -> void:
 	_aiming = mode
 	_aim_preview.visible = mode == "cluster"
 	_smoke_preview.visible = mode == "smoke"
+	_missile_preview.visible = mode == "missile"
+	_aim_label.visible = mode == "missile"
 
 
 func _fire_cluster(screen_pos: Vector2) -> void:
@@ -278,6 +297,58 @@ func _update_smoke_preview() -> void:
 	var hippo := HippoSmoke.pick(hippos, hit.position)
 	HippoSmoke.draw_preview(_smoke_mesh, hippo, HippoSmoke.solve(hippo, hit.position),
 			Mats.unshaded(SMOKE_FILL, true), Mats.unshaded(SMOKE_LINE, true))
+
+
+# ---------------------------------------------------------------- elephant missiles
+
+func _ready_elephants() -> Array:
+	_alive_selection()
+	return selected.filter(func(u): return u.missiles_ready())
+
+
+## Fires at the enemy aircraft under the cursor. False if there is none, or none of the ready
+## elephants would fire at it (out of range, or enough is already on its way).
+func _fire_missiles(screen_pos: Vector2) -> bool:
+	var target := ElephantMissiles.pick(camera_rig.camera, screen_pos, GameConfig.TEAM_ATTACKER)
+	var elephants := _ready_elephants()
+	if target == null or ElephantMissiles.allocate(elephants, target).is_empty():
+		return false
+	commander.submit({"type": "missile", "units": elephants.map(func(u): return u.unit_id), "target": target.get_path()})
+	_ping(target.global_position, MISSILE_LINE)
+	return true
+
+
+func _build_missile_preview() -> void:
+	_missile_mesh = ImmediateMesh.new()
+	_missile_preview = MeshInstance3D.new()
+	_missile_preview.mesh = _missile_mesh
+	_missile_preview.material_override = Mats.unshaded(MISSILE_LINE, true)
+	_missile_preview.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_missile_preview.visible = false
+	level.add_child(_missile_preview)
+
+
+func _update_missile_preview() -> void:
+	var elephants := _ready_elephants()
+	if elephants.is_empty():
+		_set_aiming("")
+		return
+	var mouse := get_viewport().get_mouse_position()
+	var target := ElephantMissiles.pick(camera_rig.camera, mouse, GameConfig.TEAM_ATTACKER)
+	var firing := ElephantMissiles.allocate(elephants, target) if target else []
+	_missile_mesh.clear_surfaces()
+	ElephantMissiles.draw_preview(_missile_mesh, elephants, target, firing)
+	_aim_label.position = mouse + Vector2(22, 14)
+	if target == null:
+		_aim_label.text = "Missiles: click an enemy aircraft"
+	elif not firing.is_empty():
+		_aim_label.text = "%d of %d elephants fire" % [firing.size(), elephants.size()]
+		if firing.reduce(func(sum, e): return sum + e.salvo_damage(), 0.0) < ElephantMissiles.still_needed(target):
+			_aim_label.text += " (not enough to bring it down)"
+	elif elephants.any(func(e): return e.in_missile_range(target)):
+		_aim_label.text = "Already going down"
+	else:
+		_aim_label.text = "Out of range"
 
 
 func spawn(type_id: String) -> void:
@@ -383,12 +454,17 @@ func _build_hud() -> void:
 	row.add_child(sp)
 	set_spawn_point(0)
 
-	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)",
+	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nElephants: O missiles (LMB an enemy aircraft, RMB cancel)",
 			13, Color(0.85, 0.85, 0.85, 0.75))
 	help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	help.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	help.position = Vector2(14, help.position.y - 150)
 	root.add_child(help)
+
+	_aim_label = UIKit.label("", 15, MISSILE_LINE)
+	_aim_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_aim_label.visible = false
+	root.add_child(_aim_label)
 
 
 func _process(_delta: float) -> void:
@@ -416,9 +492,18 @@ func _process(_delta: float) -> void:
 		else:
 			var hottest: float = hippos.map(func(u): return u.heat / u.stats.overheat_time).max()
 			_selection_label.text += "\nGuns heat %d%%" % int(hottest * 100.0)
+	var elephants := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_missiles())
+	if not elephants.is_empty():
+		var ready := elephants.filter(func(u): return u.missiles_ready()).size()
+		_selection_label.text += "\nMissiles %d/%d [O]" % [ready, elephants.size()]
+		if ready == 0:
+			var soonest: float = elephants.map(func(u): return u.missile_cd).min()
+			_selection_label.text += "  %ds" % ceili(soonest)
 	if _aiming == "cluster":
 		_update_aim_preview()
 	elif _aiming == "smoke":
 		_update_smoke_preview()
+	elif _aiming == "missile":
+		_update_missile_preview()
 	for type_id in _spawn_buttons:
 		_spawn_buttons[type_id].disabled = not commander.can_afford(type_id)

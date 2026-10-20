@@ -9,9 +9,18 @@ extends RefCounted
 ##   "healer"    doesn't fight, heals the most damaged ally in range
 ##   "flying"    ignores walls and pathfinding, hovers at FLY_HEIGHT
 ##   "anti_air"  no basic attack. Passive: locks onto one enemy flyer within aa_range and
-##               chips at it (aa_dps) until it dies or leaves. Active: cluster bombing.
+##               chips at it (aa_dps) until it dies or leaves. Active: cluster bombing (rhino)
+##               or a missile salvo (elephant).
+## flak: the anti-air passive comes from the model's two flak cannons (ElephantTurrets): they
+##   swing up at the flyer and take turns firing shells that burst around it, each only once
+##   it is on target.
 ## cluster_*: cluster bombing ability. Fires a shell every cluster_interval for cluster_duration
 ##   seconds at a ground point within cluster_range, scattered over cluster_spread.
+## scouts: rings the outside of the rest of the selection in scout formation (T).
+## missile_*: missile salvo ability. missile_count homing missiles of missile_damage each, one
+##   every missile_interval, at an enemy flyer within missile_range (flat distance). Reloads in
+##   missile_cooldown. Selected elephants only fire as many salvos as the kill takes
+##   (ElephantMissiles).
 ## suppress_radius: shots are aimed at a random point this far around the target, so the spray
 ##   can hit whatever stands next to it.
 ## overheat_*: the guns fire for overheat_time seconds in total (resting cools them at the same
@@ -64,10 +73,15 @@ const DATA := {
 	},
 	"elephant": {
 		"name": "War Elephant", "cost": 320, "hp": 1400.0, "speed": 3.0,
-		"range": 26.0, "damage": 9.0, "fire_interval": 0.15, "spread": 0.05,
+		"range": 0.0, "damage": 0.0, "fire_interval": 0.2, "spread": 0.0,
 		"structure_mult": 1.5, "radius": 1.6, "height": 3.8,
-		"role": "infantry", "anim": "stomp", "hotkey": KEY_B,
-		"model": "res://assets/units/war_elephant_sentinel/war_elephant_sentinel.glb",
+		"role": "anti_air", "anim": "rigged", "hotkey": KEY_B,
+		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 2.2,
+		# The real anti-air unit: one elephant's flak is worth about five rhinos.
+		"aa_range": 26.0, "aa_dps": 30.0, "flak": true,
+		"missile_cooldown": 25.0, "missile_range": 60.0, "missile_count": 8,
+		"missile_damage": 18.0, "missile_interval": 0.12,
+		"model": "res://assets/units/war_elephant_sentinel/war_elephant_sentinel_rigged.glb",
 	},
 	"mule": {
 		"name": "Mule Artillery", "cost": 280, "hp": 450.0, "speed": 2.6,
@@ -138,7 +152,7 @@ const DATA := {
 		"role": "anti_air", "anim": "rigged", "hotkey": KEY_I,
 		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 2.6,
 		# Weak on its own on purpose: it takes about five rhinos to bring a flyer down quickly.
-		"aa_range": 18.0, "aa_dps": 6.0,
+		"aa_range": 18.0, "aa_dps": 6.0, "scouts": true,
 		"cluster_range": 40.0, "cluster_duration": 8.0, "cluster_cooldown": 45.0,
 		"cluster_interval": 0.25, "cluster_damage": 28.0, "cluster_splash": 3.5, "cluster_spread": 6.0,
 		"model": "res://assets/units/armored_rhino_unit/armored_rhino_unit_rigged.glb",
