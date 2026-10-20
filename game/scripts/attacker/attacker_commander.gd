@@ -8,12 +8,14 @@ extends Node
 ##
 ##   {"type": "spawn", "unit": "rifleman", "spawn": 0}
 ##   {"type": "move", "units": [ids], "pos": Vector3, "attack": bool}
-##   {"type": "attack", "units": [ids], "target": NodePath}
+##   {"type": "attack", "units": [ids], "target": NodePath}   rams ramming at a ground gate charge
+##               it, as many as fit in front of its doorway; the rest call their ram off (RamCharge)
 ##   {"type": "cluster", "units": [ids], "pos": Vector3}   rhinos bomb around pos (RhinoAim)
 ##   {"type": "smoke", "units": [ids], "pos": Vector3}   the ready hippo closest to pos lays a
 ##                                                     smoke screen toward it (HippoSmoke)
 ##   {"type": "missile", "units": [ids], "target": NodePath}   elephants fire missile salvos at
 ##               an enemy flyer, only as many as the kill takes (ElephantMissiles)
+##   {"type": "ram", "units": [ids]}   breaching rams surge forward (AttackerUnit.start_ram)
 ##   {"type": "scout", "units": [ids]}   toggle scout formation: the rhinos in the selection
 ##                                       ring the rest of it so their anti-air covers the mass
 
@@ -65,6 +67,9 @@ func submit(cmd: Dictionary) -> int:
 			_smoke(cmd.units, cmd.pos)
 		"missile":
 			_missiles(cmd.units, cmd.target)
+		"ram":
+			for u in _resolve(cmd.units):
+				u.start_ram()
 		"scout":
 			_toggle_scout(cmd.units)
 	return 0
@@ -108,9 +113,16 @@ func _attack(ids: Array, target_path: NodePath) -> void:
 	var target := get_node_or_null(target_path) as Node3D
 	if not Combat.is_valid_target(target):
 		return
-	for u in _resolve(_without_scouts(ids)):
+	var list := _resolve(_without_scouts(ids))
+	for u in list:
 		u.formation_id = 0
 		u.set_order({"type": "attack", "target": target})
+	if RamCharge.is_gate(target):
+		for pick in RamCharge.allocate(list, target):
+			pick[0].charge(target, pick[1])
+		for u in list:
+			if u.is_ramming() and u.charge_gate == null:
+				u.end_ram()  # no room at the doorway, or too far to make it in time
 
 
 func _cluster(ids: Array, pos: Vector3) -> void:
