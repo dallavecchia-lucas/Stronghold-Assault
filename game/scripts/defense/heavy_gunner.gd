@@ -51,9 +51,10 @@ const AIM_TOLERANCE := deg_to_rad(12.0)
 ## A squad mate this close to the line of fire holds the trooper's fire (m).
 const FRIENDLY_CLEARANCE := 0.75
 ## Following: how hard it closes in on its spot, and how much faster than walking pace it may go
-## to catch up.
+## to catch up: CATCH_UP, rising to FAR_CATCH_UP from 3 m off its spot to 8 m off it.
 const FOLLOW_GAIN := 1.8
 const CATCH_UP := 1.45
+const FAR_CATCH_UP := 1.75
 ## Seconds between path updates while following.
 const REPATH := 0.25
 ## Caught on a corner this long, a follower backs off the wall for UNSTICK_TIME and tries again.
@@ -71,6 +72,10 @@ var goal := Vector3.ZERO
 ## The leader's velocity, so a follower in its spot keeps pace instead of lagging.
 var pace := Vector3.ZERO
 var following := false
+## In a column: walk straight at this point on the leader's trail at trail_speed (the squad keeps
+## it a little ahead of the trooper) instead of pathing to the goal. INF: path to the goal.
+var trail_point := Vector3.INF
+var trail_speed := 0.0
 ## World point the trooper aims at; INF-free: the squad always gives one.
 var aim_point := Vector3.ZERO
 ## Look the way the aim points instead of at the point (when it is too close to converge on).
@@ -143,7 +148,8 @@ func _ready() -> void:
 	_agent = NavigationAgent3D.new()
 	_agent.radius = RADIUS + 0.15
 	_agent.height = HEIGHT
-	_agent.max_speed = CLIP_FORWARD * CATCH_UP
+	# Avoidance clamps to this: room for the fastest a follower goes (far off and hustling).
+	_agent.max_speed = CLIP_FORWARD * FAR_CATCH_UP * 1.25
 	# Path corners count as reached only close up, so troopers round the bunker's corners instead
 	# of cutting them. The baked navmesh floats ~0.3-0.5 m over the floor: compare at foot height.
 	_agent.path_desired_distance = 0.5
@@ -299,6 +305,13 @@ func set_leader(on: bool) -> void:
 	_agent.avoidance_priority = 1.0 if on else 0.5
 	if on:
 		following = false
+		trail_point = Vector3.INF
+
+
+## Who gives way to whom: a trooper steers round squad mates of higher priority and ignores lower
+## ones (the squad ranks them front to back, so the back of a column never shoves the front).
+func set_priority(p: float) -> void:
+	_agent.avoidance_priority = p
 
 
 ## Fastest it walks in a direction (world), relative to where it faces: an ellipse between the
@@ -312,6 +325,11 @@ func max_speed_toward(dir: Vector3) -> float:
 	var s := side / CLIP_SIDE
 	var n := sqrt(f * f + s * s)
 	return (1.0 / n if n > 0.001 else CLIP_FORWARD) * (1.35 if hustle else 1.1)
+
+
+## Caught on a corner and backing off it right now.
+func unsticking() -> bool:
+	return _unstick > 0.0
 
 
 func overheated() -> bool:
@@ -386,7 +404,7 @@ func _follow(delta: float) -> void:
 	to.y = 0.0
 	var dist := to.length()
 	var want := Vector3.ZERO
-	var walk := CLIP_FORWARD * CATCH_UP * (1.25 if hustle else 1.0)
+	var walk := CLIP_FORWARD * lerpf(CATCH_UP, FAR_CATCH_UP, clampf((dist - 3.0) / 5.0, 0.0, 1.0)) * (1.25 if hustle else 1.0)
 	_repath_cd -= delta
 	if _repath_cd <= 0.0 or goal.distance_to(_path_goal) > 0.6:
 		_repath_cd = REPATH
@@ -399,12 +417,17 @@ func _follow(delta: float) -> void:
 		var next := _agent.get_next_path_position() - global_position
 		next.y = 0.0
 		want = (next.normalized() + _wall_away * 0.8).normalized() * CLIP_FORWARD
+	elif trail_point != Vector3.INF:
+		var on := trail_point - global_position
+		on.y = 0.0
+		if on.length() > 0.05:
+			want = on.normalized() * trail_speed
 	elif direct:
 		want = pace + to * FOLLOW_GAIN
 		if dist < 0.25 and pace.length() < 0.2:
 			want = Vector3.ZERO
 	elif not _agent.is_navigation_finished():
-		var next := _agent.get_next_path_position() - global_position
+		var next := _next_corner() - global_position
 		next.y = 0.0
 		if next.length() > 0.01:
 			# Slow down coming in, but never below the leader's pace.
@@ -414,6 +437,25 @@ func _follow(delta: float) -> void:
 	_want = want
 	var flat := Vector3(velocity.x, 0.0, velocity.z).move_toward(want, ACCEL * 1.4 * delta)
 	_agent.velocity = flat
+
+
+## The path corner to walk to. Already out along the leg past the agent's next corner (in a gate,
+## crossing the hole the door's plug leaves in the navmesh: every repath starts the path from the
+## nearer edge of it, which half the way across is the one behind), it heads on for the corner
+## after instead of turning back.
+func _next_corner() -> Vector3:
+	var next := _agent.get_next_path_position()
+	var path := _agent.get_current_navigation_path()
+	var k := _agent.get_current_navigation_path_index()
+	if k + 1 < path.size():
+		var ab := path[k + 1] - path[k]
+		var ap := global_position - path[k]
+		ab.y = 0.0
+		ap.y = 0.0
+		var u := ap.dot(ab) / maxf(ab.length_squared(), 0.0001)
+		if u > 0.0 and u < 1.0 and (ap - ab * u).length() < 0.6:
+			return path[k + 1]
+	return next
 
 
 func _on_velocity_computed(safe: Vector3) -> void:

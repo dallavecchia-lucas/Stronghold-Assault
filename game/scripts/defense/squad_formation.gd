@@ -10,7 +10,8 @@ extends RefCounted
 ## in from the sides, and in passages too tight for any wedge the squad files along the way the
 ## leader came: two abreast where the passage is wide enough, else in single file. Wider shapes
 ## come back only once they have fitted for a moment, so the squad doesn't flicker between them at
-## a tunnel mouth.
+## a tunnel mouth. In a column the troopers keep their order down the trail (the one furthest along
+## it goes first) instead of trading places for shorter walks: in a tunnel nobody can get past.
 
 enum Mode { WEDGE, SQUEEZED, PAIRS, FILE }
 const MODE_NAMES := ["WEDGE", "SQUEEZED", "PAIRS", "FILE"]
@@ -40,10 +41,15 @@ const TRAIL_STEP := 0.35
 const TRAIL_LENGTH := 30.0
 ## Seconds a wider shape has to keep fitting before the squad spreads out into it.
 const WIDEN_DELAY := 0.6
+## In a column, a trooper this much further along the trail than the one ahead of it takes its place.
+const ORDER_SLACK := 0.8
 
 var nav_map: RID
 var nav_layers := 1
 var mode := Mode.WEDGE
+## The spots handed out last were a column (PAIRS or FILE) along the trail.
+var column := false
+var _column_shape := Mode.FILE
 ## Leader positions, newest first.
 var trail: Array[Vector3] = []
 
@@ -93,6 +99,7 @@ func solve(leader: Vector3, heading: float, followers: Array, delta: float) -> A
 			break
 	if spots.is_empty():
 		spots = _file(leader, start, n, false)
+	var shape := found
 	# Narrower shapes take over at once; wider ones once they have fitted for WIDEN_DELAY.
 	if found > mode:
 		mode = found
@@ -109,9 +116,65 @@ func solve(leader: Vector3, heading: float, followers: Array, delta: float) -> A
 			var keep := _shape(mode, squeeze[shapes.find(mode)], leader, start, heading, n)
 			if keep.size() == n:
 				spots = keep
+				shape = mode
+			elif mode >= Mode.PAIRS:
+				# Still a column until it has widened: down the trail as the leader walked it.
+				spots = _file(leader, start, n, false)
+				shape = Mode.FILE
 	else:
 		_wider_t = 0.0
+	var was_column := column
+	column = shape >= Mode.PAIRS
+	if column:
+		_column_shape = shape
+		return _column_assigned(spots, followers, leader, shape, was_column)
 	return _assigned(spots, followers)
+
+
+## How far back along the trail slot `slot` of the column is (m), and how far to the side of it.
+func slot_back(slot: int) -> float:
+	return TRAIL_FIRST + float(slot / 2 if _column_shape == Mode.PAIRS else slot) * TRAIL_SPACING
+
+
+func slot_side(slot: int) -> float:
+	if _column_shape != Mode.PAIRS:
+		return 0.0
+	return PAIR_HALF if slot % 2 == 0 else -PAIR_HALF
+
+
+## Follower i's slot (index into the spots handed out last).
+func slot_of(i: int) -> int:
+	return _assign[i] if i < _assign.size() else i
+
+
+## [point, sideways unit vector] `dist` meters back along the trail from the leader.
+func along(dist: float, leader: Vector3) -> Array:
+	return _along(dist, leader)
+
+
+## Where `p` is on the way the leader came: [meters back along the trail to the point on it nearest
+## p, how far off the trail p is (flat)]. Only parts of it within a step of p's height count (not
+## the ramp beside it); none: [INF, INF].
+func locate(p: Vector3, leader: Vector3) -> Array:
+	var best_back := INF
+	var best_off := INF
+	var back := 0.0
+	var a := leader
+	for b in trail:
+		var ab := b - a
+		var flat2 := ab.x * ab.x + ab.z * ab.z
+		var u := 0.0
+		if flat2 > 0.000001:
+			u = clampf(((p.x - a.x) * ab.x + (p.z - a.z) * ab.z) / flat2, 0.0, 1.0)
+		var q := a + ab * u
+		var seg := a.distance_to(b)
+		var off := _flat(p, q)
+		if off < best_off and absf(p.y - q.y) < 0.5:
+			best_off = off
+			best_back = back + seg * u
+		back += seg
+		a = b
+	return [best_back, best_off]
 
 
 ## The spots of one shape, or fewer than n if it doesn't fit.
@@ -231,6 +294,45 @@ func _spot(want: Vector3, leader: Vector3, start: Vector3, taken: Array[Vector3]
 
 static func _flat(a: Vector3, b: Vector3) -> float:
 	return Vector2(a.x - b.x, a.z - b.z).length()
+
+
+## Column spots go out in trail order: the follower furthest along the trail takes the slot nearest
+## the leader, and the order only changes when one gets clearly ahead of the one before it. Side by
+## side (PAIRS), each of a pair takes the side it is already on.
+func _column_assigned(spots: Array[Vector3], followers: Array, leader: Vector3, shape: Mode, keep_order: bool) -> Array[Vector3]:
+	var n := spots.size()
+	var key := []
+	for p in followers:
+		var at := locate(p, leader)
+		key.append(at[0] if at[0] < INF else 1000.0 + _flat(p, leader))
+	var order := range(n)
+	if keep_order and _assign.size() == n:
+		order.sort_custom(func(a, b): return _assign[a] < _assign[b])
+	else:
+		order.sort_custom(func(a, b): return key[a] < key[b])
+	for pass_i in n:
+		for j in n - 1:
+			if key[order[j + 1]] + ORDER_SLACK < key[order[j]]:
+				var x = order[j]
+				order[j] = order[j + 1]
+				order[j + 1] = x
+	_assign.resize(n)
+	for k in n:
+		_assign[order[k]] = k
+	if shape == Mode.PAIRS:
+		for k in range(0, n - 1, 2):
+			var a: int = order[k]
+			var b: int = order[k + 1]
+			var at := _along(TRAIL_FIRST + float(k / 2) * TRAIL_SPACING, leader)
+			var side := at[1] as Vector3
+			# Slot k is on the +side.
+			if (followers[b] - at[0]).dot(side) > (followers[a] - at[0]).dot(side):
+				_assign[a] = k + 1
+				_assign[b] = k
+	var out: Array[Vector3] = []
+	for i in n:
+		out.append(spots[_assign[i]])
+	return out
 
 
 ## Hands the spots out so the troopers have the least walking to do (and don't swap sides for

@@ -26,6 +26,17 @@ const HEADING_RATE := deg_to_rad(110.0)
 const HEADING_DEADZONE := deg_to_rad(20.0)
 ## Aim points closer than this are looked at side by side instead of converged on.
 const CONVERGE_MIN := 8.0
+## In a column the followers walk the leader's own trail instead of pathing: each steers for the
+## point TRAIL_LOOKAHEAD further up it, at the leader's pace plus TRAIL_GAIN per meter it is behind
+## its slot, slowing down to keep COLUMN_GAP from whoever is ahead of it. A follower takes to the
+## trail within TRAIL_JOIN of it (if it can walk straight onto it) and leaves it (back to pathing)
+## past TRAIL_LEAVE, or for TRAIL_REST after getting caught on something.
+const TRAIL_LOOKAHEAD := 1.2
+const TRAIL_GAIN := 1.2
+const COLUMN_GAP := 1.5
+const TRAIL_JOIN := 0.9
+const TRAIL_LEAVE := 1.8
+const TRAIL_REST := 1.5
 ## Blast doors open while a trooper is this close (m).
 const GATE_REACH := 6.5
 const HOME_REACH := 1.5
@@ -86,6 +97,9 @@ var _reinforce_cd := 0.0
 var _retarget_cd := 0.0
 var _target: Node3D = null
 var _nav_ready := false
+var _on_trail := {}
+var _trail_rest := {}
+var _walled := {}
 
 
 func _ready() -> void:
@@ -193,6 +207,9 @@ func _share_exclusions() -> void:
 func _on_trooper_died(t: HeavyGunner) -> void:
 	troopers.erase(t)
 	goals.erase(t)
+	_on_trail.erase(t)
+	_trail_rest.erase(t)
+	_walled.erase(t)
 	if t == leader:
 		leader = null
 		_pick_leader(t.global_position)
@@ -368,30 +385,133 @@ func _update_followers(delta: float) -> void:
 		if t != leader:
 			followers.append(t)
 	_solve_cd -= delta
+	var solved := false
 	if _nav_ready and (_solve_cd <= 0.0 or _spots.size() != followers.size()):
 		_solve_cd = SOLVE_INTERVAL
 		var at: Array = followers.map(func(f): return f.global_position)
 		_spots = formation.solve(leader.global_position, heading, at, SOLVE_INTERVAL)
 		_solve_at = leader.global_position
-	var carry := leader.global_position - _solve_at
+		solved = true
+	var lpos := leader.global_position
+	var carry := lpos - _solve_at
 	carry.y = 0.0
-	var aim_dir := aim_point - (leader.global_position + Vector3.UP * 1.4)
+	var aim_dir := aim_point - (lpos + Vector3.UP * 1.4)
 	leader.aim_point = aim_point
 	leader.aim_parallel = false
+	var column := formation.column and _spots.size() == followers.size()
+	var backs := {}
+	for f in followers:
+		backs[f] = formation.locate(f.global_position, lpos)
 	goals.clear()
 	for i in followers.size():
 		var f := followers[i]
-		if i < _spots.size():
-			f.goal = _spots[i] + carry
-			goals[f] = f.goal
+		var slot := formation.slot_of(i)
+		var back_to := 0.0
+		var side := 0.0
+		if column:
+			# The slot on the trail itself (the spots handed out are only checked against it).
+			back_to = formation.slot_back(slot)
+			side = formation.slot_side(slot)
+			var at: Array = formation.along(back_to, lpos)
+			f.goal = at[0] + at[1] * side
+			f.set_priority(1.0 - 0.05 * back_to)
 		else:
-			f.goal = f.global_position
+			f.goal = _spots[i] + carry if i < _spots.size() else f.global_position
+			f.set_priority(0.85 - 0.05 * slot)
+		goals[f] = f.goal
+		# Followers walk the leader's trail in a column, and in the open too while a wall stands
+		# between them and their spot (the last ones still in the tunnel when the wedge opens out):
+		# they come out the way the leader did, then peel off to their spots.
+		var walk := column
+		if not column:
+			if solved or not _walled.has(f):
+				_walled[f] = backs[f][0] > 1.0 and backs[f][0] < INF and _walled_off(f, f.goal)
+			walk = _walled[f]
+		f.trail_point = Vector3.INF
+		if _keep_on_trail(f, walk, backs[f], delta):
+			_walk_trail(f, back_to, side, backs)
 		f.pace = Vector3(leader.velocity.x, 0.0, leader.velocity.z)
 		f.following = true
 		f.aim_point = aim_point
 		# Too close to converge on (a wall in the face): all look the leader's way instead.
 		f.aim_parallel = f.global_position.distance_to(aim_point) < CONVERGE_MIN
 		f.aim_dir = aim_dir
+
+
+## Whether follower `f` walks the trail this frame (`want`: the squad would like it to), given
+## where it is on it ([back, off]): it takes to the trail close to it and if it can walk straight
+## onto it, leaves it when it strays too far, and rests off it a moment after getting caught.
+func _keep_on_trail(f: HeavyGunner, want: bool, where: Array, delta: float) -> bool:
+	var was: bool = _on_trail.get(f, false)
+	_trail_rest[f] = _trail_rest.get(f, 0.0) - delta
+	var on: bool = want and where[1] < (TRAIL_LEAVE if was else TRAIL_JOIN) and _trail_rest[f] <= 0.0
+	if f.unsticking():
+		on = false
+		_trail_rest[f] = TRAIL_REST
+	elif on and not was:
+		on = _straight_onto(f, where[0])
+	_on_trail[f] = on
+	return on
+
+
+## Follower on the trail: steer for a point a little further up it (`side` meters to the side of
+## it) at a pace that closes on `back_to` meters behind the leader and keeps clear of whoever is
+## ahead (the leader, or the next squad mate up the trail).
+func _walk_trail(f: HeavyGunner, back_to: float, side: float, backs: Dictionary) -> void:
+	var lpos := leader.global_position
+	var back: float = backs[f][0]
+	var pace := Vector2(leader.velocity.x, leader.velocity.z).length()
+	var speed := maxf(pace + (back - back_to) * TRAIL_GAIN, 0.0)
+	var room := _flat(f.global_position, lpos)
+	for o in backs:
+		if o != f and backs[o][0] < back - 0.3:
+			room = minf(room, _flat(f.global_position, o.global_position))
+	speed *= clampf((room - COLUMN_GAP) / 0.8, 0.0, 1.0)
+	var at: Array = formation.along(maxf(back - TRAIL_LOOKAHEAD, 0.0), lpos)
+	var p: Vector3 = at[0]
+	if side != 0.0:
+		# Two abreast: the offset point comes in off a wall onto the navmesh. The trail itself
+		# needs no such check (the leader walked it), and mustn't get one: through a gate it runs
+		# across the hole the door's plug leaves in the navmesh.
+		var beside: Vector3 = p + at[1] * side
+		var c := NavigationServer3D.map_get_closest_point(get_world_3d().navigation_map, beside + Vector3.UP * 0.5)
+		p = c if _flat(c, beside) < 0.6 else p
+	f.trail_point = p
+	f.trail_speed = speed
+
+
+## True if a wall (or a tree, a rock) stands between `f` and `spot`.
+func _walled_off(f: HeavyGunner, spot: Vector3) -> bool:
+	var from := f.global_position + Vector3.UP
+	var to := spot + Vector3.UP
+	if _flat(from, to) < 1.0:
+		return false
+	var ball := SphereShape3D.new()
+	ball.radius = 0.3
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = ball
+	q.transform = Transform3D(Basis.IDENTITY, from)
+	q.motion = to - from
+	q.collision_mask = GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES
+	var frac := get_world_3d().direct_space_state.cast_motion(q)
+	return frac.size() > 0 and frac[0] < 0.97
+
+
+## True if `f` can walk about straight onto the trail at `back` (no wall or ledge in between).
+func _straight_onto(f: HeavyGunner, back: float) -> bool:
+	var map := get_world_3d().navigation_map
+	var from := NavigationServer3D.map_get_closest_point(map, f.global_position + Vector3.UP * 0.5)
+	var at: Array = formation.along(back, leader.global_position)
+	var to := NavigationServer3D.map_get_closest_point(map, at[0] + Vector3.UP * 0.5)
+	var path := NavigationServer3D.map_get_path(map, from, to, true, formation.nav_layers)
+	var length := 0.0
+	for i in range(1, path.size()):
+		length += path[i].distance_to(path[i - 1])
+	return not path.is_empty() and length < _flat(from, to) * 1.3 + 0.5
+
+
+static func _flat(a: Vector3, b: Vector3) -> float:
+	return Vector2(a.x - b.x, a.z - b.z).length()
 
 
 func _open_gates() -> void:
