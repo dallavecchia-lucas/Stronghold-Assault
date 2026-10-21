@@ -39,6 +39,9 @@ extends RefCounted
 ##   Infiltrators also climb the stair shafts to the gun decks and the ladders to the roofs.
 ## raider: once inside, the player loses control of it. It hunts the defenders in the stronghold
 ##   and, when none are left standing, goes up to the gun decks and roofs to wreck the machines.
+##   A raider with a ram rams the soldiers it hunts whenever it is ready (AttackerUnit.RAID_RAM_REACH).
+## raid_keep: a raider that goes for the keep instead, fighting only the defenders it runs into on
+##   the way (AttackerUnit.RAID_DETOUR).
 ## forest_speed: movement speed multiplier inside a forest (LevelBuilder.FORESTS).
 ## climb_speed: m/s up and down stairs and ladders.
 ## structure_mult: damage multiplier against gates / the keep.
@@ -107,6 +110,7 @@ const DATA := {
 		"range": 7.0, "damage": 7.0, "fire_interval": 1.1, "spread": 0.14,
 		"structure_mult": 1.0, "radius": 0.6, "height": 1.6,
 		"role": "infantry", "anim": "rigged", "hotkey": KEY_M, "infiltrator": true,
+		"raider": true, "raid_keep": true, "climb_speed": 3.0,
 		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 3.0,
 		# Big horn sheep with a shotgun: a blast of pellets into a small cone in front of it.
 		"pellets": 7,

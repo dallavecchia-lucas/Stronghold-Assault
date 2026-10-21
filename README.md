@@ -47,7 +47,7 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
   - Basic attack: shotgun. Each blast throws 7 pellets into a small cone in front of it (range 7 m).
   - `Space` ram: a surge of speed (2.2×) for 6 s. Cooldown is 60 s. Enemy soldiers it runs over lose health and are tossed out of its way.
   - Gate charge: `RMB` a ground gate while ramming, and the rams line up across its doorway and slam into it once each for a heavy hit (350). Only 3 fit in front of a doorway at a time: the nearest ones that can still get there before their ram runs out take the places (rams already charging it keep theirs). The rest call their ram off and go at the gate with their shotguns.
-  - Infiltration: once a gate is down, `RMB` next to it sends selected rams in, on to the Keep.
+  - Infiltration: once a gate is down, `RMB` next to it sends selected rams in. Like the Chimps, inside you lose control of them. They make for the Keep on their own and fight every defender they run into on the way (within about 18 m, up the stairs to the gun decks too), ramming soldiers whenever the ram is ready and finishing them with the shotgun.
 - `J` Night Ops Chimp: fast melee fighter, and with the Breaching Ram the only unit that can get inside the stronghold.
   - Basic attack: melee, it strikes whatever is within arm's reach.
   - Passive: moves 60% faster inside forests.
@@ -89,6 +89,14 @@ godot --path game --headless -- --autotest=attacker --duration=120
 
 ```sh
 godot --path game --resolution 1280x720 --write-movie walk.avi --fixed-fps 30 res://scenes/dev/elephant_showcase.tscn -- --shot=walk
+```
+
+### Ram raid showcase
+
+`game/scenes/dev/ram_raid_showcase.tscn` records a Breaching Ram assault on the south gate: three rams charge the gate down with Chimps behind them, then they all go in and fight the garrison on their own. Cameras set up inside the base (video-only, like the work lights and the extra guards it places inside) and chase shots follow the fight. The mortar and machine guns hold fire.
+
+```sh
+godot --path game --resolution 1280x720 --write-movie ram_raid.avi --fixed-fps 30 res://scenes/dev/ram_raid_showcase.tscn
 ```
 
 ## Asset pipeline
