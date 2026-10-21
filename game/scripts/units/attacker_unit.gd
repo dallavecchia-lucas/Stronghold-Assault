@@ -23,6 +23,10 @@ const STEP_HEIGHT := 0.4
 const TRAMPLE_REACH := 0.7
 ## Seconds before a ram can run over the same soldier again.
 const TRAMPLE_REPEAT := 1.0
+## A raiding ram rams a soldier it hunts once it is this close (m), if its ram is ready.
+const RAID_RAM_REACH := 16.0
+## raid_keep raiders turn aside for defenders this close (m); the others don't hold them up.
+const RAID_DETOUR := 18.0
 
 static var _scenes := {}
 
@@ -414,7 +418,8 @@ func _find_enemy() -> Node3D:
 
 ## Raider: the nearest defender in the stronghold (the gun decks, the roofs, the player's soldier
 ## wherever they are). With all of them down, the nearest machine: the gate machine guns on the
-## decks and the mortar on the roof. Sticks to its pick until something it prefers shows up.
+## decks and the mortar on the roof. raid_keep raiders only fight the defenders near them and
+## otherwise go for the keep. Sticks to its pick until something it prefers shows up.
 func _raid_target() -> Node3D:
 	var soldiers := []
 	var machines := []
@@ -424,6 +429,11 @@ func _raid_target() -> Node3D:
 		match d.get("station_kind"):
 			"soldier": soldiers.append(d)
 			"mg", "artillery": machines.append(d)
+	if stats.get("raid_keep", false):
+		# Only the defenders it runs into on the way: the rest of the time it makes for the keep.
+		soldiers = soldiers.filter(func(d): return global_position.distance_to(d.global_position) <= RAID_DETOUR)
+		var keep := _keep()
+		machines = [keep] if keep else []
 	var pool := soldiers if not soldiers.is_empty() else machines
 	if target in pool:
 		return target
@@ -687,6 +697,19 @@ func end_ram() -> void:
 		_agent.max_speed = _speed()
 
 
+## Raiding ram: rams the soldier it hunts once it is close and in sight.
+func _raid_ram() -> void:
+	if not ram_ready() or not _is_soldier(target) or not _sees_target:
+		return
+	var to := target.global_position - global_position
+	if absf(to.y) < stats.height and to.length() <= RAID_RAM_REACH:
+		start_ram()
+
+
+func _is_soldier(t: Node3D) -> bool:
+	return Combat.is_valid_target(t) and t.get("station_kind") == "soldier"
+
+
 ## Charge `gate` from `slot` across its doorway (RamCharge.allocate).
 func charge(gate: Structure, slot: int) -> void:
 	charge_gate = gate
@@ -795,8 +818,12 @@ func _physics_process(delta: float) -> void:
 			_ram_tick(delta)
 	if stats.has("aa_dps") and _fire_cd <= 0.0:
 		_aa_tick()
-	# A charging ram doesn't stop to shoot: it runs for its slot in front of the gate.
-	var engaged := charge_gate == null and Combat.is_valid_target(target) and _in_range(target) and _sees_target
+	if raiding and has_ram():
+		_raid_ram()
+	# A charging ram doesn't stop to shoot: it runs for its slot in front of the gate, or, raiding,
+	# into the soldier it hunts.
+	var running_over := raiding and is_ramming() and _is_soldier(target)
+	var engaged := charge_gate == null and not running_over and Combat.is_valid_target(target) and _in_range(target) and _sees_target
 	if stats.has("overheat_time"):
 		_heat_tick(delta, engaged and not is_overheated())
 	if engaged:
@@ -807,6 +834,8 @@ func _physics_process(delta: float) -> void:
 		move_to = _charge_pos
 	elif order.type == "move" or order.type == "attack_move":
 		move_to = order.pos
+	elif running_over:
+		move_to = target.global_position
 	elif (order.type == "attack" or order.type == "raid") and Combat.is_valid_target(target):
 		move_to = _approach(target)
 
@@ -821,7 +850,7 @@ func _physics_process(delta: float) -> void:
 		if _agent.is_navigation_finished():
 			if order.type != "attack" and order.type != "raid":
 				order = {"type": "idle"}
-			elif role == "melee" or charge_gate:
+			elif role == "melee" or charge_gate or running_over:
 				# Close the last stretch to the target straight on.
 				var dir: Vector3 = move_to - global_position
 				dir.y = 0.0
