@@ -394,9 +394,20 @@ func _cut(shot: String) -> void:
 		cam.look_at(_look)
 
 
-## Behind the squad (the way it faces) and above it, below the birch crowns.
+## Behind the squad (the way it faces) and above it, below the birch crowns; pulled in where the
+## mountain is in the way (troopers still coming out of the gate).
 func _chase_goal() -> Vector3:
-	return _centroid() + Basis(Vector3.UP, squad.heading) * Vector3(1.5, 3.0, 10.0)
+	var from := _centroid() + Vector3.UP * 1.5
+	var want := _centroid() + Basis(Vector3.UP, squad.heading) * Vector3(1.5, 3.0, 10.0)
+	var ball := SphereShape3D.new()
+	ball.radius = 0.4
+	var q := PhysicsShapeQueryParameters3D.new()
+	q.shape = ball
+	q.transform = Transform3D(Basis.IDENTITY, from)
+	q.motion = want - from
+	q.collision_mask = GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES
+	var frac := get_world_3d().direct_space_state.cast_motion(q)
+	return from + (want - from) * (frac[0] if frac.size() > 0 else 1.0)
 
 
 func _update_camera(delta: float) -> void:
