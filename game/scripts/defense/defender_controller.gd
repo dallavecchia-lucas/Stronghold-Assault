@@ -2,8 +2,8 @@ class_name DefenderController
 extends CanvasLayer
 ## Human defender: jumps between stations (number keys / Tab) and shows the FPS HUD.
 ## Stations are duck-typed nodes with possess(), unpossess(), can_possess(),
-## wants_captured_mouse(), get_hud_info(), get_station_position(), station_name and
-## a became_unavailable signal.
+## wants_captured_mouse(), get_hud_info(), get_station_position(), station_name, station_kind
+## and a became_unavailable signal. G jumps to the Gunner Squad (station_kind "squad").
 
 const THREAT_RADIUS := 45.0
 const SWITCH_FADE := 0.18
@@ -54,6 +54,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 	if event.is_action_pressed("station_next"):
 		select_most_threatened()
+	elif event.is_action_pressed("squad"):
+		select_station(stations.find_custom(func(s): return s.station_kind == "squad"))
 	elif event is InputEventMouseButton and event.pressed and current != null \
 			and current.wants_captured_mouse() and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -167,7 +169,10 @@ func _build_hud() -> void:
 	for i in stations.size():
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 8)
-		var key := UIKit.label(str((i + 1) % 10) if i < 10 else " ", 15, UIKit.ACCENT)
+		var key_text := str((i + 1) % 10) if i < 10 else " "
+		if stations[i].station_kind == "squad":
+			key_text = "G"
+		var key := UIKit.label(key_text, 15, UIKit.ACCENT)
 		key.custom_minimum_size.x = 14
 		var name_l := UIKit.label(stations[i].station_name, 15)
 		name_l.custom_minimum_size.x = 210

@@ -3,14 +3,15 @@ extends Node3D
 ## Builds the map: open field around the mountain stronghold (four bunker faces dug into
 ## one mountain, see tools/blender/build_stronghold.py), blast-door gates on three faces,
 ## the keep (reactor) in the core hall under the peak, defender posts on the gun decks and
-## roofs, forests and attacker spawn points. Everything static lives under the navigation
-## region so it gets baked into the navmesh.
+## roofs and the Gunner Squad's in the south spawn hall, forests and attacker spawn points.
+## Everything static lives under the navigation region so it gets baked into the navmesh.
 ##
 ## Only infiltrators (UnitTypes) get inside. The gate tunnels stay plugged on the navmesh
 ## (LAYER_NAV_BLOCK) and a navigation link on NAV_INFILTRATORS opens through each gate once it
-## falls. The stair shafts and ladders are too tight for the navmesh, so every bay has two more
-## links: junction -> gun deck and gun deck -> roof. Each link carries the "route" its units
-## climb along (AttackerUnit._follow_route).
+## falls; the Gunner Squad has links of its own through every gate (NAV_SQUAD). The stair shafts
+## and ladders are too tight for the navmesh, so every bay has two more links: junction -> gun
+## deck and gun deck -> roof. Each link carries the "route" its units climb along
+## (AttackerUnit._follow_route).
 
 signal navigation_ready
 
@@ -29,13 +30,14 @@ const DOOR_SIZE := Vector3(3.0, 2.8, 0.4)
 ## Bay whose ground tunnel is the side's gate; every other tunnel is welded shut.
 const GATE_BAY := 3
 
-## Defender garrison models, one per rifle post (rigged, with Idle/Running clips).
+## Defender garrison models, one per rifle post (rigged, with Idle/Running clips; the Heavy Gunner
+## walks instead of running).
 const DEFENDER_MODELS := [
 	"res://assets/defenders/armored_sentinel/armored_sentinel.glb",
 	"res://assets/defenders/harpy_vanguard/harpy_vanguard.glb",
 	"res://assets/defenders/crimson_warden/crimson_warden.glb",
 	"res://assets/defenders/grey_veil_warden/grey_veil_warden.glb",
-	"res://assets/defenders/heavy_gunner/heavy_gunner.glb",
+	"res://assets/defenders/heavy_gunner/heavy_gunner_rigged.glb",
 	"res://assets/defenders/cyber_orc_sentinel/cyber_orc_sentinel.glb",
 ]
 
@@ -51,6 +53,15 @@ const RIFLE_POSTS := [["south", 2], ["south", 4], ["east", 2], ["west", 4], ["no
 const MORTAR_MOUNT := "MOUNT_AA_S3_1"
 ## Navigation layer bit for the links only infiltrators may take.
 const NAV_INFILTRATORS := 2
+## Navigation layer bit for the links through the gates the defenders' Gunner Squad takes, and how
+## far out and in from the door they reach (the edges of the hole the plug leaves in the navmesh).
+const NAV_SQUAD := 4
+const SALLY_OUT := 1.5
+const SALLY_IN := 1.3
+## The Gunner Squad's post: in the south spawn hall, this far along it from SPAWN_S3 (toward the
+## bay's spawn ramp, which it faces).
+const SQUAD_POST := "SPAWN_S3"
+const SQUAD_POST_OFFSET := Vector3(-3.0, 0.0, 0.15)
 ## Stair shaft and ladder in every bay, as [x along the bay, depth behind the front, floor height]
 ## (tools/blender/build_stronghold.py). DECK_ROUTE: junction -> switchback stair -> deck landing
 ## -> door B onto the gun deck. ROOF_ROUTE: gun deck -> door B -> upper flights -> top landing ->
@@ -298,6 +309,15 @@ func _build_gate(side: String) -> void:
 	breach.set_meta("breach", true)
 	breach.add_to_group("breaches")
 	gate.destroyed.connect(func(_g): breach.enabled = true)
+	# The Gunner Squad goes out and back in whether the gate stands or not (the door opens for it,
+	# Structure.hold_open): a link of its own, on a layer only the squad's troopers path on. It
+	# spans just the gap the plug leaves in the navmesh, so a trooper in the doorway is never sent
+	# back down the tunnel to find its end.
+	var sally := NavigationLink3D.new()
+	sally.navigation_layers = NAV_SQUAD
+	sally.start_position = exit.global_position + out * SALLY_OUT
+	sally.end_position = exit.global_position - out * SALLY_IN
+	add_child(sally)
 
 
 ## Every tunnel that isn't a gate gets a door that can't be broken.
@@ -550,6 +570,15 @@ func _build_stations() -> Array:
 		_place_facing_out(soldier, side, pos)
 		add_child(soldier)
 		stations.append(soldier)
+
+	# The Gunner Squad holds the south spawn hall, facing the ramp up to the gate tunnel.
+	var post := _marker(SQUAD_POST)
+	var squad := GunnerSquad.new()
+	squad.name = "GunnerSquad"
+	squad.home = Transform3D(Basis.looking_at(post.global_basis.x), post.global_transform * SQUAD_POST_OFFSET)
+	squad.gates = gates.values()
+	add_child(squad)
+	stations.append(squad)
 	return used
 
 
