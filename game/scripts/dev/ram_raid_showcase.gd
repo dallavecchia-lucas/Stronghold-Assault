@@ -21,7 +21,7 @@ const BREACH_SHOTS := [[3.2, "crane"], [6.0, "track"], [INF, "gate"]]
 const INTERIOR_CAMS := [
 	["CAM 01 · GATE TUNNEL", Vector3(-4.0, 2.2, 70.6), Vector3(-4.0, 1.2, 80.0)],
 	["CAM 02 · RAMP JUNCTION", Vector3(4.6, 4.5, 66.4), Vector3(-3.0, 1.2, 68.0)],
-	["CAM 03 · SPAWN HALL", Vector3(-3.0, 3.2, 55.0), Vector3(3.0, 1.0, 62.0)],
+	["CAM 03 · SPAWN HALL", Vector3(-6.0, 4.0, 58.0), Vector3(4.0, 0.8, 58.5)],
 	["CAM 04 · STAIR SHAFT", Vector3(4.8, 9.6, 63.2), Vector3(4.8, 8.0, 70.0)],
 	["CAM 05 · GUN DECK WEST", Vector3(-20.0, 10.2, 73.0), Vector3(0.0, 8.6, 71.0)],
 	["CAM 06 · GUN DECK EAST", Vector3(20.0, 10.2, 73.0), Vector3(0.0, 8.6, 71.0)],
@@ -299,7 +299,9 @@ func _direct() -> void:
 		return
 	_hero = _busiest(pool)
 	var best := _best_fixed(_hero)
-	if best >= 0 and (randf() < 0.55 or _shot == "chase"):
+	# Too tight for a chase camera: it would sit right on the hero's back.
+	var tight := _chase_goal().distance_to(_hero.global_position + Vector3.UP * 1.5) < 2.0
+	if best >= 0 and (randf() < 0.55 or _shot == "chase" or tight):
 		_fixed = best
 		_cut("fixed")
 	else:
