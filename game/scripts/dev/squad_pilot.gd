@@ -1,6 +1,6 @@
 class_name SquadPilot
 extends RefCounted
-## Plays a Gunner Squad's leader like a player would, for staged videos (GunnerSquad.pilot): the
+## Plays a squad's leader like a player would, for staged videos (DefenderSquad.pilot): the
 ## movement keys are worked out from the camera's yaw and the camera turns the way a player would
 ## look. Legs of the route, one after another:
 ##   {"to": Vector3}             walk there along the navmesh, looking down the way ahead
@@ -37,7 +37,7 @@ func current() -> Dictionary:
 	return route[leg] if leg < route.size() else {}
 
 
-func pilot_input(squad: GunnerSquad, delta: float) -> void:
+func pilot_input(squad: DefenderSquad, delta: float) -> void:
 	var leader := squad.leader
 	squad.input.move = Vector2.ZERO
 	squad.input.fire = false
@@ -144,7 +144,7 @@ func _ahead(from: Vector3, dist: float) -> Vector3:
 	return p + run.normalized() * left
 
 
-func _nearest_enemy(squad: GunnerSquad) -> Node3D:
+func _nearest_enemy(squad: DefenderSquad) -> Node3D:
 	var best: Node3D = null
 	var best_d := 70.0
 	var eye := squad.leader.global_position + Vector3.UP * 1.8

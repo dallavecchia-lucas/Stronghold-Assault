@@ -374,7 +374,7 @@ func _cut(shot: String) -> void:
 		cam.current = true
 	squad.set_hud_visible(tps)
 	# Seen from outside the squad nobody steps in front of the camera's nose: no dithering.
-	HeavyGunner.set_close_fade(tps)
+	SquadTrooper.set_close_fade(tps)
 	if dc:
 		dc.visible = tps
 	match shot:
@@ -494,7 +494,7 @@ func _centroid() -> Vector3:
 
 
 ## A shell out of the sky onto `target`: a streak down, a blast, and the trooper is gone.
-func _shell(target: HeavyGunner) -> void:
+func _shell(target: SquadTrooper) -> void:
 	var at := target.global_position
 	Combat.spawn_tracer(self, at + Vector3(6.0, 40.0, 14.0), at + Vector3.UP * 0.5, Color(1.0, 0.75, 0.4), 0.12)
 	# Built for the camera a few meters behind (Combat.spawn_explosion's smoke is made for a gate going

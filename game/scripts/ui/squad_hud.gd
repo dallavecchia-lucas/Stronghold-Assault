@@ -1,8 +1,8 @@
 class_name SquadHud
 extends Control
-## Gunner Squad panel, bottom left while the player drives the squad: its formation, each
-## trooper's health, and a small map turned with the camera (up is where the player looks)
-## showing the troopers, the spot each follower is making for, and attackers close by.
+## Squad panel (Gunner Squad, AA Squads), bottom left while the player drives the squad: its
+## formation, each trooper's health, and a small map turned with the camera (up is where the
+## player looks) showing the troopers, the spot each follower is making for, and attackers close by.
 
 const SIZE := Vector2(250, 300)
 const MAP := 120.0  # map radius (px)
@@ -11,7 +11,7 @@ const LEADER := Color(0.35, 0.7, 1.0)
 const FOLLOWER := Color(0.85, 0.9, 1.0)
 const ENEMY := Color(1.0, 0.35, 0.28)
 
-var squad: GunnerSquad
+var squad: DefenderSquad
 
 var _flash := ""
 var _flash_t := 0.0
@@ -47,7 +47,7 @@ func _draw() -> void:
 	draw_style_box(UIKit.panel_style(), Rect2(Vector2.ZERO, SIZE))
 	var font := get_theme_default_font()
 	var mode: String = SquadFormation.MODE_NAMES[squad.formation.mode]
-	draw_string(font, Vector2(12, 24), "GUNNER SQUAD", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.7, 0.75, 0.85))
+	draw_string(font, Vector2(12, 24), squad.hud_title, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.7, 0.75, 0.85))
 	draw_string(font, Vector2(12, 46), mode, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, UIKit.ACCENT)
 	if _flash_t > 0.0:
 		var a := clampf(_flash_t / 0.5, 0.0, 1.0) * (0.6 + 0.4 * absf(sin(_flash_t * 6.0)))
@@ -58,11 +58,11 @@ func _draw() -> void:
 	for t in squad.troopers:
 		if t != squad.leader:
 			order.append(t)
-	for k in GunnerSquad.SIZE:
+	for k in DefenderSquad.SIZE:
 		var r := Rect2(Vector2(126 + k * 23, 30), Vector2(18, 16))
 		draw_rect(r, Color(0, 0, 0, 0.55))
 		if k < order.size():
-			var t: HeavyGunner = order[k]
+			var t: SquadTrooper = order[k]
 			var f := clampf(t.hp / t.max_hp, 0.0, 1.0)
 			var c := UIKit.GOOD if f > 0.6 else (UIKit.WARN if f > 0.3 else UIKit.DANGER)
 			draw_rect(Rect2(r.position + Vector2(0, r.size.y * (1.0 - f)), Vector2(r.size.x, r.size.y * f)), c)

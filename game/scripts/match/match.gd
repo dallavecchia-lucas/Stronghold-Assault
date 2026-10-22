@@ -9,6 +9,8 @@ var commander: AttackerCommander
 var ui: MatchUI
 var player_controller: Node
 var ai_attacker: AIAttacker
+## The defenders' credits and bought squads (the human defender's; the CPU defender buys none).
+var armory: DefenderArmory
 var time_left := 600.0
 var started := false
 var finished := false
@@ -38,8 +40,12 @@ func _ready() -> void:
 	add_child(ui)
 
 	if GameConfig.player_side == GameConfig.PlayerSide.DEFENDER:
+		armory = DefenderArmory.new()
+		armory.name = "DefenderArmory"
+		armory.level = level
 		var dc := DefenderController.new()
 		dc.level = level
+		dc.armory = armory
 		player_controller = dc
 		ai_attacker = AIAttacker.new()
 		ai_attacker.commander = commander
@@ -62,6 +68,8 @@ func _ready() -> void:
 func _start() -> void:
 	started = true
 	commander.process_mode = Node.PROCESS_MODE_INHERIT
+	if armory:
+		add_child(armory)
 	add_child(player_controller)
 	if ai_attacker:
 		add_child(ai_attacker)
@@ -118,8 +126,18 @@ func _autotest_step(delta: float) -> void:
 		_autotest_events = step
 		if player_controller is DefenderController:
 			var dc: DefenderController = player_controller
+			# Buy two AA Squads early, drive them now and then and swap their orders.
+			if step == 2:
+				armory.credits += DefenderArmory.AA_COST
+				dc.buy_squad()
+				dc.buy_squad()
+			if step % 7 == 5:
+				for s in armory.squads:
+					s.cycle_order()
 			if step % 4 == 0:
 				dc.select_most_threatened()
+			elif step % 4 == 2 and not armory.squads.is_empty():
+				dc.select_squad(step % armory.squads.size())
 			else:
 				dc.select_station(step % dc.stations.size())
 			if step % 2 == 0:
@@ -156,3 +174,7 @@ func _autotest_report() -> void:
 		gates.append("%s=%d" % [side, level.gates[side].hp])
 	print("AUTOTEST report t=%.0f units=%d supply=%d keep=%d gates=%s" % [
 			_autotest_t, commander.units.size(), commander.supply, level.keep.hp, ", ".join(gates)])
+	if armory:
+		for s in armory.squads:
+			print("AUTOTEST %s alive=%d order=%s plan=%s mines_down=%d stats=%s" % [s.station_name, s.troopers.size(),
+					AASquad.ORDER_NAMES[s.order], s.plan, s.mines.size(), s.stats])

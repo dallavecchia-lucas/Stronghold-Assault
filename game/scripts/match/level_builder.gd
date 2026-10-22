@@ -59,8 +59,7 @@ const NAV_SQUAD := 4
 const SALLY_OUT := 1.5
 const SALLY_IN := 1.3
 ## The Gunner Squad's post: in the south spawn hall, this far along it from SPAWN_S3 (toward the
-## bay's spawn ramp, which it faces).
-const SQUAD_POST := "SPAWN_S3"
+## bay's spawn ramp, which it faces). Bought AA Squads deploy in the gate halls too (DefenderArmory).
 const SQUAD_POST_OFFSET := Vector3(-3.0, 0.0, 0.15)
 ## Stair shaft and ladder in every bay, as [x along the bay, depth behind the front, floor height]
 ## (tools/blender/build_stronghold.py). DECK_ROUTE: junction -> switchback stair -> deck landing
@@ -572,14 +571,20 @@ func _build_stations() -> Array:
 		stations.append(soldier)
 
 	# The Gunner Squad holds the south spawn hall, facing the ramp up to the gate tunnel.
-	var post := _marker(SQUAD_POST)
 	var squad := GunnerSquad.new()
 	squad.name = "GunnerSquad"
-	squad.home = Transform3D(Basis.looking_at(post.global_basis.x), post.global_transform * SQUAD_POST_OFFSET)
+	squad.home = squad_post("S", SQUAD_POST_OFFSET)
 	squad.gates = gates.values()
 	add_child(squad)
 	stations.append(squad)
 	return used
+
+
+## A squad's post in the gate spawn hall of a face ("S", "E", "W"): `offset` from the hall's spawn
+## marker, in the marker's frame (x runs along the hall), facing the hall's spawn ramp.
+func squad_post(face: String, offset: Vector3) -> Transform3D:
+	var post := _marker("SPAWN_%s%d" % [face, GATE_BAY])
+	return Transform3D(Basis.looking_at(post.global_basis.x), post.global_transform * offset)
 
 
 ## Turret models on every weapon mount no station uses: guns on the gun decks, launchers on

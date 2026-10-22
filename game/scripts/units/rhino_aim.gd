@@ -7,7 +7,8 @@ extends RefCounted
 ##     Every rhino fires the same way, along the line from the centre rhino to the cursor,
 ##     so the bombs land in a copy of the formation.
 ##   Scattered: each rhino aims at the cursor as best its zone allows. Rhinos that can reach
-##     the cursor take neighbouring spots around it instead of piling onto the same one.
+##     the cursor take neighbouring spots around it instead of piling onto the same one (cluster(),
+##     which the AA Squad's rocket strike uses too).
 
 
 ## Returns one aim point per rhino, in the same order.
@@ -52,26 +53,37 @@ static func _formation(rhinos: Array, target: Vector3) -> Array[Vector3]:
 
 
 static func _scattered(rhinos: Array, target: Vector3) -> Array[Vector3]:
-	var spacing: float = rhinos[0].stats.cluster_spread * 1.6
-	# Spots around the cursor, nearest first: the cursor, then hexagonal rings.
+	var at: Array[Vector3] = []
+	var reach: Array[float] = []
+	for r in rhinos:
+		at.append(r.global_position)
+		reach.append(r.stats.cluster_range)
+	return cluster(at, reach, rhinos[0].stats.cluster_spread * 1.6, target)
+
+
+## One spot around `target` for each shooter (standing at `at`, reaching `reach` over the ground):
+## as close to it as the shooter's reach allows, and `spacing` clear of the others, so they cluster
+## round it instead of piling onto one spot. Same order as `at`.
+static func cluster(at: Array[Vector3], reach: Array[float], spacing: float, target: Vector3) -> Array[Vector3]:
+	# Spots around the cursor, nearest first: the cursor, then hexagonal rings. Each ring is gone
+	# round every other spot first, so a few shooters spread evenly round the cursor.
 	var spots: Array[Vector3] = [target]
 	for ring in range(1, 5):
-		for k in 6 * ring:
-			var a := TAU * k / (6.0 * ring)
+		var n := 6 * ring
+		for k in n:
+			var a := TAU * ((k * 2) % n + (k * 2) / n) / float(n)
 			spots.append(target + Vector3(cos(a), 0.0, sin(a)) * spacing * ring)
-	# Most constrained rhinos (farthest from the cursor relative to their reach) pick first.
-	var order := range(rhinos.size())
-	order.sort_custom(func(a, b): return _slack(rhinos[a], target) < _slack(rhinos[b], target))
+	# Most constrained shooters (farthest from the cursor relative to their reach) pick first.
+	var order := range(at.size())
+	order.sort_custom(func(a, b): return reach[a] - _flat(at[a], target) < reach[b] - _flat(at[b], target))
 	var out: Array[Vector3] = []
-	out.resize(rhinos.size())
+	out.resize(at.size())
 	var placed: Array[Vector3] = []
 	for i in order:
-		var r: Node3D = rhinos[i]
-		var reach: float = r.stats.cluster_range
-		var best := clamp_to_zone(r.global_position, reach, target)
+		var best := clamp_to_zone(at[i], reach[i], target)
 		if _crowded(best, placed, spacing):
 			for s in spots:
-				if _flat(s, r.global_position) <= reach and not _crowded(s, placed, spacing):
+				if _flat(s, at[i]) <= reach[i] and not _crowded(s, placed, spacing):
 					best = s
 					break
 		placed.append(best)
@@ -87,10 +99,6 @@ static func clamp_to_zone(centre: Vector3, reach: float, p: Vector3) -> Vector3:
 	var q := centre + d.normalized() * reach
 	q.y = p.y
 	return q
-
-
-static func _slack(r: Node3D, target: Vector3) -> float:
-	return r.stats.cluster_range - _flat(r.global_position, target)
 
 
 static func _crowded(p: Vector3, placed: Array[Vector3], spacing: float) -> bool:
