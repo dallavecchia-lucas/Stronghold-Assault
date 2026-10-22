@@ -770,8 +770,8 @@ func _process(delta: float) -> void:
 	_track(delta)
 	_cut_to(_pick_shot())
 	_update_camera(delta)
-	_update_overlay(delta)
 	_fast_forward()
+	_update_overlay(delta)
 	if not _snaps.is_empty():
 		_snap()
 
