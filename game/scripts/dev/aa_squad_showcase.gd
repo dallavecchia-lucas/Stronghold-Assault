@@ -15,10 +15,17 @@ extends Node3D
 ##   godot --path game --headless --fixed-fps 30 res://scenes/dev/aa_squad_showcase.tscn -- --test
 ##   godot --path game --rendering-driver opengl3 --resolution 1280x720 --fixed-fps 30 \
 ##       res://scenes/dev/aa_squad_showcase.tscn -- --shots=DIR
+##   godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie aa.avi \
+##       --fixed-fps 30 res://scenes/dev/aa_squad_showcase.tscn -- --video
 ##
-## Both print what the squads do and check it at the end (AA SHOWCASE PASS / FAIL); --shots also
-## saves a captioned screenshot at each moment worth seeing into DIR (drawing only those frames).
-## The garrison's posts hold fire.
+## All three print what the squads do and check it at the end (AA SHOWCASE PASS / FAIL); --shots
+## also saves a captioned screenshot at each moment worth seeing into DIR (drawing only those
+## frames). --video is the showcase video, for recording with Movie Maker: a lone Missile Trooper
+## first (walk, strafe, rockets), then the run with cameras cut in, captions and the buttons the
+## player presses. It prints the frame the video starts on (VIDEO START) and the frames to play
+## FAST times faster (FAST: the wait for the mines' cooldown at the perimeter), for cutting the
+## recording; with --snap=t1,t2,.. --snap-out=prefix it draws and saves only the frames at those
+## video times. The garrison's posts hold fire.
 
 const AA1_AT := Vector3(-4.0, 0.0, 152.0)
 const AA2_AT := Vector3(20.0, 0.0, 114.0)
@@ -31,6 +38,23 @@ const GROUND := [["rifleman", -6.0, 192.0], ["rifleman", -2.5, 190.5], ["riflema
 		["rifleman", 0.5, 196.0], ["kangaroo", 3.5, 190.0], ["rifleman", -7.5, 194.5], ["rifleman", 4.0, 195.0]]
 const WALKERS := [["rifleman", -9.0, 196.0], ["rifleman", -4.0, 198.0], ["rifleman", 1.0, 196.5], ["kangaroo", -6.0, 199.0]]
 const PASSERS := [["rifleman", 48.0, 194.0], ["rifleman", 52.0, 196.0], ["kangaroo", 50.0, 199.0], ["rifleman", 46.0, 199.0]]
+## The video's lone Missile Trooper: where it starts (facing south), and where its rockets land.
+const SOLO_AT := Vector3(24.0, 0.0, 100.0)
+const SOLO_TARGET := Vector3(30.0, 0.0, 138.0)
+## Its cameras: [offset of the camera, offset of the point it looks at] from the trooper.
+const SOLO_CAMS := {
+	"solo_side": [Vector3(4.2, 1.35, 1.4), Vector3(0.0, 1.3, 0.6)],
+	"solo_front": [Vector3(2.6, 1.55, 4.4), Vector3(0.0, 1.3, 0.0)],
+	"solo_launch": [Vector3(2.6, 2.3, -4.6), Vector3(-0.5, 4.0, 16.0)],
+	"solo_pod": [Vector3(1.3, 2.15, 1.9), Vector3(0.45, 1.95, 0.15)],
+}
+## The video's timing (s): the lone trooper; the title over the squads before the aircraft come;
+## the minefield; the closing shot. The wait at the perimeter plays FAST times faster.
+const SOLO_LENGTH := 11.5
+const VIDEO_SETUP := 4.5
+const VIDEO_MINES := 12.5
+const OUTRO := 5.0
+const FAST := 4
 
 var level: LevelBuilder
 var commander: AttackerCommander
@@ -39,6 +63,7 @@ var dc: DefenderController
 var aa: Array[AASquad] = []
 var cam: Camera3D
 var shots_dir := ""
+var video := false
 var t := -1.0
 var phase := "setup"
 var phase_t := 0.0
@@ -48,6 +73,7 @@ var _step := 0
 var _talons: Array = []
 var _talon_i := 0
 var _lock_started := -1.0
+var _air_done := -1.0
 var _ground: Array = []
 var _rockets_before := 0
 var _walkers: Array = []
@@ -72,12 +98,48 @@ var _title: Label
 var _sub: Label
 var _hotbar: SquadHotbar
 
+# The video: its clock, the frames drawn so far (the recording's frame numbers), the lone
+# trooper, the shot on screen and what its camera follows.
+var vt := 0.0
+var _frame := -1
+var solo: MissileTrooper
+var _solo_fired := 0
+var _cut := ""
+var _cut_t := 0.0
+var _look := Vector3.ZERO
+var _travel := Vector3.FORWARD
+var _travel_yaw := 0.0
+var _follow: Node3D
+var _followed := false
+var _follow_held := false
+var _follow_at := Vector3.ZERO
+var _follow_dir := Vector3.ZERO
+var _strike_at := Vector3.ZERO
+var _pilot_aim := false
+var _pilot_fire := false
+var _fast := false
+var _fast_from := 0
+var _snaps: Array = []
+var _snap_out := "snap"
+var _snapping := false
+var _badge: PanelContainer
+var _badge_text: Label
+var _badge_t := 0.0
+var _fast_mark: Control
+var _fade: ColorRect
+
 
 func _ready() -> void:
 	seed(7)  # the same run every time
-	for arg in OS.get_cmdline_user_args():
+	var args := OS.get_cmdline_user_args()
+	video = "--video" in args
+	for arg in args:
 		if arg.begins_with("--shots="):
 			shots_dir = arg.get_slice("=", 1)
+		elif arg.begins_with("--snap="):
+			_snaps = Array(arg.get_slice("=", 1).split(",")).map(func(s): return float(s))
+		elif arg.begins_with("--snap-out="):
+			_snap_out = arg.get_slice("=", 1)
 	level = LevelBuilder.new()
 	add_child(level)
 	level.build()
@@ -94,12 +156,21 @@ func _ready() -> void:
 	add_child(commander)
 	cam = Camera3D.new()
 	cam.fov = 55.0
+	cam.near = 0.05
 	cam.far = 900.0
 	add_child(cam)
 	if shots_dir != "":
 		DirAccess.make_dir_recursive_absolute(shots_dir)
 		RenderingServer.render_loop_enabled = false
 		_build_overlay()
+	elif video:
+		cam.current = true
+		cam.global_position = SOLO_AT + SOLO_CAMS.solo_side[0]
+		cam.look_at(SOLO_AT + SOLO_CAMS.solo_side[1])
+		RenderingServer.render_loop_enabled = _snaps.is_empty()
+		_build_overlay()
+		# The seeking missiles, for the camera that rides behind one.
+		child_entered_tree.connect(_on_child)
 	level.navigation_ready.connect(_start, CONNECT_ONE_SHOT)
 
 
@@ -109,6 +180,17 @@ func _start() -> void:
 		await get_tree().physics_frame
 	commander.process_mode = Node.PROCESS_MODE_INHERIT
 	level.stations[RIFLEMAN].process_mode = Node.PROCESS_MODE_INHERIT
+	t = 0.0
+	if video:
+		print("VIDEO START frame %d" % (_frame + 1))
+		_spawn_solo()
+		phase = "solo"
+	else:
+		_deploy()
+
+
+## Buys the three squads and sends them out into the south field, AA 1 in the player's hands.
+func _deploy() -> void:
 	armory = DefenderArmory.new()
 	armory.level = level
 	armory.credits = DefenderArmory.AA_COST * 3
@@ -129,7 +211,9 @@ func _start() -> void:
 	dc.select_squad(0, true)
 	if _hotbar:
 		_hotbar.armory = armory
-	t = 0.0
+	if video:
+		# The list of posts is for playing; the video's HUD keeps to the squads.
+		dc._list.get_parent().visible = false
 	_log("start: roster %s, %d credits left" % [aa.map(func(s): return s.station_name), int(armory.credits)])
 
 
@@ -161,8 +245,10 @@ func _physics_process(delta: float) -> void:
 	t += delta
 	phase_t += delta
 	match phase:
+		"solo":
+			_solo_step()
 		"setup":
-			if t > 1.5:
+			if phase_t > (VIDEO_SETUP if video else 1.5):
 				_next("air")
 				_talons = [_spawn("talon", Vector3(-58.0, UnitTypes.FLY_HEIGHT, 192.0), Vector3(70.0, UnitTypes.FLY_HEIGHT, 192.0)),
 						_spawn("talon", Vector3(72.0, UnitTypes.FLY_HEIGHT, 200.0), Vector3(-80.0, UnitTypes.FLY_HEIGHT, 200.0))]
@@ -177,9 +263,11 @@ func _physics_process(delta: float) -> void:
 		"auto":
 			_auto_step()
 		"done":
-			if phase_t > 0.5 and _shot_queue.is_empty() and not _saving:
-				_report()
-				get_tree().quit()
+			if video:
+				if phase_t > OUTRO:
+					_finish()
+			elif phase_t > 0.5 and _shot_queue.is_empty() and not _saving:
+				_finish()
 	_watch(delta)
 	_shots_tick()
 
@@ -191,12 +279,64 @@ func _next(p: String) -> void:
 	_log("phase %s" % p)
 
 
+func _finish() -> void:
+	_report()
+	if video:
+		print("VIDEO END frame %d" % _frame)
+	get_tree().quit()
+
+
+## The video's opening: a lone Missile Trooper walks south, strafes with the pod on its aim (up
+## into the sky and back down), then fires three rockets at a spot downrange and reloads.
+func _solo_step() -> void:
+	if phase_t < 4.0:
+		solo.pace = Vector3(0.0, 0.0, 2.1)
+		solo.goal = SOLO_AT + solo.pace * phase_t
+		solo.aim_point = solo.global_position + Vector3(0.0, 1.4, 40.0)
+	elif phase_t < 7.4:
+		solo.pace = Vector3(1.2, 0.0, 0.0)
+		solo.goal = SOLO_AT + Vector3(0.0, 0.0, 8.4) + solo.pace * (phase_t - 4.0)
+		var up := sin(clampf((phase_t - 4.3) / 2.8, 0.0, 1.0) * PI) * deg_to_rad(50.0)
+		solo.aim_point = solo.global_position + Vector3(0.0, 1.4, 0.0) + Vector3(0.0, sin(up), cos(up)) * 40.0
+	else:
+		solo.pace = Vector3.ZERO
+		solo.aim_point = SOLO_TARGET + Vector3.UP
+		# Up over the spot, as the squad does: the rockets climb before they dive.
+		solo.pod_target = SOLO_TARGET + Vector3.UP * maxf(_flat(solo.global_position, SOLO_TARGET) * 0.9, 8.0) \
+				if phase_t < 9.0 else Vector3.INF
+		while _solo_fired < 3 and phase_t > 8.0 + _solo_fired * AASquad.STRIKE_STAGGER:
+			var a := _solo_fired * 2.1
+			var off := Vector3(cos(a), 0.0, sin(a)) * (1.8 if _solo_fired > 0 else 0.0)
+			solo.launch_rocket(_ground_at(SOLO_TARGET + off), AASquad.STRIKE_DAMAGE, AASquad.STRIKE_SPLASH)
+			_solo_fired += 1
+	if phase_t > SOLO_LENGTH:
+		solo.queue_free()
+		solo = null
+		_deploy()
+		_next("setup")
+
+
+func _spawn_solo() -> void:
+	solo = MissileTrooper.new()
+	add_child(solo)
+	solo.global_position = SOLO_AT + Vector3.UP * 0.2
+	solo.rotation.y = PI  # facing south, away from the mountain
+	solo.aim_point = SOLO_AT + Vector3(0.0, 1.4, 40.0)
+	solo.following = true
+	solo.goal = SOLO_AT
+
+
 func _air_step() -> void:
 	var s := aa[0]
-	if _talon_i >= _talons.size() or phase_t > 28.0:
+	if _talon_i >= _talons.size() and _air_done < 0.0:
+		_air_done = phase_t
+	# The video stays on the last one going down a moment longer.
+	if (_air_done >= 0.0 and phase_t >= _air_done + (1.6 if video else 0.0)) or phase_t > 28.0:
 		checks["air_kills"] = _talons.filter(func(u): return _down(u)).size()
 		_ground = _wave(GROUND, Vector3.ZERO, false)
 		_next("ground")
+		return
+	if _talon_i >= _talons.size():
 		return
 	var target: AttackerUnit = _talons[_talon_i]
 	if _down(target):
@@ -235,6 +375,7 @@ func _ground_step() -> void:
 		checks["strike_min_gap"] = gaps.min() if not gaps.is_empty() else 0.0
 		checks["strike_max_off"] = spots.map(func(p): return _flat(p, at)).max()
 		_rockets_before = s.stats.rockets
+		_strike_at = at
 		_log("strike at (%.1f, %.1f), %.1f m out: %d spots %.1f..%.1f m apart, at most %.1f m from the aim" % [at.x, at.z,
 				_flat(at, s.leader.global_position), spots.size(), gaps.min(), gaps.max(), checks.strike_max_off])
 		_shot("ground_rockets", 0.85, "GROUND · LMB: rocket strike", "up to three rockets from every pod")
@@ -254,6 +395,7 @@ func _mines_step() -> void:
 	if _step == 0:
 		_step = 1
 		s.toggle_mine_aim()
+		_press("F")
 		_shot("mines_aim", 1.8, "MINES · F aims the throw", "a cone like the hippo's smoke: the mines land sparsely over the green band")
 	elif _step == 1 and phase_t > 2.4:
 		# LMB goes down now (pilot_input).
@@ -272,7 +414,7 @@ func _mines_step() -> void:
 		if GroundMine.blasts > _blasts_before and not checks.has("mine_blast_t"):
 			checks["mine_blast_t"] = phase_t
 			_shot("mines_blast", 0.1, "MINES · an attacker walks onto one", "")
-		if phase_t > 19.0:
+		if phase_t > (VIDEO_MINES if video else 19.0):
 			checks["mine_blasts"] = GroundMine.blasts - _blasts_before
 			checks["walker_kills"] = _walkers.filter(func(u): return _down(u)).size()
 			_log("minefield: %d mines went off, %d of %d walkers down" % [checks.mine_blasts, checks.walker_kills, _walkers.size()])
@@ -285,18 +427,21 @@ func _hotbar_step() -> void:
 		0:
 			_step = 1
 			dc.select_squad(1)
+			_press("F2")
 			_shot("hotbar_f2", 1.0, "HOTBAR · F2", "takes command of AA Squad 2 (its auto order: GUARD)")
 		1:
 			if phase_t > 2.5:
 				_step = 2
 				checks["f2_drives_aa2"] = dc.current == aa[1] and aa[1].possessed and not aa[0].possessed
 				dc.cycle_squad_order(0)
+				_press("Ctrl + F1")
 				checks["ctrl_f1_guard"] = aa[0].order == AASquad.Order.GUARD
 				_shot("hotbar_ctrl_f1", 0.3, "HOTBAR · Ctrl+F1", "AA Squad 1's auto order is now GUARD, set from wherever you are")
 		2:
 			if phase_t > 4.2:
 				_step = 3
 				dc.select_squad(2)
+				_press("F3")
 				_shot("hotbar_f3", 1.0, "HOTBAR · F3", "takes command of AA Squad 3")
 		3:
 			if phase_t > 6.5:
@@ -305,11 +450,13 @@ func _hotbar_step() -> void:
 				dc.cycle_squad_order(0)
 				checks["ctrl_f1_mines"] = aa[0].order == AASquad.Order.MINES
 				dc.select_squad(0)
+				_press("Ctrl + F1    F1")
 				_shot("hotbar_f1", 1.0, "HOTBAR · F1", "back on AA Squad 1 (its order MINES again)")
 		4:
 			if phase_t > 8.0:
 				_step = 5
 				checks["f1_drives_aa1"] = dc.current == aa[0] and aa[0].possessed and not aa[2].possessed
+				_press("W A S D")
 				_shot("drive_out", 6.0, "THIRD PERSON · the AA Squad moves like the Gunner Squad",
 						"WASD with the formation following, the pods tracking the aim")
 		5:
@@ -329,6 +476,7 @@ func _auto_step() -> void:
 			_aa2_post = s2.leader.global_position
 			_aa2_strikes = s2.stats.strikes
 			dc.select_station(RIFLEMAN)
+			_press(str(RIFLEMAN + 1))
 			_released_at = t
 			_talon_c = _spawn("talon", Vector3(118.0, UnitTypes.FLY_HEIGHT, 150.0), Vector3(-90.0, UnitTypes.FLY_HEIGHT, 112.0))
 			_passers = _wave(PASSERS, Vector3(110.0, 0.0, 96.0), true)
@@ -419,6 +567,13 @@ func _to_perimeter(s: AASquad) -> float:
 	return _flat(s.leader.global_position, s._nearest_perimeter(s.leader.global_position)) if s.leader else -1.0
 
 
+## The ground under `p`.
+func _ground_at(p: Vector3) -> Vector3:
+	var q := PhysicsRayQueryParameters3D.create(p + Vector3.UP * 20.0, p + Vector3.DOWN * 20.0, GameConfig.LAYER_WORLD)
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	return hit.position if not hit.is_empty() else p
+
+
 # ---------------------------------------------------------------- piloting AA 1
 
 ## Plays AA 1 like a player would (AASquad.pilot), phase by phase.
@@ -452,6 +607,13 @@ func pilot_input(s: DefenderSquad, delta: float) -> void:
 				_drive_to(sq, AA1_OUT, delta)
 			else:
 				sq.look_toward(sq.leader.global_position + Vector3(0, 2.4, 30), 1.5, delta)
+	# The video shows the buttons as they go down.
+	if sq.input.aim and not _pilot_aim:
+		_press("hold RMB")
+	if sq.input.fire and not _pilot_fire:
+		_press("LMB")
+	_pilot_aim = sq.input.aim
+	_pilot_fire = sq.input.fire
 
 
 ## Walks the squad's leader toward `to` (keys relative to the camera), looking where it goes.
@@ -506,8 +668,9 @@ func _report() -> void:
 			and checks.has("guard_kill_t") and s3.plan == "perimeter" and s3.stats.throws >= 2
 	_log("AA SHOWCASE %s %s" % ["PASS" if ok else "FAIL", checks])
 	for s in aa:
-		_log("  %s alive %d, order %s, plan %s, %d mines down, %s" % [s.station_name, s.troopers.size(),
-				AASquad.ORDER_NAMES[s.order], s.plan, s.mines.size(), s.stats])
+		var at := s.get_station_position()
+		_log("  %s at (%.0f, %.0f) alive %d, order %s, plan %s, %d mines down, %s" % [s.station_name, at.x, at.z,
+				s.troopers.size(), AASquad.ORDER_NAMES[s.order], s.plan, s.mines.size(), s.stats])
 
 
 func _log(text: String) -> void:
@@ -596,6 +759,356 @@ func _squad_centre(s: AASquad) -> Vector3:
 	return c / s.troopers.size()
 
 
+# ---------------------------------------------------------------- the video
+
+func _process(delta: float) -> void:
+	_frame += 1
+	if not video or t < 0.0:
+		return
+	vt += delta
+	_cut_t += delta
+	_track(delta)
+	_cut_to(_pick_shot())
+	_update_camera(delta)
+	_update_overlay(delta)
+	_fast_forward()
+	if not _snaps.is_empty():
+		_snap()
+
+
+## The shot for this moment of the run: the player's own view (tps, or fps on the rifleman) or
+## one of the cameras over the field.
+func _pick_shot() -> String:
+	match phase:
+		"solo":
+			return "solo_side" if phase_t < 4.0 else ("solo_front" if phase_t < 7.4 else ("solo_launch" if phase_t < 10.0 else "solo_pod"))
+		"setup":
+			return "establish" if phase_t < 2.6 else "tps"
+		"air":
+			# The first lock in the player's view; the second from beside the pods, then riding
+			# behind a missile.
+			if checks.has("lock_time_2"):
+				return "missile" if _followed else "pods"
+			if _talon_i == 1 and _lock_started >= 0.0 and t - _lock_started > 1.5:
+				return "pods"
+			return "tps"
+		"ground":
+			if phase_t < 4.5:
+				return "tps"
+			if phase_t < 5.6:
+				return "pod"
+			return "impact" if phase_t < 9.0 else "tps"
+		"mines":
+			if phase_t < 2.5:
+				return "tps"
+			return "throw" if phase_t < 5.0 else "field"
+		"hotbar":
+			if _step < 5 or phase_t < 11.0:
+				return "tps"
+			return "walk_side" if phase_t < 16.0 else "walk_front"
+		"auto":
+			if phase_t < 1.4:
+				return "fps"
+			if phase_t < 4.2:
+				return "aa1"
+			if phase_t < 8.8:
+				return "aa2"
+			if phase_t < 11.0:
+				return "fps"
+			if phase_t < 17.5:
+				return "path"
+			return "overview" if phase_t < 20.5 else "perimeter"
+		"done":
+			return "outro"
+	return _cut
+
+
+func _cut_to(shot: String) -> void:
+	if shot == _cut:
+		return
+	_cut = shot
+	_cut_t = 0.0
+	# Seen from outside the squad nobody steps in front of the camera's nose: no dithering.
+	SquadTrooper.set_close_fade(_player_view())
+	cam.fov = {"solo_side": 46.0, "solo_front": 46.0, "solo_launch": 50.0, "solo_pod": 40.0, "establish": 50.0,
+			"missile": 60.0, "impact": 48.0, "field": 52.0, "walk_side": 48.0, "walk_front": 46.0}.get(shot, 55.0)
+
+
+func _player_view() -> bool:
+	return _cut == "tps" or _cut == "fps"
+
+
+## The way AA 1's leader walks, smoothed (for the cameras that track it).
+func _track(delta: float) -> void:
+	if aa.is_empty() or aa[0].leader == null:
+		return
+	var v := aa[0].leader.velocity
+	if Vector2(v.x, v.z).length() > 0.5:
+		_travel_yaw = lerp_angle(_travel_yaw, atan2(v.x, v.z), minf(delta * 1.5, 1.0))
+		_travel = Vector3(sin(_travel_yaw), 0.0, cos(_travel_yaw))
+
+
+func _update_camera(delta: float) -> void:
+	# The player's view, or this camera; the HUD only with the player's view.
+	var player := _player_view()
+	if player and dc and dc.current:
+		dc.current.get_camera().current = true
+	else:
+		cam.current = true
+	if dc:
+		dc.visible = player
+		for s in aa:
+			s.set_hud_visible(player)
+	if _hotbar:
+		_hotbar.visible = not player and armory != null and phase in ["setup", "auto", "done"]
+		_hotbar.current = dc.current if dc else null
+	if player:
+		return
+	var w := minf(delta * 3.0, 1.0)
+	var pos := cam.global_position
+	var look := _look
+	match _cut:
+		"solo_side", "solo_front", "solo_launch", "solo_pod":
+			if not is_instance_valid(solo):
+				return
+			pos = solo.global_position + SOLO_CAMS[_cut][0]
+			look = solo.global_position + SOLO_CAMS[_cut][1]
+		"establish":
+			# A slow crane over AA 1, the other two squads out past it.
+			var c := _squad_centre(aa[0])
+			pos = c + Vector3(lerpf(8.0, -4.0, smoothstep(0.0, 2.6, _cut_t)), 3.4, 9.5)
+			look = c + Vector3(0.0, 1.4, -4.0)
+			w = 1.0
+		"pods":
+			# Low behind the squad, past the pods up at the aircraft.
+			var c := _squad_centre(aa[0])
+			var tal = _talons[mini(_talon_i, _talons.size() - 1)]
+			var at := Combat.aim_point(tal) if not _down(tal) else _look
+			var dir := _flat_dir(at - c)
+			pos = c - dir * 4.0 + Vector3.UP.cross(dir) * 2.2 + Vector3.UP * 1.1
+			look = c + Vector3.UP * 1.8 + (at - c - Vector3.UP * 1.8) * 0.3
+		"missile":
+			# Riding behind the missile until it closes in, then holding back with the aircraft
+			# in view as the volley hits.
+			w = 1.0
+			var tal = _talons[1]
+			var aim := Combat.aim_point(tal) if is_instance_valid(tal) else _follow_at
+			if is_instance_valid(_follow) and not _follow_held:
+				var d := -_follow.global_basis.z
+				_follow_dir = d if _follow_dir == Vector3.ZERO else _follow_dir.lerp(d, minf(delta * 6.0, 1.0)).normalized()
+				_follow_at = _follow.global_position
+				pos = _follow_at - _follow_dir * 4.5 + Vector3.UP * 0.9
+				look = _follow_at + _follow_dir * 10.0
+				_follow_held = _follow_at.distance_to(aim) < 12.0
+			else:
+				pos = cam.global_position + (cam.global_position - aim).normalized() * delta * 2.0
+				look = _look.lerp(aim, minf(delta * 4.0, 1.0))
+		"pod":
+			var l := aa[0].leader
+			if l:
+				pos = l.global_position + l.global_basis * Vector3(-2.2, 2.6, -2.4)
+				look = l.global_position + l.global_basis * Vector3(-0.3, 1.9, 0.2)
+		"impact":
+			# Low beside the spots, the rockets coming down from the squad's side.
+			var dir := _flat_dir(_strike_at - _squad_centre(aa[0]))
+			pos = _strike_at + dir.cross(Vector3.UP) * 16.0 - dir * 5.0 + Vector3.UP * 2.5
+			look = _strike_at + Vector3.UP * 1.5 - dir
+		"throw":
+			# Beside the squad on its throwing-arm side.
+			var c := _squad_centre(aa[0])
+			var fwd := _flat_dir(_mine_point - c)
+			pos = c + fwd.cross(Vector3.UP) * 10.0 - fwd + Vector3.UP * 2.2
+			look = c + fwd * 5.5 + Vector3.UP * 0.8
+		"field":
+			# Low behind the minefield, the walkers coming on into it.
+			var fwd := _flat_dir(_mine_point - AA1_AT)
+			var right := fwd.cross(Vector3.UP)
+			pos = _mine_point - fwd * 8.0 + right * 7.0 + Vector3.UP * 1.5
+			look = _mine_point + fwd * 8.0 - right + Vector3.UP * 0.5
+		"walk_side":
+			var c := _squad_centre(aa[0])
+			pos = c + Vector3.UP.cross(_travel) * 9.0 + Vector3.UP * 1.8 - _travel
+			look = c + _travel * 1.5 + Vector3.UP * 1.1
+		"walk_front":
+			var c := _squad_centre(aa[0])
+			pos = c + _travel * 10.0 + Vector3.UP.cross(_travel) * 4.0 + Vector3.UP * 1.2
+			look = c + Vector3.UP * 1.3
+		"aa1":
+			# Side on to the throw: the squad, and where its mines come down.
+			var c := _squad_centre(aa[0])
+			var d := _flat_dir(aa[0]._face_at - c)
+			pos = c + d * 7.0 + Vector3.UP.cross(d) * 15.0 + Vector3.UP * 7.0
+			look = c + d * 7.0
+		"aa2":
+			var c := _squad_centre(aa[1])
+			pos = c + Vector3(-12.0, 3.5, 9.0)
+			look = c + Vector3(8.0, 6.0, 2.0)
+		"path":
+			# Beside AA 1 walking home, looking back along the path it mines.
+			var c := _squad_centre(aa[0])
+			pos = c + Vector3.UP.cross(_travel) * 12.0 + Vector3.UP * 5.5 - _travel
+			look = c - _travel * 5.0 + Vector3.UP * 0.3
+		"overview":
+			# High over AA 1 coming in, the mines along the perimeter ahead of it.
+			var c := _squad_centre(aa[0])
+			pos = c + Vector3(-6.0, 18.0, 24.0)
+			look = c + Vector3(0.0, 0.0, -6.0)
+		"perimeter":
+			var c := _squad_centre(aa[0])
+			pos = c + Vector3(-10.0, 9.5, 16.0)
+			look = c + Vector3(0.0, 0.0, 4.0)
+		"outro":
+			# An arc round AA 1, the stronghold behind it.
+			var c := _squad_centre(aa[0])
+			var a := -0.6 + _cut_t * 0.2
+			pos = c + Vector3(sin(a) * 11.0, 2.4, cos(a) * 11.0)
+			look = c + Vector3.UP * 2.2
+	if _cut_t == 0.0:
+		w = 1.0
+	cam.global_position = cam.global_position.lerp(pos, w)
+	_look = _look.lerp(look, w) if _cut != "missile" else look
+	if not cam.global_position.is_equal_approx(_look):
+		cam.look_at(_look)
+
+
+static func _flat_dir(v: Vector3) -> Vector3:
+	v.y = 0.0
+	return v.normalized() if v.length() > 0.01 else Vector3.FORWARD
+
+
+## The first seeking missile off the pods at the second Sky Talon: the camera rides behind it.
+func _on_child(n: Node) -> void:
+	if n is HomingMissile and not _followed and phase == "air" and _talon_i == 1 and aa[0].locked:
+		_follow = n
+		_followed = true
+
+
+## AA 1 walking to its spot at the perimeter and waiting there for its mines to come ready plays
+## FAST times faster (the frames to drop are printed, the video shows it).
+func _fast_forward() -> void:
+	var want := false
+	if phase == "auto":
+		var s := aa[0]
+		var walking := s._spot != Vector3.INF and _flat(s.leader.global_position, s._spot) > AASquad.SPOT_REACH + 2.0
+		want = phase_t > 20.5 and not checks.has("aa1_perimeter_throw_t") and s.stats.throws == _aa1_throws \
+				and (s.mine_cd > 1.2 or walking)
+	if want == _fast:
+		return
+	_fast = want
+	if _fast:
+		_fast_from = _frame
+	else:
+		print("FAST %d frames %d-%d" % [FAST, _fast_from, _frame - 1])
+
+
+## A button the player presses, shown at the bottom of the video for a moment.
+func _press(text: String) -> void:
+	if not video:
+		return
+	_badge_text.text = text
+	_badge_t = 1.4
+
+
+func _caption() -> Array:
+	match phase:
+		"solo":
+			return ["MISSILE TROOPER", ["a six-missile pod on the left shoulder",
+					"strafing: the legs step sideways, the pod stays on the aim",
+					"rockets: the pod swings up over the spot, they dive onto it",
+					"empty tubes reload one at a time"][0 if phase_t < 4.0 else (1 if phase_t < 7.4 else (2 if phase_t < 10.0 else 3))]]
+		"setup":
+			return ["AA SQUAD", "five Missile Troopers · bought with credits (B), a hotbar key each" if phase_t < 2.6
+					else "you drive the trooper in the middle, the other four follow your lead"]
+		"air":
+			if _cut == "missile":
+				return ["AIR · missiles away", "they home in on the locked aircraft"]
+			if _cut == "pods":
+				return ["AIR · the pods follow the lock", "every trooper's pod swings onto the aircraft"]
+			if _talon_i == 0 and not checks.has("lock_time_1"):
+				return ["AIR · hold RMB close to an aircraft", "3 s to lock on: keep the aim near it, it needn't be dead on"]
+			if _talon_i == 0:
+				return ["LOCKED · LMB", "seeking missiles from the pods: as many as the kill takes"]
+			return ["AIR · the next one", "lock on again: the box closes in over 3 s"]
+		"ground":
+			if phase_t < 1.5:
+				return ["GROUND · rocket strike", "aim at enemy ground units"]
+			if phase_t < 4.5:
+				return ["GROUND · RMB shows where the rockets land", "a spot per trooper round the aim: clustered, never on top of each other"]
+			if phase_t < 5.6:
+				return ["GROUND · LMB fires", "up to three rockets from every pod"]
+			return ["GROUND · impact", "each trooper's rockets dive onto its own spot"]
+		"mines":
+			if phase_t < 2.5:
+				return ["MINES · F aims the throw", "a cone ahead like the Hippo's smoke: the mines land sparsely over the band"]
+			if phase_t < 5.0:
+				return ["MINES · LMB throws", "two from every trooper, then 15 s to the next throw"]
+			return ["MINES · armed once they land", "they go off under enemy ground units; aircraft pass over"]
+		"hotbar":
+			if phase_t < 2.5:
+				return ["HOTBAR · F2", "takes command of AA Squad 2 (its auto order: GUARD)"]
+			if phase_t < 4.2:
+				return ["HOTBAR · Ctrl+F1", "sets AA Squad 1's auto order from anywhere: now GUARD"]
+			if phase_t < 6.5:
+				return ["HOTBAR · F3", "AA Squad 3, laying mines along the base perimeter"]
+			if phase_t < 8.0:
+				return ["HOTBAR · Ctrl+F1, F1", "AA Squad 1 back on MINES, and back in command of it"]
+			return ["THIRD PERSON · moves like the Gunner Squad", "the wedge follows your lead, the pods track your aim"]
+		"auto":
+			if phase_t < 1.4:
+				return ["AUTO · back on a rifleman", "each AA Squad carries on with its own auto order"]
+			if phase_t < 4.2:
+				return ["AUTO · AA 1 on MINES", "handed back out in the field: it lays mines right there"]
+			if phase_t < 8.8:
+				return ["AUTO · AA 2 on GUARD", "holds its post and shoots down aircraft in range, never ground units"]
+			if phase_t < 11.0:
+				return ["AUTO · the hotbar shows what each squad is doing", "AA 1 heading back to base, AA 2 holding, AA 3 at the perimeter"]
+			if phase_t < 17.5:
+				return ["AUTO · AA 1 heads back to base", "laying mines on the path behind it as they come ready"]
+			if _fast or phase_t < 20.5:
+				return ["AUTO · at the base: mines along the perimeter", "outside the gates, where the fewest are"]
+			return ["AUTO · AA 1's next mines", "along the perimeter, as soon as they're ready again"]
+		"done":
+			return ["AA SQUAD", "B buys one · F1–F6 takes command · Ctrl+F1–F6 sets its auto order"]
+	return ["", ""]
+
+
+func _update_overlay(delta: float) -> void:
+	var a := 1.0 - clampf(vt / 0.8, 0.0, 1.0)
+	match phase:
+		"solo":
+			a = maxf(a, clampf((phase_t - SOLO_LENGTH + 0.35) / 0.35, 0.0, 1.0))
+		"setup":
+			a = 1.0 - clampf(phase_t / 0.35, 0.0, 1.0)
+		"done":
+			a = clampf((phase_t - OUTRO + 1.5) / 1.5, 0.0, 1.0)
+	_fade.color.a = a
+	var cap := _caption()
+	_title.text = cap[0]
+	_sub.text = cap[1]
+	_badge_t -= delta
+	_badge.visible = _badge_t > 0.0
+	_badge.modulate.a = clampf(_badge_t / 0.3, 0.0, 1.0)
+	_fast_mark.visible = _fast
+
+
+## --snap=t1,t2,..: draws only the frames at those video times and saves them (--snap-out=prefix),
+## for checking shots without recording the whole video.
+func _snap() -> void:
+	RenderingServer.render_loop_enabled = vt >= _snaps[0] - 0.05
+	if vt >= _snaps[0] and not _snapping:
+		_snapping = true
+		var at: float = _snaps[0]
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png("%s_%05.1f.png" % [_snap_out, at])
+		print("SNAP %.1f %s %s %.1f" % [at, _cut, phase, phase_t])
+		_snaps.pop_front()
+		_snapping = false
+		if _snaps.is_empty():
+			get_tree().quit()
+
+
+# ---------------------------------------------------------------- overlay
+
 func _build_overlay() -> void:
 	var overlay := CanvasLayer.new()
 	overlay.layer = 10
@@ -604,18 +1117,71 @@ func _build_overlay() -> void:
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	overlay.add_child(root)
-	_title = _text(root, 30)
+	_title = _text(root, 34 if video else 30)
 	_title.anchor_right = 1.0
-	_title.offset_top = 70.0
+	_title.offset_top = 28.0 if video else 70.0
 	_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_sub = _text(root, 19)
+	_sub = _text(root, 20 if video else 19)
 	_sub.anchor_right = 1.0
-	_sub.offset_top = 110.0
+	_sub.offset_top = 74.0 if video else 110.0
 	_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_hotbar = SquadHotbar.new()
 	_hotbar.visible = false
 	_hotbar.keys = DefenderController.ROSTER_KEYS.map(func(k): return OS.get_keycode_string(k))
 	root.add_child(_hotbar)
+	if not video:
+		return
+	# The button the player presses, above the hotbar.
+	_badge = PanelContainer.new()
+	var box := UIKit.panel_style(Color(0.05, 0.06, 0.08, 0.88), 8)
+	box.border_color = Color(0.85, 0.9, 1.0, 0.9)
+	box.set_border_width_all(2)
+	box.content_margin_left = 18.0
+	box.content_margin_right = 18.0
+	_badge.add_theme_stylebox_override("panel", box)
+	_badge.anchor_left = 0.5
+	_badge.anchor_right = 0.5
+	_badge.anchor_top = 1.0
+	_badge.anchor_bottom = 1.0
+	_badge.offset_top = -196.0
+	_badge.offset_bottom = -152.0
+	_badge.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_badge.visible = false
+	root.add_child(_badge)
+	_badge_text = UIKit.label("", 24, Color(0.97, 0.97, 0.94))
+	_badge_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_badge.add_child(_badge_text)
+	# Fast forward: two arrows and how much faster, top right.
+	_fast_mark = Control.new()
+	_fast_mark.anchor_left = 1.0
+	_fast_mark.anchor_right = 1.0
+	_fast_mark.offset_left = -150.0
+	_fast_mark.offset_right = -30.0
+	_fast_mark.offset_top = 30.0
+	_fast_mark.offset_bottom = 70.0
+	_fast_mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fast_mark.visible = false
+	_fast_mark.draw.connect(_draw_fast_mark)
+	root.add_child(_fast_mark)
+	_fade = ColorRect.new()
+	_fade.color = Color(0, 0, 0, 1)
+	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root.add_child(_fade)
+
+
+func _draw_fast_mark() -> void:
+	var col := Color(0.97, 0.97, 0.94)
+	for k in 2:
+		var x := 8.0 + k * 20.0
+		var tri := PackedVector2Array([Vector2(x, 6), Vector2(x + 18, 20), Vector2(x, 34)])
+		_fast_mark.draw_colored_polygon(tri, Color.BLACK)
+		_fast_mark.draw_polyline(tri + PackedVector2Array([tri[0]]), Color.BLACK, 4.0, true)
+		_fast_mark.draw_colored_polygon(tri, col)
+	var font := _fast_mark.get_theme_default_font()
+	_fast_mark.draw_string_outline(font, Vector2(54, 31), "%d×" % FAST, HORIZONTAL_ALIGNMENT_LEFT, -1, 28, 7, Color.BLACK)
+	_fast_mark.draw_string(font, Vector2(54, 31), "%d×" % FAST, HORIZONTAL_ALIGNMENT_LEFT, -1, 28, col)
 
 
 func _text(parent: Control, size: int) -> Label:

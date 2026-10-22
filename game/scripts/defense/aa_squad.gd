@@ -64,6 +64,9 @@ const MAX_MINES := 40
 const PERIMETER_OUT := [18.0, 30.0]
 const PERIMETER_ACROSS := [-36.0, -24.0, -12.0, 0.0, 12.0, 24.0, 36.0]
 const PERIMETER_NEAR := 70.0
+## Perimeter spots this close to another squad (the spot it is laying mines from, or where it
+## stands) are left to it.
+const SQUAD_ROOM := 14.0
 ## Walking back, the squad is at the base this close to a perimeter spot (m), and lays mines on the
 ## path PATH_BACK behind it; at a spot, it throws them PERIMETER_THROW further out.
 const BASE_REACH := 14.0
@@ -142,6 +145,7 @@ func _new_trooper() -> SquadTrooper:
 
 func _ready() -> void:
 	super()
+	add_to_group("aa_squads")
 	_aa_hud = AAHud.new()
 	_aa_hud.squad = self
 	_aa_hud.visible = false
@@ -626,7 +630,7 @@ func _ai_mines() -> void:
 
 
 ## The next perimeter spot: few mines round it and not far to walk, on the squad's own face while
-## it has any (`elsewhere`: not this one).
+## it has any, away from the other squads at the perimeter (`elsewhere`: not this one).
 func _pick_spot(elsewhere := false) -> void:
 	var map := get_world_3d().navigation_map
 	var here := leader.global_position
@@ -643,6 +647,13 @@ func _pick_spot(elsewhere := false) -> void:
 			if _flat(m.spot(), p + s[1] * PERIMETER_THROW) < 9.0:
 				mined += 1
 		var cost := mined * 10.0 + _flat(here, p) * 0.6 + randf() * 2.0
+		for other in get_tree().get_nodes_in_group("aa_squads"):
+			if other == self or other.leader == null:
+				continue
+			var working: bool = not other.possessed and other.order == Order.MINES and other.plan == "perimeter" \
+					and other._spot != Vector3.INF
+			if _flat(other._spot if working else other.leader.global_position, p) < SQUAD_ROOM:
+				cost += 40.0
 		if cost < best_cost:
 			best_cost = cost
 			best = p

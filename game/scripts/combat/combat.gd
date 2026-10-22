@@ -163,6 +163,8 @@ static func _smoke_material() -> StandardMaterial3D:
 		_smoke_mat.vertex_color_use_as_albedo = true
 		_smoke_mat.albedo_color = Color(0.35, 0.33, 0.3, 0.7)
 		_smoke_mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+		# Round puffs: bare quads show up as squares close to the camera.
+		_smoke_mat.albedo_texture = SmokeCloud.puff_texture()
 	return _smoke_mat
 
 

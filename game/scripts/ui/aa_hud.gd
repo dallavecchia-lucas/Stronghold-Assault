@@ -16,13 +16,16 @@ const BLOCK_MARGIN := Vector2(16, 150)
 
 var squad: AASquad
 
+var _clock := 0.0
+
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	_clock += delta
 	if visible:
 		queue_redraw()
 
@@ -50,7 +53,7 @@ func _draw() -> void:
 		var col := LOCKED if squad.locked else LOCKING
 		var half := lerpf(48.0, 18.0, f)
 		if squad.locked:
-			half += 3.0 * sin(Time.get_ticks_msec() / 70.0)  # locked: the box throbs
+			half += 3.0 * sin(_clock * 14.0)  # locked: the box throbs
 		_brackets(p, half, col)
 		draw_arc(p, half + 9.0, -PI * 0.5, -PI * 0.5 + TAU * f, 40, col, 3.0, true)
 		var text := "LOCKED · LMB FIRE" if squad.locked else "LOCKING %.1fs" % (AASquad.LOCK_TIME - squad.lock_progress)

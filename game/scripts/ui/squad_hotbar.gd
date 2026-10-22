@@ -5,7 +5,7 @@ extends Control
 ## auto order and what it is doing, the one the player drives outlined; then the buy slot (B) with
 ## the credits.
 
-const SLOT := Vector2(104, 58)
+const SLOT := Vector2(112, 58)
 const GAP := 4.0
 const BOTTOM := 40.0
 const DIM := Color(0.6, 0.64, 0.7)
@@ -15,13 +15,16 @@ var armory: DefenderArmory
 var current = null
 var keys: Array = []
 
+var _clock := 0.0
+
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	_clock += delta
 	if visible:
 		queue_redraw()
 
@@ -45,7 +48,7 @@ func _draw_squad(r: Rect2, i: int, s: AASquad, font: Font) -> void:
 	if driving:
 		draw_rect(r.grow(1.0), UIKit.ACCENT, false, 2.0)
 	elif s.locked:
-		draw_rect(r.grow(1.0), Color(1.0, 0.3, 0.22, 0.6 + 0.4 * sin(Time.get_ticks_msec() / 90.0)), false, 2.0)
+		draw_rect(r.grow(1.0), Color(1.0, 0.3, 0.22, 0.6 + 0.4 * sin(_clock * 11.0)), false, 2.0)
 	var key: String = keys[i] if i < keys.size() else ""
 	draw_string(font, r.position + Vector2(7, 16), key, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, UIKit.ACCENT)
 	draw_string(font, r.position + Vector2(30, 16), "AA %d" % s.number, HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color.WHITE)
