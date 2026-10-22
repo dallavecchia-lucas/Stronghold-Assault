@@ -6,12 +6,13 @@ extends Node3D
 ##
 ## A lone Heavy Gunner shows its walk, strafe and minigun first. Then the squad, driven from the
 ## south spawn hall like a player would (SquadPilot): up the narrow spawn ramp and through the
-## gate tunnel in file, out through the blast door (it opens for them) into a wedge, through a
-## stand of birches and rocks, and into a fight with two attacking waves, one ahead and one
-## on the flank, all five firing where the leader aims. `--test` runs it headless at speed and
-## prints what the squad does instead; `--snap=t1,t2,.. --snap-out=prefix` saves single frames.
-## Video-only: the grove in front of the gate, the work lights inside and the staged attackers;
-## the garrison's other posts hold fire.
+## gate tunnel in file, out through the blast door (it opens for them) into a wedge, where a shell
+## kills the leader and the nearest trooper takes the lead, through a stand of birches and rocks,
+## and into a fight with two attacking waves, one ahead and one on the flank, all firing where the
+## leader aims. `--test` runs it headless at speed and prints what the squad does instead;
+## `--snap=t1,t2,.. --snap-out=prefix` saves single frames. Video-only: the grove in front of the
+## gate, the work lights inside, the shell and the staged attackers; the garrison's other posts
+## hold fire.
 
 ## Waypoints of the drive (world): the spawn hall, the ramp, the junction, the gate tunnel, the
 ## open ground and the grove.
@@ -73,6 +74,10 @@ var _modes := {}
 var _alive := 0
 var _lost := 0
 var _side_done := false
+## The staged shell that kills the leader out in the open (to show the lead changing hands).
+var _killed := false
+var _kill_t := 0.0
+var _chased := false
 var _overheated := false
 var _flanked := false
 var _end_t := 0.0
@@ -257,6 +262,12 @@ func _solo_step() -> void:
 
 
 func _squad_step() -> void:
+	# Out of the gate, heading for the grove: a shell lands on the leader. The nearest trooper takes
+	# the lead (and the camera) and the others fall in on it.
+	if not _killed and pilot.leg == 8 and pilot.leg_t > 1.6:
+		_killed = true
+		_kill_t = t
+		_shell(squad.leader)
 	# The first wave comes on as the squad clears the grove, the second once the fight is on.
 	if wave.is_empty() and pilot.leg >= 11:
 		_front = _attack(WAVE, STAND + Vector3(0, 0, 18))
@@ -328,6 +339,9 @@ func _squad_shots() -> void:
 				_cut("hall")
 			elif (leg == 5 or leg == 6) and l.z > 71.0 and l.z < 76.0:
 				_cut("tunnel")
+			elif _killed and not _chased and t - _kill_t > 4.5 and leg <= 9:
+				_chased = true
+				_cut("chase")
 			elif leg >= 12 and _shot_t > 5.0 and not _side_done:
 				_side_done = true
 				_cut("side")
@@ -341,7 +355,7 @@ func _squad_shots() -> void:
 				_cut("gate")
 		"gate":
 			if leg >= 8 and _shot_t > 2.5:
-				_cut("chase")
+				_cut("tps")
 		"chase":
 			if leg >= 10:
 				_cut("tps")
@@ -466,11 +480,53 @@ func _attack(list: Array, pos: Vector3) -> Array:
 
 
 ## Middle of the squad (feet).
+## Middle of the squad around its leader (a replacement still on its way from the post left out).
 func _centroid() -> Vector3:
+	if squad.leader == null:
+		return squad.home.origin
 	var c := Vector3.ZERO
+	var n := 0
 	for tr in squad.troopers:
-		c += tr.global_position
-	return c / maxf(squad.troopers.size(), 1.0) if not squad.troopers.is_empty() else squad.home.origin
+		if tr.global_position.distance_to(squad.leader.global_position) < 20.0:
+			c += tr.global_position
+			n += 1
+	return c / n
+
+
+## A shell out of the sky onto `target`: a streak down, a blast, and the trooper is gone.
+func _shell(target: HeavyGunner) -> void:
+	var at := target.global_position
+	Combat.spawn_tracer(self, at + Vector3(6.0, 40.0, 14.0), at + Vector3.UP * 0.5, Color(1.0, 0.75, 0.4), 0.12)
+	# Built for the camera a few meters behind (Combat.spawn_explosion's smoke is made for a gate going
+	# up across the field): a flash of fire, a light, and smoke puffs.
+	var ball := MeshInstance3D.new()
+	var mesh := SphereMesh.new()
+	mesh.radius = 0.5
+	mesh.height = 1.0
+	ball.mesh = mesh
+	ball.material_override = Mats.glow(Color(1.0, 0.62, 0.25), 5.0)
+	ball.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(ball)
+	ball.global_position = at + Vector3.UP * 1.1
+	ball.scale = Vector3.ONE * 0.4
+	var tw := ball.create_tween()
+	tw.tween_property(ball, "scale", Vector3.ONE * 2.2, 0.14)
+	tw.tween_property(ball, "scale", Vector3.ONE * 0.05, 0.22)
+	tw.tween_callback(ball.queue_free)
+	var light := OmniLight3D.new()
+	light.light_color = Color(1.0, 0.6, 0.25)
+	light.light_energy = 6.0
+	light.omni_range = 9.0
+	add_child(light)
+	light.global_position = at + Vector3.UP * 1.5
+	light.create_tween().tween_property(light, "light_energy", 0.0, 0.5)
+	get_tree().create_timer(0.6).timeout.connect(light.queue_free)
+	for k in 5:
+		SmokeCloud.wisp(self, at + Vector3(randf_range(-0.7, 0.7), 0.6 + randf() * 0.8, randf_range(-0.7, 0.7)), 1.1)
+	target.take_damage(target.hp + 1.0, GameConfig.TEAM_ATTACKER)
+	if test:
+		print("SHELL t=%.1f leader at %s -> new leader at %s (%.1f m away), trail %d points" % [t, at.snapped(Vector3.ONE * 0.1),
+				squad.leader.global_position.snapped(Vector3.ONE * 0.1), squad.leader.global_position.distance_to(at), squad.formation.trail.size()])
 
 
 # ---------------------------------------------------------------- test mode
@@ -580,6 +636,8 @@ func _update_overlay() -> void:
 			sub = "tight passages: the wedge squeezes, then files in behind you"
 		elif leg <= 6:
 			sub = "blast doors open for the squad"
+		elif _killed and t - _kill_t < 5.0:
+			sub = "the leader is down: the nearest trooper takes the lead, the rest fall in on it"
 		elif leg <= 8 and (_shot == "gate" or _shot == "tps"):
 			sub = "out in the open they spread back into a wedge"
 		elif leg <= 11:

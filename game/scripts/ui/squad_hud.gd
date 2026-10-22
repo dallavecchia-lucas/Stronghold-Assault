@@ -13,6 +13,15 @@ const ENEMY := Color(1.0, 0.35, 0.28)
 
 var squad: GunnerSquad
 
+var _flash := ""
+var _flash_t := 0.0
+
+
+## A line across the top of the panel for a few seconds (the lead changing hands).
+func flash(text: String) -> void:
+	_flash = text
+	_flash_t = 3.5
+
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -26,7 +35,8 @@ func _ready() -> void:
 	offset_bottom = -16.0
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	_flash_t = maxf(_flash_t - delta, 0.0)
 	if visible:
 		queue_redraw()
 
@@ -39,6 +49,10 @@ func _draw() -> void:
 	var mode: String = SquadFormation.MODE_NAMES[squad.formation.mode]
 	draw_string(font, Vector2(12, 24), "GUNNER SQUAD", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.7, 0.75, 0.85))
 	draw_string(font, Vector2(12, 46), mode, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, UIKit.ACCENT)
+	if _flash_t > 0.0:
+		var a := clampf(_flash_t / 0.5, 0.0, 1.0) * (0.6 + 0.4 * absf(sin(_flash_t * 6.0)))
+		draw_rect(Rect2(Vector2(0, -30), Vector2(SIZE.x, 24)), Color(0.45, 0.05, 0.03, 0.85 * a))
+		draw_string(font, Vector2(10, -13), _flash, HORIZONTAL_ALIGNMENT_LEFT, SIZE.x - 20, 12, Color(1, 0.92, 0.85, a))
 	# Health pips, the leader first.
 	var order: Array = [squad.leader] if squad.leader else []
 	for t in squad.troopers:

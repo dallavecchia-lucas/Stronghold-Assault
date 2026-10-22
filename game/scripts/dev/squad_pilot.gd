@@ -13,8 +13,10 @@ extends RefCounted
 ##   {"speed": 0..1}             how far the stick is pushed
 ##   {"strafe": Vector2}         push the stick this way instead of toward "to" (for "hold" seconds)
 
-## How far down the path the leader steers for (m).
+## How far down the path the leader steers for, and looks (m): a player looks where they're going,
+## not round the next corner (walking half sideways is the troopers' slowest walk).
 const LOOKAHEAD := 1.3
+const LOOK_AHEAD := 4.5
 
 ## Leg in progress and seconds spent on it.
 var leg := 0
@@ -67,7 +69,7 @@ func pilot_input(squad: GunnerSquad, delta: float) -> void:
 			var right := Vector3(cos(yaw), 0.0, -sin(yaw))
 			squad.input.move = Vector2(dir.dot(right), -dir.dot(fwd)) * float(r.get("speed", 1.0))
 			if look == null:
-				look = _ahead(leader.global_position, 7.0) + Vector3.UP * 1.2
+				look = _ahead(leader.global_position, LOOK_AHEAD) + Vector3.UP * 1.2
 	if r.has("strafe"):
 		squad.input.move = r.strafe
 		arrived = true

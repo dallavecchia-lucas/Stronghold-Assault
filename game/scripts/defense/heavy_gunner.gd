@@ -27,8 +27,11 @@ const WALKS := {
 	"B": Vector2(0, -1), "BL": Vector2(-0.7071, -0.7071), "L": Vector2(-1, 0), "FL": Vector2(-0.7071, 0.7071),
 }
 const ACCEL := 9.0
-## Ledges it steps up onto (m).
+## Ledges it steps up onto (m), and higher ones (up to TALL_STEP) where the navmesh routes it up onto
+## higher ground: LevelBuilder bakes a 0.5 m climb in 0.25 m cells, so a ledge up to 0.75 m can come
+## out climbable, like the spawn ramp's low sides.
 const STEP_HEIGHT := 0.45
+const TALL_STEP := 0.75
 ## Body turn rate; the spine takes up to TWIST_LIMIT of the aim on its own, ahead of the legs.
 const TURN_RATE := deg_to_rad(160.0)
 const TWIST_LIMIT := deg_to_rad(35.0)
@@ -103,6 +106,8 @@ var _drive := Vector3.ZERO
 var _driven := false
 ## The velocity it is trying to reach this frame (before acceleration and avoidance).
 var _want := Vector3.ZERO
+## Pathing on the navmesh (not driven, not walking the leader's trail): may take TALL_STEPs.
+var _pathing := false
 var _repath_cd := 0.0
 var _path_goal := Vector3.INF
 var _blocked := 0.0
@@ -136,6 +141,8 @@ func _ready() -> void:
 	collision_mask = GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES | GameConfig.LAYER_ATTACKERS
 	floor_snap_length = 0.6
 	floor_max_angle = deg_to_rad(50.0)
+	# Up the spawn ramp at walking pace, not slowed by the slope.
+	floor_constant_speed = true
 
 	_shape = CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
@@ -360,6 +367,7 @@ func _physics_process(delta: float) -> void:
 		return
 	_face(delta)
 	_gun_tick(delta)
+	_pathing = false
 	if _driven:
 		_driven = false
 		var want := _drive
@@ -385,16 +393,32 @@ func _move(flat: Vector3, delta: float) -> void:
 	move_and_slide()
 	# Against a wall the velocity starts from nothing every frame: go by what it is trying to do.
 	if is_on_wall() and _want.length() > 0.5 and flat.length() > 0.05:
-		_step_up(flat.normalized() * 0.3)
+		if _step_up(flat.normalized() * 0.3, _pathing):
+			# Over the ledge at the pace it came at, instead of from a standstill.
+			velocity.x = flat.x
+			velocity.z = flat.z
 
 
 ## move_and_slide stops dead at a ledge (the step between the stronghold's halls and ramps): step
 ## up onto it if it is low enough and there is room.
-func _step_up(motion: Vector3) -> void:
-	var up := Vector3.UP * STEP_HEIGHT
-	if test_move(global_transform, up) or test_move(global_transform.translated(up), motion):
-		return
-	global_position += up + motion
+func _step_up(motion: Vector3, tall: bool) -> bool:
+	for h: float in ([STEP_HEIGHT, TALL_STEP] if tall else [STEP_HEIGHT]):
+		var up: Vector3 = Vector3.UP * h
+		if test_move(global_transform, up) or test_move(global_transform.translated(up), motion):
+			continue
+		if h > STEP_HEIGHT:
+			# Only up onto walkable ground: the navmesh just ahead is higher than here (a ramp's
+			# low side), not the top of a railing or a wall end it doesn't cover.
+			var map := get_world_3d().navigation_map
+			var here := NavigationServer3D.map_get_closest_point(map, global_position + Vector3.UP * 0.5)
+			var to := global_position + motion * 1.5 + up
+			var there := NavigationServer3D.map_get_closest_point(map, to)
+			if Vector2(there.x - to.x, there.z - to.z).length() > 0.35 or there.y < here.y + 0.2:
+				return false
+		global_position += up + motion
+		apply_floor_snap()  # straight down onto the step, not a hop up and a fall
+		return true
+	return false
 
 
 ## Follower: walk to the goal. Far off, or with something in the way, along a navmesh path at a
@@ -411,6 +435,7 @@ func _follow(delta: float) -> void:
 		_path_goal = goal
 		_agent.target_position = goal
 	var direct := dist < 2.5 and _agent.get_current_navigation_path().size() <= 2
+	_pathing = trail_point == Vector3.INF
 	if _unstick > 0.0:
 		# Wedged on a corner: back off the wall and come at the path again.
 		_unstick -= delta

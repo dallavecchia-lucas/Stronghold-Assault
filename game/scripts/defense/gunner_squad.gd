@@ -7,7 +7,9 @@ extends Node3D
 ## Blast doors open for the squad as it comes up to them (Structure.hold_open), so it can sally
 ## out through a standing gate. Left to itself the squad goes back to its post and holds it,
 ## shooting at any attacker it can see. Lost troopers are replaced one at a time from the post;
-## when all five are down the squad is gone for RESPAWN_TIME.
+## when all five are down the squad is gone for RESPAWN_TIME. If the leader falls, the trooper
+## nearest it takes the lead (and the player's camera and keys) and the others follow it as they did
+## the old one, a column walking on down the same trail.
 ##
 ## Station interface: see DefenderController.
 
@@ -87,6 +89,8 @@ var cam_yaw := 0.0
 var cam_pitch := deg_to_rad(-12.0)
 var _cam: Camera3D
 var _cam_pivot := Vector3.ZERO
+## 1 when the lead has just changed hands, running down to 0 while the camera glides to the new one.
+var _glide := 0.0
 var _aim_t := 0.0
 var _hud: SquadHud
 var _solve_cd := 0.0
@@ -213,6 +217,9 @@ func _on_trooper_died(t: HeavyGunner) -> void:
 	if t == leader:
 		leader = null
 		_pick_leader(t.global_position)
+		if leader:
+			_glide = 1.0
+			_hud.flash("LEADER DOWN · NEW LEADER")
 	if troopers.is_empty():
 		_respawn_cd = RESPAWN_TIME
 		firing = false
@@ -233,7 +240,11 @@ func _pick_leader(near = null) -> void:
 	leader = best
 	for t in troopers:
 		t.set_leader(t == leader)
-	formation.trail.clear()
+	if near != null:
+		formation.handover(leader.global_position, at)
+	else:
+		formation.trail.clear()
+	_spots.clear()
 
 
 # ---------------------------------------------------------------- update
@@ -389,15 +400,21 @@ func _update_followers(delta: float) -> void:
 	if _nav_ready and (_solve_cd <= 0.0 or _spots.size() != followers.size()):
 		_solve_cd = SOLVE_INTERVAL
 		var at: Array = followers.map(func(f): return f.global_position)
-		_spots = formation.solve(leader.global_position, heading, at, SOLVE_INTERVAL)
+		_spots = formation.solve(leader.global_position, heading, at, SOLVE_INTERVAL, leader.velocity)
 		_solve_at = leader.global_position
 		solved = true
 	var lpos := leader.global_position
 	var carry := lpos - _solve_at
 	carry.y = 0.0
+	# Aiming at something close (the ramp just ahead of the camera, a wall in the face), everyone
+	# looks the way the camera looks: turned onto a point that close, the leader would face off its
+	# way (and walk on sideways, the troopers' slowest walk).
 	var aim_dir := aim_point - (lpos + Vector3.UP * 1.4)
+	if possessed:
+		aim_dir = Basis(Vector3.UP, cam_yaw) * Basis(Vector3.RIGHT, cam_pitch) * Vector3.FORWARD
 	leader.aim_point = aim_point
-	leader.aim_parallel = false
+	leader.aim_parallel = lpos.distance_to(aim_point) < CONVERGE_MIN
+	leader.aim_dir = aim_dir
 	var column := formation.column and _spots.size() == followers.size()
 	var backs := {}
 	for f in followers:
@@ -433,7 +450,7 @@ func _update_followers(delta: float) -> void:
 		f.pace = Vector3(leader.velocity.x, 0.0, leader.velocity.z)
 		f.following = true
 		f.aim_point = aim_point
-		# Too close to converge on (a wall in the face): all look the leader's way instead.
+		# Too close to converge on: look the way the camera looks instead.
 		f.aim_parallel = f.global_position.distance_to(aim_point) < CONVERGE_MIN
 		f.aim_dir = aim_dir
 
@@ -528,7 +545,13 @@ func _open_gates() -> void:
 func _update_camera(delta: float) -> void:
 	_aim_t = move_toward(_aim_t, 1.0 if input.aim else 0.0, delta * 5.0)
 	var target := leader.global_position + CAM_PIVOT
-	_cam_pivot = target if _cam_pivot.distance_to(target) > 6.0 else _cam_pivot.lerp(target, minf(delta * 10.0, 1.0))
+	# A new leader: glide over to it (snap only after a jump, e.g. back at the post).
+	_glide = maxf(_glide - delta / 0.9, 0.0)
+	var follow := lerpf(10.0, 2.5, _glide)
+	if _cam_pivot.distance_to(target) > (25.0 if _glide > 0.0 else 6.0):
+		_cam_pivot = target
+	else:
+		_cam_pivot = _cam_pivot.lerp(target, minf(delta * follow, 1.0))
 	var basis := Basis(Vector3.UP, cam_yaw) * Basis(Vector3.RIGHT, cam_pitch)
 	var arm := CAM_ARM.lerp(CAM_AIM_ARM, _aim_t)
 	var want := _cam_pivot + basis * arm

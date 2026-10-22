@@ -10,8 +10,10 @@ extends RefCounted
 ## in from the sides, and in passages too tight for any wedge the squad files along the way the
 ## leader came: two abreast where the passage is wide enough, else in single file. Wider shapes
 ## come back only once they have fitted for a moment, so the squad doesn't flicker between them at
-## a tunnel mouth. In a column the troopers keep their order down the trail (the one furthest along
-## it goes first) instead of trading places for shorter walks: in a tunnel nobody can get past.
+## a tunnel mouth. Moving, the squad also tries the wedge where the leader will be in a moment, and
+## falls into a column before a narrowing instead of crowding into it (the spawn hall's ramp). In a
+## column the troopers keep their order (the one with the least walking to the leader goes first)
+## instead of trading places for shorter walks: in a tunnel nobody can get past.
 
 enum Mode { WEDGE, SQUEEZED, PAIRS, FILE }
 const MODE_NAMES := ["WEDGE", "SQUEEZED", "PAIRS", "FILE"]
@@ -41,8 +43,13 @@ const TRAIL_STEP := 0.35
 const TRAIL_LENGTH := 30.0
 ## Seconds a wider shape has to keep fitting before the squad spreads out into it.
 const WIDEN_DELAY := 0.6
-## In a column, a trooper this much further along the trail than the one ahead of it takes its place.
+## In a column, a trooper with this much less walking to the leader than the one ahead of it takes
+## its place.
 const ORDER_SLACK := 0.8
+## Moving, the wedge is also tried where the leader will be this many seconds on (at least
+## LOOK_AHEAD_MIN meters on).
+const LOOK_AHEAD := 1.1
+const LOOK_AHEAD_MIN := 2.0
 
 var nav_map: RID
 var nav_layers := 1
@@ -79,7 +86,7 @@ func record(leader: Vector3, velocity: Vector3) -> void:
 ## Spots for `followers` (their positions, in a stable order) around the leader facing `heading`
 ## (yaw, 0 = -Z). Returns one world position per follower, in the same order. Call a few times a
 ## second; between calls the squad carries the spots along with the leader.
-func solve(leader: Vector3, heading: float, followers: Array, delta: float) -> Array[Vector3]:
+func solve(leader: Vector3, heading: float, followers: Array, delta: float, velocity := Vector3.ZERO) -> Array[Vector3]:
 	var n := followers.size()
 	var out: Array[Vector3] = []
 	if n == 0:
@@ -99,6 +106,14 @@ func solve(leader: Vector3, heading: float, followers: Array, delta: float) -> A
 			break
 	if spots.is_empty():
 		spots = _file(leader, start, n, false)
+	var ahead := _room_ahead(leader, heading, velocity, n)
+	if ahead > found:
+		# Narrowing ahead: get into a column (in order) before it, not in it.
+		var s: Array[Vector3] = []
+		if ahead == Mode.PAIRS:
+			s = _pairs(leader, start, n)
+		found = Mode.PAIRS if s.size() == n else Mode.FILE
+		spots = s if s.size() == n else _file(leader, start, n, false)
 	var shape := found
 	# Narrower shapes take over at once; wider ones once they have fitted for WIDEN_DELAY.
 	if found > mode:
@@ -129,6 +144,48 @@ func solve(leader: Vector3, heading: float, followers: Array, delta: float) -> A
 		_column_shape = shape
 		return _column_assigned(spots, followers, leader, shape, was_column)
 	return _assigned(spots, followers)
+
+
+## The widest shape there is room for where the leader is headed (it walks on the way it is going,
+## turned a little toward where it looks: a player looks where they go): WEDGE (or standing still),
+## PAIRS if two can walk abreast there, else FILE.
+func _room_ahead(leader: Vector3, heading: float, velocity: Vector3, n: int) -> Mode:
+	var v := Vector3(velocity.x, 0.0, velocity.z)
+	if v.length() < 0.8:
+		return Mode.WEDGE
+	var dir := (v.normalized() + Basis(Vector3.UP, heading) * Vector3.FORWARD * 0.5).normalized()
+	var to := leader + dir * maxf(v.length() * LOOK_AHEAD, LOOK_AHEAD_MIN)
+	var ahead := NavigationServer3D.map_get_closest_point(nav_map, to + Vector3.UP * 0.5)
+	if _flat(ahead, to) > SNAP:
+		return Mode.FILE  # walking into a wall: whatever is there, it is narrow
+	for squeeze in [1.0, SQUEEZE[0], SQUEEZE[1]]:
+		if _wedge(ahead, ahead, heading, n, squeeze).size() == n:
+			return Mode.WEDGE
+	var side := _side(dir) * (PAIR_HALF + PAIR_ROOM)
+	if _beside(ahead, ahead + side) and _beside(ahead, ahead - side):
+		return Mode.PAIRS
+	return Mode.FILE
+
+
+## Hands the lead to the trooper at `at` (the old leader fell): the trail behind it stays, so a
+## column keeps walking it.
+func handover(at: Vector3, old_leader: Vector3) -> void:
+	var where := locate(at, old_leader)
+	if where[0] == INF or where[1] > 1.5:
+		trail.clear()
+		return
+	var back := 0.0
+	var a := old_leader
+	var keep := 0
+	for i in trail.size():
+		back += a.distance_to(trail[i])
+		a = trail[i]
+		if back > where[0]:
+			keep = i
+			break
+		keep = trail.size()
+	trail = trail.slice(keep)
+	_assign.clear()
 
 
 ## How far back along the trail slot `slot` of the column is (m), and how far to the side of it.
@@ -207,7 +264,7 @@ func _pairs(leader: Vector3, start: Vector3, n: int) -> Array[Vector3]:
 		var side := at[1] as Vector3
 		var want: Vector3 = at[0] + side * (PAIR_HALF if i % 2 == 0 else -PAIR_HALF)
 		var p = _spot(want, leader, start, out, PAIR_ROOM, side)
-		if p == null:
+		if p == null or not _beside(at[0], p):
 			return out
 		out.append(p)
 	return out
@@ -222,7 +279,7 @@ func _file(leader: Vector3, start: Vector3, n: int, strict: bool) -> Array[Vecto
 		var side := at[1] as Vector3
 		var base: Vector3 = at[0]
 		var p = _spot(base + side * (STAGGER if i % 2 == 0 else -STAGGER), leader, start, out, 0.1, side)
-		if p == null:
+		if p == null or not _beside(base, p):
 			p = _spot(base, leader, start, out, 0.0)
 		if p == null:
 			if strict:
@@ -296,15 +353,35 @@ static func _flat(a: Vector3, b: Vector3) -> float:
 	return Vector2(a.x - b.x, a.z - b.z).length()
 
 
+## True if `spot` is on the same ground as the trail point `on` beside it, a straight step across
+## (not down on the floor beside a ramp the trail goes up).
+func _beside(on: Vector3, spot: Vector3) -> bool:
+	var a := NavigationServer3D.map_get_closest_point(nav_map, on + Vector3.UP * 0.5)
+	var b := NavigationServer3D.map_get_closest_point(nav_map, spot + Vector3.UP * 0.5)
+	if absf(a.y - b.y) > 0.35:
+		return false
+	var path := NavigationServer3D.map_get_path(nav_map, a, b, true, nav_layers)
+	var length := 0.0
+	for i in range(1, path.size()):
+		length += path[i].distance_to(path[i - 1])
+	return not path.is_empty() and length < _flat(a, b) * 1.25 + 0.3
+
+
 ## Column spots go out in trail order: the follower furthest along the trail takes the slot nearest
 ## the leader, and the order only changes when one gets clearly ahead of the one before it. Side by
 ## side (PAIRS), each of a pair takes the side it is already on.
 func _column_assigned(spots: Array[Vector3], followers: Array, leader: Vector3, shape: Mode, keep_order: bool) -> Array[Vector3]:
 	var n := spots.size()
+	# Walking to the leader, on the navmesh: one boxed in beside a ramp is further back than it looks.
+	var start := NavigationServer3D.map_get_closest_point(nav_map, leader + Vector3.UP * 0.5)
 	var key := []
 	for p in followers:
-		var at := locate(p, leader)
-		key.append(at[0] if at[0] < INF else 1000.0 + _flat(p, leader))
+		var from := NavigationServer3D.map_get_closest_point(nav_map, p + Vector3.UP * 0.5)
+		var path := NavigationServer3D.map_get_path(nav_map, from, start, true, nav_layers)
+		var length := _flat(p, from)
+		for i in range(1, path.size()):
+			length += path[i].distance_to(path[i - 1])
+		key.append(length if not path.is_empty() else 1000.0 + _flat(p, leader))
 	var order := range(n)
 	if keep_order and _assign.size() == n:
 		order.sort_custom(func(a, b): return _assign[a] < _assign[b])
