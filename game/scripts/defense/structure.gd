@@ -5,6 +5,10 @@ extends StaticBody3D
 signal damaged(structure: Structure)
 signal destroyed(structure: Structure)
 
+## Seconds a gate's door stays up after the last hold_open(), and to open or shut it.
+const OPEN_HOLD := 1.0
+const OPEN_TIME := 0.9
+
 var display_name := "Structure"
 var max_hp := 1000.0
 var hp := 1000.0
@@ -17,6 +21,10 @@ var visual: Node3D
 var visual_half_height := 3.0
 ## Inside the mountain: attackers need line of sight to hit it, and flyers can't get at it.
 var buried := false
+## Gates open for the defenders' Gunner Squad: 0 shut, 1 fully up in the lintel.
+var opened := 0.0
+
+var _hold := 0.0
 
 
 func setup(p_name: String, p_hp: float, p_radius: float) -> void:
@@ -31,6 +39,29 @@ func _ready() -> void:
 	add_to_group("structures")
 	collision_layer = GameConfig.LAYER_STRUCTURES
 	collision_mask = 0
+	set_process(false)
+
+
+## Keeps a gate's door up (the Gunner Squad calls it while its troopers are near): it slides up
+## into the lintel, lets everything through while it is up and comes down OPEN_HOLD after the
+## last call.
+func hold_open() -> void:
+	if hp <= 0.0 or visual == null:
+		return
+	_hold = OPEN_HOLD
+	set_process(true)
+
+
+func _process(delta: float) -> void:
+	_hold -= delta
+	opened = move_toward(opened, 1.0 if _hold > 0.0 else 0.0, delta / OPEN_TIME)
+	visual.position.y = smoothstep(0.0, 1.0, opened) * (visual_half_height * 2.0 - 0.25)
+	var through := opened > 0.5
+	for c in get_children():
+		if c is CollisionShape3D and c.disabled != through:
+			c.disabled = through
+	if opened <= 0.0 and _hold <= 0.0:
+		set_process(false)
 
 
 func is_alive() -> bool:
@@ -65,6 +96,10 @@ func take_damage(amount: float, from_team: int) -> void:
 
 
 func _destroy() -> void:
+	set_process(false)
+	opened = 0.0
+	if visual:
+		visual.position.y = 0.0
 	collision_layer = 0
 	for c in get_children():
 		if c is CollisionShape3D:

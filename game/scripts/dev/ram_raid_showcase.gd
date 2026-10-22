@@ -72,6 +72,11 @@ func _ready() -> void:
 	add_child(level)
 	level.build()
 	gate = level.gates[GATE_SIDE]
+	# Staged before the Gunner Squad held the south spawn hall the raid goes through: it sits
+	# this one out.
+	for s in level.stations.filter(func(s): return s is GunnerSquad):
+		level.stations.erase(s)
+		s.queue_free()
 	# A staged scene: the mortar and machine guns hold fire, the riflemen fight.
 	for s in level.stations:
 		if not s is DefenderSoldier:

@@ -59,6 +59,7 @@ func _setup_input() -> void:
 	_add_action("fire", [], [MOUSE_BUTTON_LEFT])
 	_add_action("aim", [], [MOUSE_BUTTON_RIGHT])
 	_add_action("station_next", [KEY_TAB])
+	_add_action("squad", [KEY_G])
 	_add_action("cam_rotate_left", [KEY_Q])
 	_add_action("cam_rotate_right", [KEY_E])
 	_add_action("pause", [KEY_ESCAPE])
