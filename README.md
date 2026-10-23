@@ -24,10 +24,26 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
 **The map.** The stronghold is a mountain with a bunker dug into each of its four faces (`game/assets/stronghold/stronghold.glb`). The Keep is the reactor in the core hall under the peak. Attackers come from the south, east and west. Each of those faces has a blast-door gate on its middle ground tunnel; every other tunnel is welded shut. Once a gate is down, only Chimps and Breaching Rams can get inside; everyone else fights from outside. Inside, they can also climb the stair shafts to the gun decks and the ladders to the roofs. Forest groves stand off to the sides of the attack lanes. The defenders hold the gun decks and roofs: a machine gun over each gate, riflemen along the decks and the mortar on the south roof. The guns can't fire into the doorway right below them; the mortar covers it.
 
 **Defender (first person)**
-- `1`–`9`: take over a post (machine guns, mortar, riflemen) · `Tab`: jump to the post with the most enemies nearby
+- `1`–`9`: take over a post (machine guns, mortar, riflemen) · `G`: the Gunner Squad · `Tab`: jump to the post with the most enemies nearby · `B`: buy an AA Squad · `F1`–`F6`: take command of a bought squad
 - Rifleman: `WASD` move, `Shift` sprint, `Space` jump, `LMB` fire, `RMB` aim, `R` reload
 - Machine gun: mouse aim, `LMB` fire, `RMB` zoom; it overheats if you hold the trigger too long
 - Mortar: `WASD` move the spotter view, `Q`/`E` rotate, wheel zoom, `LMB` fire on the ring
+- Gunner Squad (third person): five Heavy Gunners, minigunners in heavy armor, posted in the south spawn hall. You drive the trooper in the middle; the other four follow it and aim and fire wherever you aim and fire. `WASD` move (relative to the camera; they walk any way while facing the aim), mouse aim, `LMB` fire (the barrels spin up first, and the guns overheat after about 7 s), `RMB` aim closer, `Shift` hustle (faster, no firing).
+  - Formation: in the open a wedge with you in the middle, two troopers out ahead to either side and two wider behind, every gun with a clear line forward. Each spot is checked against the navmesh: inside a tree, a rock or a wall it slides to the nearest free ground, and it has to be reachable from you without a detour. When the spots don't fit the wedge squeezes in from the sides; in passages too tight for that the squad files along the way you came, two abreast where there is room (`PAIRS`) or in single file (`FILE`), and spreads out again once there is room. In a column the troopers walk in your footsteps in a fixed order, each keeping its distance from the one ahead, and the last ones out of a tunnel file out the way you came before peeling off to their spots in the wedge. The troopers walk round trees and rocks on the navmesh, never through them, and don't fire when a squad mate is in the line of fire. The squad panel (bottom left) shows the formation and a small map of the troopers and their spots.
+  - Blast doors open for the squad as it comes up to them, so it can sally out through the south tunnel (or any gate) and back. Attackers still can't get in until a gate is broken.
+  - If the trooper you drive falls, the one nearest it takes the lead (your camera glides over to it and the panel says so) and the others fall in on it just as they followed the first; a column keeps walking on down the same trail.
+  - Coming up to a narrow way (the spawn ramp, a tunnel mouth) the squad checks for room just ahead of you and gets into file, in order, before it rather than crowding into it.
+  - Left alone it walks back to its post and holds it (hitting softer, like the other posts' crews). Lost troopers are replaced one at a time from the post every 20 s; if all five fall, the squad is back after 30 s.
+- AA Squads (third person): five Missile Troopers, Armored Sentinels with a six-missile pod on the left shoulder. They move, follow and file through tunnels exactly like the Gunner Squad (same keys, formation and camera); what differs is how they fight.
+  - Buying: credits come in over time (400 to start, +6/s). `B` buys a squad for 350; it deploys in a gate spawn hall (east, west and south in turn) and joins the roster, the hotbar along the bottom of the screen, which shows each squad's troopers, its auto order and what it is doing. `F1`–`F6` takes command of a squad; `Ctrl+F1`–`F6` changes a squad's auto order without leaving the post you're on. Up to six squads. Lost troopers are replaced from the squad's hall, but once all five are down the squad is gone.
+  - Air: hold `RMB` with the crosshair close to an enemy aircraft (within 6°, it needn't be dead on) and keep it there: after 3 s the box closing in on it turns red and the squad is locked on. `LMB` then launches seeking missiles from whichever pods are loaded, as many as the kill takes counting those already on their way (holding `LMB` keeps them coming while the lock holds). Letting go of `RMB` or losing the aircraft (past 13°) drops the lock.
+  - Ground: `LMB` with the crosshair on the ground, or on ground units, is a rocket strike: every trooper fires three rockets at a spot of its own round the aim. The spots cluster round it 5.5 m apart, like the rhinos' bombs, instead of piling onto one spot; holding `RMB` shows them. Each rocket hits for 60 within 4.5 m.
+  - Every missile or rocket empties a tube of its trooper's pod (six each); tubes reload one at a time, 2.5 s each, and the missiles reappear in the pod. The pods panel (above the weapon panel) has a pip per missile.
+  - `F` mines: aimed like the hippo's smoke screen, a cone toward the crosshair with a green band at its tip; `LMB` and every trooper lobs two mines that land sparsely over the band (`RMB` or `F` cancels). They arm after a moment, blink, and go off under enemy ground units (aircraft pass over), 160 within 4 m. Ready again after 15 s. A squad keeps 40 down at most (the oldest are taken up).
+  - Auto orders (`V` while driving the squad, or `Ctrl+F<n>`), for when you aren't driving it:
+    - MINES (a bought squad's first order): handed back out in the field, it lays mines where it is, then walks back to the base laying them on the path behind it whenever they are ready again; once at the base it lays them along the perimeter outside the gates, where the fewest are and away from the other squads.
+    - GUARD: it stays where it is and only watches the sky.
+    - Either way it locks on (3 s, like you) to any enemy aircraft within 85 m and shoots it down, and never fires at ground units.
 - Posts you aren't controlling keep fighting on their own; dead posts come back after a short delay
 
 **Attacker (RTS)**
@@ -99,6 +115,35 @@ godot --path game --resolution 1280x720 --write-movie walk.avi --fixed-fps 30 re
 godot --path game --resolution 1280x720 --write-movie ram_raid.avi --fixed-fps 30 res://scenes/dev/ram_raid_showcase.tscn
 ```
 
+### Gunner Squad showcase
+
+`game/scenes/dev/squad_showcase.tscn` records the Gunner Squad (`media/gunner_squad_showcase.mp4`): a lone Heavy Gunner's walk, strafe and minigun, then the squad driven out of the south spawn hall the way a player would (`SquadPilot` works the keys and the camera): up the narrow spawn ramp and through the gate tunnel in file, out through the blast door into a wedge, where a shell kills the leader and the nearest trooper takes over, through a stand of birches and rocks, and into a fight with two waves, one ahead and one on the flank. Video-only: the grove, the work lights, the shell and the attackers; the other posts hold fire.
+
+```sh
+godot --path game --resolution 1280x720 --write-movie squad.avi --fixed-fps 30 res://scenes/dev/squad_showcase.tscn
+godot --path game --headless --fixed-fps 60 res://scenes/dev/squad_showcase.tscn -- --test  # prints what the squad does
+```
+
+`-- --snap=30,45 --snap-out=/tmp/shot` saves just those frames (seconds in), for checking shots without recording it all.
+
+### AA Squad showcase
+
+`game/scenes/dev/aa_squad_showcase.tscn` stages three bought AA Squads in the south field and drives the first like a player would. Two Sky Talons cross in front of it: it holds `RMB` close to each until the lock closes (3 s), then fires seeking missiles. A group of attackers stands ahead: `RMB` shows each trooper's spot, `LMB` fires the strike. Then `F` and a throw of mines, which attackers walk into. `F2`, `F3`, `F1` go through the roster, `Ctrl+F1` swaps AA 1's order and back, and AA 1 walks on further out. Finally the player goes back to a rifleman on the south deck: AA 1 (MINES) lays mines where it was left, then on the path home, then along the perimeter; AA 3 (MINES) works the perimeter; AA 2 (GUARD) holds its ground and shoots down a Sky Talon while attackers walk past. The garrison's posts hold fire.
+
+```sh
+godot --path game --headless --fixed-fps 30 res://scenes/dev/aa_squad_showcase.tscn -- --test  # prints and checks: AA SHOWCASE PASS / FAIL
+godot --path game --rendering-driver opengl3 --resolution 1280x720 --fixed-fps 30 res://scenes/dev/aa_squad_showcase.tscn -- --shots=/tmp/aa  # + captioned screenshots
+```
+
+`-- --video` is the showcase video (`media/aa_squad_showcase.mp4`): a lone Missile Trooper's walk, strafe and rockets first, then the same run with cameras cut in (one rides behind a seeking missile, others sit low by the strike and the minefield or track the squad walking), captions and the keys the player presses. AA 1 walking to its spot at the perimeter and waiting for its mines plays 4× faster. The run prints which frames to keep and speed up, and `tools/video/cut_showcase.py` cuts the recording into the mp4 from that log:
+
+```sh
+godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie aa.avi --fixed-fps 30 res://scenes/dev/aa_squad_showcase.tscn -- --video > aa.log
+python3 tools/video/cut_showcase.py aa.avi aa.log media/aa_squad_showcase.mp4
+```
+
+`-- --video --snap=30,45 --snap-out=/tmp/shot` saves just those frames (seconds into the video).
+
 ## Asset pipeline
 
 Meshy exports go in `assets_src/`, then get processed with Blender (headless):
@@ -134,6 +179,22 @@ The War Elephant's export has no rig, so `tools/blender/rig_elephant.py` builds 
 python tools/blender/rig_elephant.py -- \
     --input assets_src/units/war_elephant_sentinel/war_elephant_sentinel_meshy.glb \
     --output game/assets/units/war_elephant_sentinel/war_elephant_sentinel_rigged.glb
+```
+
+The Heavy Gunner (the minigun defender) comes with Meshy's auto-rig but no clips. `tools/blender/rig_heavy_gunner.py` keeps the auto-rig's skin weights for the body but rebuilds its bones with clean names, scales the model to 2.25 m with its origin under the hips, re-skins the minigun rigidly onto a `gun` bone (the barrel cluster onto `barrels`, which the game spins; `muzzle` marks the tips) and takes the left leg's pull off the ammo belt. Every clip twists the torso about 34° so the barrels point straight ahead. It bakes `Idle` and eight `Walk_<dir>` clips (F, FR, R, BR, B, BL, L, FL), all in step so the game blends them by direction (`HeavyGunner`), feet planted by IK; `GunnerRig` bends the spine onto the aim at run time. Same Blender/`bpy` 5.2 as above; `--preview DIR` renders the clips:
+
+```sh
+python tools/blender/rig_heavy_gunner.py -- \
+    --input assets_src/defenders/heavy_gunner/heavy_gunner_meshy.glb \
+    --output game/assets/defenders/heavy_gunner/heavy_gunner_rigged.glb
+```
+
+The Missile Trooper (the AA Squad's) is the Armored Sentinel, whose export has a Mixamo-style auto-rig in a T-pose and a Running clip. `tools/blender/rig_missile_trooper.py` rebuilds its bones with the Heavy Gunner's names (keeping the body's weights), scales it to 1.95 m and re-skins its shoulder pod rigidly: the housing onto `launcher` (which the game swings onto the aim, `MissileRig`), each of the six missiles onto its own `missile_<k>` bone, its head at the missile's nose and its Y axis along the tube (the game launches from there and hides a missile once it has left), the mount onto the chest; the cables from the pod lose their pull from the left leg. It bakes the same `Idle` and eight `Walk_<dir>` clips as the Heavy Gunner, at the same speeds and timing (the same leg IK), with both arms hanging and swinging:
+
+```sh
+python tools/blender/rig_missile_trooper.py -- \
+    --input assets_src/defenders/armored_sentinel/armored_sentinel_meshy.glb \
+    --output game/assets/defenders/armored_sentinel/missile_trooper_rigged.glb
 ```
 
 Static props (scenery, turrets) skip Blender: they go through [glTF-Transform](https://gltf-transform.dev) to put the pivot at the bottom center and shrink textures to 1024 px, and `game/scripts/match/props.gd` scales them to height at load time:

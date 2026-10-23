@@ -1,8 +1,10 @@
 class_name HomingMissile
 extends Node3D
-## Missile from the War Elephant's pods. Leaves its tube straight along it, then turns onto its
-## target (harder the longer it flies) while picking up speed, and hits it for `damage`. If the
-## target is gone it flies on for a moment and bursts. Leaves a smoke trail.
+## Missile from the War Elephant's pods and the AA Squad's shoulder pods. Leaves its tube straight
+## along it, then turns onto its target (harder the longer it flies) while picking up speed, and
+## hits it for `damage`. If the target is gone it flies on for a moment and bursts. Fired at a point
+## on the ground instead (launch_at: the AA Squad's rocket strike), it dives onto that point and
+## bursts there, hurting everything within `splash`. Leaves a smoke trail.
 
 const BOOST := 0.3  # seconds straight out of the tube
 const START_SPEED := 16.0
@@ -11,6 +13,8 @@ const ACCEL := 90.0
 ## Turn rate (rad/s) at launch; it grows the longer the missile flies.
 const TURN := 3.0
 const HIT_RADIUS := 1.3
+## A rocket bursts once it passes this close to its point.
+const POINT_RADIUS := 1.0
 const LIFETIME := 8.0
 const TRAIL := Color(0.86, 0.85, 0.82, 0.7)
 
@@ -19,18 +23,34 @@ static var _meshes := {}
 var team := GameConfig.TEAM_ATTACKER
 var damage := 18.0
 var target: Node3D
+## Ground point a rocket dives onto (launch_at); INF: the missile goes after `target`.
+var point := Vector3.INF
+var splash := 3.0
 ## Called once when the missile is spent, whether it hit or not.
 var on_spent := Callable()
+## Length of the missile (1: the elephant's), how fast it flies and how hard it turns (times TURN).
+var size := 1.0
+var top_speed := TOP_SPEED
+var turn_scale := 1.0
 
 var _vel := Vector3.ZERO
 var _age := 0.0
 var _lost := 0.0
 var _trail_cd := 0.0
 var _flame: MeshInstance3D
+var _hull: Node3D
 
 
 func launch(from: Vector3, dir: Vector3, t: Node3D) -> void:
 	target = t
+	_vel = dir.normalized() * START_SPEED
+	global_position = from
+	_face()
+
+
+## A rocket: out of the tube along `dir`, then down onto `p`.
+func launch_at(from: Vector3, dir: Vector3, p: Vector3) -> void:
+	point = p
 	_vel = dir.normalized() * START_SPEED
 	global_position = from
 	_face()
@@ -43,13 +63,15 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	_age += delta
 	var tracking := Combat.is_valid_target(target)
+	var rocket := point != Vector3.INF
 	var dir := _vel.normalized()
-	if tracking and _age > BOOST:
-		var want := (Combat.aim_point(target) - global_position).normalized()
+	if (tracking or rocket) and _age > BOOST:
+		var goal := Combat.aim_point(target) if tracking else point
+		var want := (goal - global_position).normalized()
 		var angle := dir.angle_to(want)
 		if angle > 0.0001:
-			dir = dir.slerp(want, minf(TURN * (1.0 + _age * 2.0) * delta / angle, 1.0))
-	_vel = dir * minf(_vel.length() + ACCEL * delta, TOP_SPEED)
+			dir = dir.slerp(want, minf(TURN * turn_scale * (1.0 + _age * 2.0) * delta / angle, 1.0))
+	_vel = dir * minf(_vel.length() + ACCEL * delta, top_speed)
 	var step := _vel * delta
 	if tracking:
 		var aim := Combat.aim_point(target)
@@ -59,29 +81,49 @@ func _physics_process(delta: float) -> void:
 			target.take_damage(damage, team)
 			_burst(1.8)
 			return
+	elif rocket:
+		var p := Geometry3D.get_closest_point_to_segment(point, global_position, global_position + step)
+		if p.distance_to(point) < POINT_RADIUS:
+			global_position = p
+			_blast()
+			return
 	var q := PhysicsRayQueryParameters3D.create(global_position, global_position + step,
 			GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES)
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
 	if not hit.is_empty():
 		global_position = hit.position
-		_burst(1.4)
+		if rocket:
+			_blast()
+		else:
+			_burst(1.4)
 		return
 	global_position += step
 	_face()
-	if not tracking:
+	if not tracking and not rocket:
 		_lost += delta
 	if _lost > 0.35 or _age > LIFETIME:
-		_burst(1.0)
+		if rocket:
+			_blast()
+		else:
+			_burst(1.0)
 		return
 	_flame.scale = Vector3.ONE * randf_range(0.8, 1.25)
 	_trail_cd -= delta
 	if _trail_cd <= 0.0:
 		_trail_cd = 0.035
-		_puff(global_position - dir * 0.6)
+		_puff(global_position - dir * 0.6 * size)
 
 
-func _burst(size: float) -> void:
-	Combat.spawn_explosion(self, global_position, size)
+func _burst(radius: float) -> void:
+	Combat.spawn_explosion(self, global_position, radius)
+	if on_spent.is_valid():
+		on_spent.call()
+	queue_free()
+
+
+## A rocket going off: everything within `splash` takes the damage (Combat.explode).
+func _blast() -> void:
+	Combat.explode(self, global_position, splash, damage, team)
 	if on_spent.is_valid():
 		on_spent.call()
 	queue_free()
@@ -112,31 +154,34 @@ func _puff(pos: Vector3) -> void:
 
 ## Body along -Z (the way it flies): white casing, red nose, four fins and a flame at the tail.
 func _build() -> void:
+	_hull = Node3D.new()
+	_hull.scale = Vector3.ONE * size
+	add_child(_hull)
 	var casing := Mats.flat(Color(0.85, 0.86, 0.84), 0.3, 0.5)
 	var body := MeshInstance3D.new()
 	body.mesh = _mesh("body")
 	body.material_override = casing
 	body.rotation.x = PI * 0.5
-	add_child(body)
+	_hull.add_child(body)
 	var nose := MeshInstance3D.new()
 	nose.mesh = _mesh("nose")
 	nose.material_override = Mats.flat(Color(0.75, 0.12, 0.08), 0.2, 0.5)
 	nose.rotation.x = -PI * 0.5
 	nose.position.z = -0.6
-	add_child(nose)
+	_hull.add_child(nose)
 	for k in 2:  # each plate makes two opposite fins
 		var fin := MeshInstance3D.new()
 		fin.mesh = _mesh("fin")
 		fin.material_override = casing
 		fin.rotation.z = k * PI * 0.5
 		fin.position.z = 0.38
-		add_child(fin)
+		_hull.add_child(fin)
 	_flame = MeshInstance3D.new()
 	_flame.mesh = _mesh("flame")
 	_flame.material_override = Mats.glow(Color(1.0, 0.6, 0.2), 6.0)
 	_flame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_flame.position.z = 0.62
-	add_child(_flame)
+	_hull.add_child(_flame)
 
 
 static func _mesh(kind: String) -> Mesh:

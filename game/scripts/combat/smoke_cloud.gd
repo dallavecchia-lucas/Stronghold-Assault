@@ -64,10 +64,15 @@ static func puff_material(color: Color) -> StandardMaterial3D:
 	m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	m.billboard_keep_scale = true
 	m.albedo_color = color
+	m.albedo_texture = puff_texture()
+	return m
+
+
+## The soft round puff every smoke quad is drawn with (white, fading out to the edge).
+static func puff_texture() -> GradientTexture2D:
 	if _puff_tex == null:
 		_puff_tex = _puff_texture()
-	m.albedo_texture = _puff_tex
-	return m
+	return _puff_tex
 
 
 func blocking_radius() -> float:

@@ -59,7 +59,7 @@ static func has_line_of_sight(ctx: Node3D, from: Vector3, to: Vector3, target: O
 ## Fires an instant shot and applies damage to whatever it hits first.
 ## `visual_from` lets the tracer start at a gun muzzle while the ray starts at the camera.
 static func fire_hitscan(shooter: Node3D, from: Vector3, aim_at: Vector3, spread: float, damage: float,
-		team: int, structure_mult := 1.0, exclude: Array[RID] = [], visual_from = null) -> Dictionary:
+		team: int, structure_mult := 1.0, exclude: Array[RID] = [], visual_from = null, tracer_width := 0.035) -> Dictionary:
 	var dir := (aim_at - from).normalized()
 	if spread > 0.0:
 		dir = apply_spread(dir, spread)
@@ -77,7 +77,7 @@ static func fire_hitscan(shooter: Node3D, from: Vector3, aim_at: Vector3, spread
 			hurt = true
 		spawn_impact(shooter, end, hurt)
 	var start: Vector3 = visual_from if visual_from != null else from
-	spawn_tracer(shooter, start, end, ATTACKER_TRACER if team == GameConfig.TEAM_ATTACKER else DEFENDER_TRACER)
+	spawn_tracer(shooter, start, end, ATTACKER_TRACER if team == GameConfig.TEAM_ATTACKER else DEFENDER_TRACER, tracer_width)
 	return {"position": end, "hit": hurt}
 
 
@@ -124,7 +124,7 @@ static func _tracer_material(color: Color) -> StandardMaterial3D:
 	return _tracer_mats[color]
 
 
-static func spawn_tracer(ctx: Node, from: Vector3, to: Vector3, color: Color) -> void:
+static func spawn_tracer(ctx: Node, from: Vector3, to: Vector3, color: Color, width := 0.035) -> void:
 	var length := from.distance_to(to)
 	if length < 1.0:
 		return
@@ -132,7 +132,7 @@ static func spawn_tracer(ctx: Node, from: Vector3, to: Vector3, color: Color) ->
 	var seg := minf(length * 0.5, 3.0)
 	var mi := MeshInstance3D.new()
 	var mesh := BoxMesh.new()
-	mesh.size = Vector3(0.035, 0.035, seg)
+	mesh.size = Vector3(width, width, seg)
 	mi.mesh = mesh
 	mi.material_override = _tracer_material(color)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -163,6 +163,8 @@ static func _smoke_material() -> StandardMaterial3D:
 		_smoke_mat.vertex_color_use_as_albedo = true
 		_smoke_mat.albedo_color = Color(0.35, 0.33, 0.3, 0.7)
 		_smoke_mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+		# Round puffs: bare quads show up as squares close to the camera.
+		_smoke_mat.albedo_texture = SmokeCloud.puff_texture()
 	return _smoke_mat
 
 

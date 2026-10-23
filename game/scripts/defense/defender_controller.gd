@@ -2,13 +2,21 @@ class_name DefenderController
 extends CanvasLayer
 ## Human defender: jumps between stations (number keys / Tab) and shows the FPS HUD.
 ## Stations are duck-typed nodes with possess(), unpossess(), can_possess(),
-## wants_captured_mouse(), get_hud_info(), get_station_position(), station_name and
-## a became_unavailable signal.
+## wants_captured_mouse(), get_hud_info(), get_station_position(), station_name, station_kind
+## and a became_unavailable signal. G jumps to the Gunner Squad (station_kind "squad").
+##
+## The roster of bought squads (DefenderArmory) sits in a hotbar at the bottom (SquadHotbar):
+## F1-F6 takes command of a squad, Ctrl+F1-F6 changes its auto order without leaving the post
+## the player is on, and B buys another AA Squad.
 
 const THREAT_RADIUS := 45.0
 const SWITCH_FADE := 0.18
+const ROSTER_KEYS := [KEY_F1, KEY_F2, KEY_F3, KEY_F4, KEY_F5, KEY_F6]
+const BUY_KEY := KEY_B
 
 var level: LevelBuilder
+## The defenders' credits and bought squads; null: no roster.
+var armory: DefenderArmory
 var stations := []
 var current = null
 
@@ -26,6 +34,7 @@ var _prompt: Label
 var _threat := {}
 var _threat_cd := 0.0
 var _switching := false
+var _hotbar: SquadHotbar
 
 
 func _ready() -> void:
@@ -40,6 +49,10 @@ func _ready() -> void:
 	_overview_cam.global_transform = Transform3D(Basis.from_euler(Vector3(deg_to_rad(-40.0), 0, 0)), Vector3(0, 150, 230))
 
 	_build_hud()
+	if armory:
+		armory.squad_bought.connect(_on_squad_bought)
+		for s in armory.squads:
+			_on_squad_bought(s)
 	select_station(0, true)
 
 
@@ -48,21 +61,74 @@ func _ready() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if get_tree().paused:
 		return
+	if armory and event is InputEventKey and event.pressed and not event.echo:
+		var k := ROSTER_KEYS.find(event.physical_keycode)
+		if k >= 0:
+			if event.ctrl_pressed:
+				cycle_squad_order(k)
+			else:
+				select_squad(k)
+			return
+		if event.physical_keycode == BUY_KEY:
+			buy_squad()
+			return
 	for i in mini(stations.size(), 10):
 		if event.is_action_pressed("slot_%d" % (i + 1)):
 			select_station(i)
 			return
 	if event.is_action_pressed("station_next"):
 		select_most_threatened()
+	elif event.is_action_pressed("squad"):
+		select_station(stations.find_custom(func(s): return s.station_kind == "squad"))
 	elif event is InputEventMouseButton and event.pressed and current != null \
 			and current.wants_captured_mouse() and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
 func select_station(i: int, instant := false) -> void:
-	if i < 0 or i >= stations.size() or _switching:
+	if i < 0 or i >= stations.size():
 		return
-	var s = stations[i]
+	_switch_to(stations[i], instant)
+
+
+## Takes command of the k-th squad on the roster.
+func select_squad(k: int, instant := false) -> void:
+	if armory == null or k < 0 or k >= armory.squads.size():
+		return
+	_switch_to(armory.squads[k], instant)
+
+
+## Ctrl+F<n>: the k-th squad's next auto order (MINES / GUARD), wherever the player is.
+func cycle_squad_order(k: int) -> void:
+	if armory == null or k < 0 or k >= armory.squads.size():
+		return
+	var s: AASquad = armory.squads[k]
+	s.cycle_order()
+	_flash_prompt("%s: %s" % [s.station_name, AASquad.ORDER_NAMES[s.order]])
+
+
+## B: buys an AA Squad if there are the credits and room on the roster.
+func buy_squad() -> AASquad:
+	if armory == null:
+		return null
+	if armory.squads.size() >= DefenderArmory.MAX_SQUADS:
+		_flash_prompt("The roster is full")
+		return null
+	if not armory.can_buy():
+		_flash_prompt("Not enough credits (%d of %d)" % [int(armory.credits), DefenderArmory.AA_COST])
+		return null
+	var s := armory.buy()
+	_flash_prompt("%s deployed · F%d to take command" % [s.station_name, armory.squads.find(s) + 1])
+	return s
+
+
+func _on_squad_bought(s: AASquad) -> void:
+	s.became_unavailable.connect(_on_station_unavailable)
+
+
+func _switch_to(s, instant := false) -> void:
+	if _switching:
+		return
 	if s == current:
 		return
 	if not s.can_possess():
@@ -114,6 +180,8 @@ func _possess(s) -> void:
 	restore_mouse()
 	_prompt.visible = false
 	_crosshair.visible = s.wants_captured_mouse()
+	if _hotbar:
+		_hotbar.current = s
 
 
 func _on_station_unavailable(s) -> void:
@@ -121,6 +189,8 @@ func _on_station_unavailable(s) -> void:
 		return
 	current.unpossess()
 	current = null
+	if _hotbar:
+		_hotbar.current = null
 	_overview_cam.current = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_crosshair.visible = false
@@ -167,7 +237,10 @@ func _build_hud() -> void:
 	for i in stations.size():
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 8)
-		var key := UIKit.label(str((i + 1) % 10) if i < 10 else " ", 15, UIKit.ACCENT)
+		var key_text := str((i + 1) % 10) if i < 10 else " "
+		if stations[i].station_kind == "squad":
+			key_text = "G"
+		var key := UIKit.label(key_text, 15, UIKit.ACCENT)
 		key.custom_minimum_size.x = 14
 		var name_l := UIKit.label(stations[i].station_name, 15)
 		name_l.custom_minimum_size.x = 210
@@ -214,6 +287,12 @@ func _build_hud() -> void:
 	_prompt.visible = false
 	root.add_child(_prompt)
 
+	if armory:
+		_hotbar = SquadHotbar.new()
+		_hotbar.armory = armory
+		_hotbar.keys = ROSTER_KEYS.map(func(k): return OS.get_keycode_string(k))
+		root.add_child(_hotbar)
+
 	_fade = UIKit.full_rect(ColorRect.new()) as ColorRect
 	_fade.color = Color(0, 0, 0, 0)
 	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -256,9 +335,9 @@ func _process(delta: float) -> void:
 		_heat_bar.visible = info.has("heat")
 		if info.has("heat"):
 			_heat_bar.value = info.heat
-			UIKit.set_bar_color(_heat_bar, UIKit.DANGER if info.heat > 0.75 else UIKit.WARN)
+			UIKit.set_bar_color(_heat_bar, info.get("bar_color", UIKit.DANGER if info.heat > 0.75 else UIKit.WARN))
 	else:
 		_weapon_label.text = "No post"
 		_status_label.text = "—"
-		_hint_label.text = "Number keys or Tab to take over a post"
+		_hint_label.text = "Number keys or Tab to take over a post" + (" · F1-F6 a squad · B buy an AA Squad" if armory else "")
 		_heat_bar.visible = false
