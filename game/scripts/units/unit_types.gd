@@ -139,8 +139,9 @@ const DATA := {
 		"name": "Bison Field Gun", "cost": 260, "hp": 600.0, "speed": 3.0,
 		"range": 40.0, "damage": 40.0, "fire_interval": 2.0, "spread": 0.02,
 		"structure_mult": 1.5, "radius": 1.6, "height": 2.4,
-		"role": "infantry", "anim": "stomp", "hotkey": KEY_L,
-		"model": "res://assets/units/semi_futuristic_pair/semi_futuristic_pair.glb",
+		"role": "infantry", "anim": "rigged", "hotkey": KEY_L,
+		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 1.85,
+		"model": "res://assets/units/semi_futuristic_pair/semi_futuristic_pair_rigged.glb",
 	},
 	"lioness": {
 		"name": "Armored Lioness", "cost": 90, "hp": 160.0, "speed": 6.5,
