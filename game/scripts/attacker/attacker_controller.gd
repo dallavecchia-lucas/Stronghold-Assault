@@ -7,6 +7,7 @@ extends CanvasLayer
 ## Ctrl+RMB: move without stopping to fight · Ctrl+1-5 assign group · 1-5 recall
 ## Z X C V B N M H J K L Y U I: spawn units · Tab: cycle spawn point
 ## F: aim the selected rhinos' cluster bombing (LMB fire, RMB/F cancel) · T: scout formation
+## G: aim the selected bisons' bombardment (LMB fire, RMB/G cancel)
 ## R: aim a selected hippo's smoke screen (LMB fire, RMB/R cancel)
 ## O: aim the selected elephants' missiles: LMB an enemy aircraft (RMB/O cancel)
 ## Space: the selected breaching rams ram (then RMB a gate to charge it)
@@ -15,6 +16,7 @@ const DRAG_THRESHOLD := 6.0
 const CLUSTER_KEY := KEY_F
 const SCOUT_KEY := KEY_T
 const SMOKE_KEY := KEY_R
+const BOMBARD_KEY := KEY_G
 const MISSILE_KEY := KEY_O
 const RAM_KEY := KEY_SPACE
 const SMOKE_FILL := Color(0.2, 0.9, 0.6, 0.35)
@@ -38,8 +40,10 @@ var _selection_label: Label
 var _spawn_buttons := {}
 var _spawn_point_buttons: Array[Button] = []
 var _marker: MeshInstance3D
-## Ability aim mode: "" (off), "cluster" (rhinos), "smoke" (hippos) or "missile" (elephants).
+## Ability aim mode: "" (off), "cluster" (rhinos), "bombard" (bisons), "smoke" (hippos) or
+## "missile" (elephants).
 ## Cluster: preview of every rhino's aim zone and where its bombs will land.
+## Bombard: every ready bison's range and where its shell will land (its blast).
 ## Smoke: the firing hippo's aim cone, with the band where the curtain will stand.
 ## Missile: each ready elephant's missile range, the aircraft under the cursor and lines from
 ## the elephants that would fire at it.
@@ -83,6 +87,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			match _aiming:
 				"cluster":
 					_fire_cluster(event.position)
+				"bombard":
+					_fire_bombard(event.position)
 				"smoke":
 					_fire_smoke(event.position)
 				"missile":
@@ -118,6 +124,9 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventKey and event.pressed and not event.echo:
 		if event.physical_keycode == CLUSTER_KEY:
 			_set_aiming("cluster" if _aiming != "cluster" and not _ready_rhinos().is_empty() else "")
+			return
+		if event.physical_keycode == BOMBARD_KEY:
+			_set_aiming("bombard" if _aiming != "bombard" and not _ready_bisons().is_empty() else "")
 			return
 		if event.physical_keycode == SMOKE_KEY:
 			_set_aiming("smoke" if _aiming != "smoke" and not _ready_hippos().is_empty() else "")
@@ -221,7 +230,7 @@ func _ready_rhinos() -> Array:
 
 func _set_aiming(mode: String) -> void:
 	_aiming = mode
-	_aim_preview.visible = mode == "cluster"
+	_aim_preview.visible = mode == "cluster" or mode == "bombard"
 	_smoke_preview.visible = mode == "smoke"
 	_missile_preview.visible = mode == "missile"
 	_aim_label.visible = mode == "missile"
@@ -263,6 +272,43 @@ func _update_aim_preview() -> void:
 		RhinoAim.dashed_circle(_aim_mesh, r.global_position + lift, r.stats.cluster_range, 64)
 		RhinoAim.dashed_circle(_aim_mesh, aims[i] + lift, r.stats.cluster_spread, 16)
 		_aim_mesh.surface_add_vertex(r.global_position + lift)
+		_aim_mesh.surface_add_vertex(aims[i] + lift)
+	_aim_mesh.surface_end()
+
+
+# ---------------------------------------------------------------- bison bombardment
+
+func _ready_bisons() -> Array:
+	_alive_selection()
+	return selected.filter(func(u): return u.bombard_ready())
+
+
+func _fire_bombard(screen_pos: Vector2) -> void:
+	var hit := _ray(screen_pos, GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES)
+	var bisons := _ready_bisons()
+	if hit.is_empty() or bisons.is_empty():
+		return
+	commander.submit({"type": "bombard", "units": bisons.map(func(u): return u.unit_id), "pos": hit.position})
+	_ping(hit.position, UIKit.DANGER)
+
+
+func _update_bombard_preview() -> void:
+	var bisons := _ready_bisons()
+	if bisons.is_empty():
+		_set_aiming("")
+		return
+	_aim_mesh.clear_surfaces()
+	var hit := _ray(get_viewport().get_mouse_position(), GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES)
+	if hit.is_empty():
+		return
+	var aims := RhinoAim.bombard(bisons, hit.position)
+	var lift := Vector3.UP * 0.3
+	_aim_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
+	for i in bisons.size():
+		var b: AttackerUnit = bisons[i]
+		RhinoAim.dashed_circle(_aim_mesh, b.global_position + lift, b.stats.bombard_range, 96)
+		RhinoAim.dashed_circle(_aim_mesh, aims[i] + lift, b.stats.bombard_splash, 20)
+		_aim_mesh.surface_add_vertex(b.global_position + lift)
 		_aim_mesh.surface_add_vertex(aims[i] + lift)
 	_aim_mesh.surface_end()
 
@@ -461,7 +507,7 @@ func _build_hud() -> void:
 	row.add_child(sp)
 	set_spawn_point(0)
 
-	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nChimps / Rams: RMB next to a broken gate to send them in",
+	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nBisons: G bombardment (LMB fire, RMB cancel), onto the gun decks and roofs too\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nChimps / Rams: RMB next to a broken gate to send them in",
 			13, Color(0.85, 0.85, 0.85, 0.75))
 	help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	help.grow_vertical = Control.GROW_DIRECTION_BEGIN
@@ -489,6 +535,13 @@ func _process(_delta: float) -> void:
 			_selection_label.text += "  %ds" % ceili(soonest)
 		if rhinos.any(func(u): return commander.is_scouting(u)):
 			_selection_label.text += "\nScout formation [T]"
+	var bisons := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_bombard())
+	if not bisons.is_empty():
+		var ready := bisons.filter(func(u): return u.bombard_ready()).size()
+		_selection_label.text += "\nBombardment %d/%d [G]" % [ready, bisons.size()]
+		if ready == 0:
+			var soonest: float = bisons.map(func(u): return u.bombard_cd).min()
+			_selection_label.text += "  %ds" % ceili(soonest)
 	var hippos := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_smoke())
 	if not hippos.is_empty():
 		var ready := hippos.filter(func(u): return u.smoke_ready()).size()
@@ -524,6 +577,8 @@ func _process(_delta: float) -> void:
 				_selection_label.text += " · %d charging the gate" % charging
 	if _aiming == "cluster":
 		_update_aim_preview()
+	elif _aiming == "bombard":
+		_update_bombard_preview()
 	elif _aiming == "smoke":
 		_update_smoke_preview()
 	elif _aiming == "missile":

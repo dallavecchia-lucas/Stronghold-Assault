@@ -11,6 +11,8 @@ extends Node
 ##   {"type": "attack", "units": [ids], "target": NodePath}   rams ramming at a ground gate charge
 ##               it, as many as fit in front of its doorway; the rest call their ram off (RamCharge)
 ##   {"type": "cluster", "units": [ids], "pos": Vector3}   rhinos bomb around pos (RhinoAim)
+##   {"type": "bombard", "units": [ids], "pos": Vector3}   bisons each fire a shell round pos,
+##               up on the gun decks and roofs too (RhinoAim.bombard)
 ##   {"type": "smoke", "units": [ids], "pos": Vector3}   the ready hippo closest to pos lays a
 ##                                                     smoke screen toward it (HippoSmoke)
 ##   {"type": "missile", "units": [ids], "target": NodePath}   elephants fire missile salvos at
@@ -63,6 +65,8 @@ func submit(cmd: Dictionary) -> int:
 			_attack(cmd.units, cmd.target)
 		"cluster":
 			_cluster(cmd.units, cmd.pos)
+		"bombard":
+			_bombard(cmd.units, cmd.pos)
 		"smoke":
 			_smoke(cmd.units, cmd.pos)
 		"missile":
@@ -130,6 +134,13 @@ func _cluster(ids: Array, pos: Vector3) -> void:
 	var aims := RhinoAim.solve(rhinos, pos)
 	for i in rhinos.size():
 		rhinos[i].start_cluster(aims[i])
+
+
+func _bombard(ids: Array, pos: Vector3) -> void:
+	var bisons := _resolve(ids).filter(func(u): return u.bombard_ready())
+	var aims := RhinoAim.bombard(bisons, pos)
+	for i in bisons.size():
+		bisons[i].start_bombard(aims[i])
 
 
 func _smoke(ids: Array, pos: Vector3) -> void:

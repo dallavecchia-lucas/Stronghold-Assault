@@ -50,6 +50,8 @@ var missile_cd := 0.0
 var heat := 0.0
 ## Seconds until the ram can be used again.
 var ram_cd := 0.0
+## Seconds until the bombardment can be fired again.
+var bombard_cd := 0.0
 ## Gate this ram is charging (RamCharge), and its slot across the doorway.
 var charge_gate: Structure = null:
 	set(g):
@@ -86,6 +88,14 @@ var _cluster_left := 0.0
 var _cluster_cd_shot := 0.0
 var _cluster_aim := Vector3.ZERO
 var _overheat_left := 0.0
+## Bombardment under way: where the shell goes, seconds left standing (laying the gun, then
+## holding after the shot), and whether it has fired.
+var _bombard_aim := Vector3.ZERO
+var _bombard_left := 0.0
+var _bombard_fired := false
+## The model's muzzle bone (bombardment), when it has one.
+var _muzzle_skel: Skeleton3D
+var _muzzle_bone := -1
 var _ram_left := 0.0
 var _charge_pos := Vector3.ZERO
 ## Soldiers run over during this ram: instance id -> msec, so each is hit once per pass.
@@ -132,9 +142,9 @@ func is_controllable() -> bool:
 	return is_alive() and not raiding
 
 
-## Medics, rhinos and elephants never shoot at what they are ordered to attack.
+## Medics, rhinos, elephants and bisons never shoot at what they are ordered to attack.
 func has_basic_attack() -> bool:
-	return role != "healer" and role != "anti_air"
+	return role != "healer" and role != "anti_air" and role != "siege"
 
 
 func has_cluster_bomb() -> bool:
@@ -173,6 +183,19 @@ func salvo_damage() -> float:
 func in_missile_range(t: Node3D) -> bool:
 	var d := t.global_position - global_position
 	return Vector2(d.x, d.z).length() <= stats.missile_range
+
+
+func has_bombard() -> bool:
+	return stats.has("bombard_cooldown")
+
+
+func bombard_ready() -> bool:
+	return has_bombard() and bombard_cd <= 0.0 and is_alive()
+
+
+## Standing still to lay the gun or after the shot.
+func is_bombarding() -> bool:
+	return _bombard_left > 0.0
 
 
 func has_ram() -> bool:
@@ -332,6 +355,7 @@ func _die() -> void:
 	remove_from_group("attacker_units")
 	remove_from_group("air_units")
 	_cluster_left = 0.0
+	_bombard_left = 0.0
 	end_ram()
 	_route.clear()
 	_end_salvo()
@@ -580,6 +604,51 @@ func _cluster_tick(delta: float) -> void:
 		_recoil = 1.0
 
 
+## Bison active: stand still, lay the gun on `aim` and fire one heavy shell at it, then carry on
+## with the order. `aim` should be within bombard_range (RhinoAim.bombard). False while reloading.
+func start_bombard(aim: Vector3) -> bool:
+	if not bombard_ready():
+		return false
+	bombard_cd = stats.bombard_cooldown
+	_bombard_aim = aim
+	_bombard_left = stats.bombard_aim_time + stats.bombard_hold
+	_bombard_fired = false
+	return true
+
+
+func _bombard_tick(delta: float) -> void:
+	_bombard_left -= delta
+	if not _bombard_fired and _bombard_left <= stats.bombard_hold:
+		_bombard_fired = true
+		_fire_bombard()
+
+
+func _fire_bombard() -> void:
+	var to := _bombard_aim - global_position
+	var scatter: float = Vector2(to.x, to.z).length() * stats.bombard_spread * sqrt(randf())
+	var a := randf() * TAU
+	var shell := Shell.new()
+	shell.team = team
+	shell.damage = stats.bombard_damage
+	shell.radius = stats.bombard_splash
+	shell.structure_mult = stats.structure_mult
+	shell.size = 0.4
+	shell.trail = 0.04
+	get_tree().current_scene.add_child(shell)
+	var muzzle := muzzle_position()
+	shell.launch(muzzle, _bombard_aim + Vector3(cos(a), 0.0, sin(a)) * scatter)
+	Combat.spawn_explosion(self, muzzle, 1.6)
+	SmokeCloud.wisp(self, muzzle, 2.0)
+	_recoil = 1.0
+
+
+## Tip of the barrel: the model's muzzle bone, or a guess in front of the unit.
+func muzzle_position() -> Vector3:
+	if _muzzle_skel:
+		return _muzzle_skel.global_transform * _muzzle_skel.get_bone_global_pose(_muzzle_bone).origin
+	return global_position - global_basis.z * 3.0 + Vector3.UP * stats.height
+
+
 ## Hippo active: three smoke grenades into the cone toward `toward` (HippoSmoke). False while
 ## on cooldown.
 func start_smoke(toward: Vector3) -> bool:
@@ -816,6 +885,10 @@ func _physics_process(delta: float) -> void:
 		ram_cd = maxf(ram_cd - delta, 0.0)
 		if _ram_left > 0.0:
 			_ram_tick(delta)
+	if has_bombard():
+		bombard_cd = maxf(bombard_cd - delta, 0.0)
+		if _bombard_left > 0.0:
+			_bombard_tick(delta)
 	if stats.has("aa_dps") and _fire_cd <= 0.0:
 		_aa_tick()
 	if raiding and has_ram():
@@ -826,7 +899,9 @@ func _physics_process(delta: float) -> void:
 	var engaged := charge_gate == null and not running_over and Combat.is_valid_target(target) and _in_range(target) and _sees_target
 	if stats.has("overheat_time"):
 		_heat_tick(delta, engaged and not is_overheated())
-	if engaged:
+	if is_bombarding():
+		_face(_bombard_aim, delta)  # stands still while it lays the gun and fires
+	elif engaged:
 		_face(target.global_position, delta)
 		if _fire_cd <= 0.0 and not is_overheated():
 			_fire_at(target)
@@ -1028,6 +1103,8 @@ func _process(delta: float) -> void:
 				_model.position.z = -_recoil * 0.35  # lunge into the blow
 			elif has_ram():
 				_model.position.z = -sin(_butt * PI) * 0.5  # head-butt
+			elif has_bombard():
+				_model.position.z = _recoil * 0.25  # the gun kicks the pair back
 		_:
 			_model.position.y = absf(sin(_anim_t * 2.2)) * 0.08 if moving else lerpf(_model.position.y, 0.0, delta * 8.0)
 			_model.rotation.z = sin(_anim_t * 2.2) * 0.06 if moving else lerpf(_model.rotation.z, 0.0, delta * 8.0)
@@ -1062,6 +1139,11 @@ func _build_model() -> void:
 				a.set_meta("looped", true)
 		_anim.play(stats.anim_idle)
 		_anim.seek(randf() * _anim.current_animation_length)  # don't move in lockstep
+	if has_bombard():
+		for skel in m.find_children("*", "Skeleton3D", true, false):
+			if skel.find_bone("muzzle") >= 0:
+				_muzzle_skel = skel
+				_muzzle_bone = skel.find_bone("muzzle")
 	if stats.get("flak", false):
 		var skeletons := m.find_children("*", "Skeleton3D", true, false)
 		if not skeletons.is_empty():
