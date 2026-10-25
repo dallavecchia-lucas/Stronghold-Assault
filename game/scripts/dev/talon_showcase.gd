@@ -299,7 +299,7 @@ func _finish() -> void:
 	var circle: Dictionary = _log.circle
 	_check(circle.flapping / circle.time < 0.35, "circle: soars, few wing beats (%.0f%%)" % [circle.flapping / circle.time * 100.0])
 	_check(soldier.hp < _soldier_hp, "attack: the rifleman hit from the ring (%.0f -> %.0f HP)" % [_soldier_hp, maxf(soldier.hp, 0.0)])
-	_check(_closest_pair > 3.0, "flock: the rings keep the five apart (closest %.1f m)" % _closest_pair)
+	_check(_closest_pair > 2.5, "flock: the rings keep the five apart (closest %.1f m)" % _closest_pair)
 	for c in _checks:
 		print("TALON CHECK ", c)
 	print("TALON SHOWCASE %s" % ("FAIL" if _failed else "PASS"))

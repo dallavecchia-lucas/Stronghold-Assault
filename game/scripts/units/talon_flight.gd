@@ -13,7 +13,7 @@ extends RefCounted
 ## through itself.
 const ORBIT_RADIUS := 12.0
 const ORBIT_SPREAD := 8.0
-const HEIGHT_SPREAD := 10.0
+const HEIGHT_SPREAD := 12.0
 ## Rings are level, and at least CLEARANCE over all the ground under them: next to the mountain
 ## a ring moves out from it (away from the middle of the map), and tightens, until it is.
 const CLEARANCE := 8.0
@@ -24,10 +24,13 @@ const ATTACK_ABOVE := 12.0
 const TURN_RATE := 1.2
 const TURN_ACCEL := 1.6
 const MAX_BANK := deg_to_rad(55.0)
-## Gliding, it sinks SINK_RATE m/s until it is SINK_MAX below its cruising height; beating its
-## wings it climbs back at CLIMB_RATE m/s, up to RISE_MAX above.
+## Gliding, it sinks SINK_RATE m/s until it is SINK_MAX below its cruising height (circling, it
+## soars: SOAR_RATE m/s down to SOAR_MAX below); beating its wings it climbs back at CLIMB_RATE
+## m/s, up to RISE_MAX above.
 const SINK_RATE := 0.2
 const SINK_MAX := 1.5
+const SOAR_RATE := 0.12
+const SOAR_MAX := 0.8
 const CLIMB_RATE := 1.0
 const RISE_MAX := 0.4
 ## Seconds per wing beat in the Flap clip.
@@ -154,9 +157,10 @@ func _wings(climb: float, delta: float) -> void:
 			_anim.speed_scale = 1.0
 			_glide = randf_range(7.0, 11.0) if _circling else randf_range(4.0, 7.0)
 		return
-	_level = maxf(_level - SINK_RATE * delta, -SINK_MAX)
+	var lowest := -SOAR_MAX if _circling else -SINK_MAX
+	_level = maxf(_level - (SOAR_RATE if _circling else SINK_RATE) * delta, lowest)
 	_glide -= delta
-	if _glide <= 0.0 or _level <= -SINK_MAX or labouring:
+	if _glide <= 0.0 or _level <= lowest or labouring:
 		_beats = randi_range(2, 3)
 		_anim.play("Flap", 0.3)
 
