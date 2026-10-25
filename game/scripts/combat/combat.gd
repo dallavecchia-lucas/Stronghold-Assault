@@ -91,18 +91,24 @@ static func apply_spread(dir: Vector3, spread: float) -> Vector3:
 
 ## Area damage with linear falloff (never below 30% inside the radius).
 static func explode(ctx: Node, pos: Vector3, radius: float, damage: float, team: int, structure_mult := 1.0) -> void:
-	if damage > 0.0:
-		for d in ctx.get_tree().get_nodes_in_group("damageable"):
-			if d.team == team or not d.is_alive():
-				continue
-			var dist := pos.distance_to(aim_point(d))
-			var r: float = radius + float(d.get("target_radius") if d.get("target_radius") != null else 0.0)
-			if dist > r:
-				continue
-			var falloff := clampf(1.0 - dist / r, 0.3, 1.0)
-			var mult := structure_mult if d.is_in_group("structures") else 1.0
-			d.take_damage(damage * falloff * mult, team)
+	damage_area(ctx, pos, radius, damage, team, structure_mult)
 	spawn_explosion(ctx, pos, radius)
+
+
+## explode() without the blast: the damage only.
+static func damage_area(ctx: Node, pos: Vector3, radius: float, damage: float, team: int, structure_mult := 1.0) -> void:
+	if damage <= 0.0:
+		return
+	for d in ctx.get_tree().get_nodes_in_group("damageable"):
+		if d.team == team or not d.is_alive():
+			continue
+		var dist := pos.distance_to(aim_point(d))
+		var r: float = radius + float(d.get("target_radius") if d.get("target_radius") != null else 0.0)
+		if dist > r:
+			continue
+		var falloff := clampf(1.0 - dist / r, 0.3, 1.0)
+		var mult := structure_mult if d.is_in_group("structures") else 1.0
+		d.take_damage(damage * falloff * mult, team)
 
 
 # ---------------------------------------------------------------- visual effects

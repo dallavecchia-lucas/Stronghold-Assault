@@ -7,7 +7,10 @@ extends CanvasLayer
 ## Ctrl+RMB: move without stopping to fight · Ctrl+1-5 assign group · 1-5 recall
 ## Z X C V B N M H J K L Y U I: spawn units · Tab: cycle spawn point
 ## F: aim the selected rhinos' cluster bombing (LMB fire, RMB/F cancel) · T: scout formation
+##    with no rhino ready, the selected talons' strafe run: press LMB on the middle of the line,
+##    drag the way to fly it, let go to fire (a click flies it from the talons; RMB/F cancel)
 ## G: aim the selected bisons' bombardment (LMB fire, RMB/G cancel)
+##    with no bison ready, the selected talons' bomb strike (LMB fire, RMB/G cancel)
 ## R: aim a selected hippo's smoke screen (LMB fire, RMB/R cancel)
 ## O: aim the selected elephants' missiles: LMB an enemy aircraft (RMB/O cancel)
 ## Space: the selected breaching rams ram (then RMB a gate to charge it)
@@ -40,14 +43,18 @@ var _selection_label: Label
 var _spawn_buttons := {}
 var _spawn_point_buttons: Array[Button] = []
 var _marker: MeshInstance3D
-## Ability aim mode: "" (off), "cluster" (rhinos), "bombard" (bisons), "smoke" (hippos) or
-## "missile" (elephants).
+## Ability aim mode: "" (off), "cluster" (rhinos), "bombard" (bisons), "smoke" (hippos),
+## "missile" (elephants), "strafe" or "bomb" (talons).
 ## Cluster: preview of every rhino's aim zone and where its bombs will land.
 ## Bombard: every ready bison's range and where its shell will land (its blast).
 ## Smoke: the firing hippo's aim cone, with the band where the curtain will stand.
 ## Missile: each ready elephant's missile range, the aircraft under the cursor and lines from
 ## the elephants that would fire at it.
+## Strafe: every ready talon's circle and the lane it will strafe, with an arrow the way it flies.
+## Bomb: every ready talon's circle and where its bomb will land (its blast).
 var _aiming := ""
+## Strafe: where LMB went down (the middle of the line), INF before it does.
+var _strafe_at := Vector3.INF
 var _aim_preview: MeshInstance3D
 var _aim_mesh: ImmediateMesh
 var _smoke_preview: MeshInstance3D
@@ -82,6 +89,15 @@ func restore_mouse() -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if get_tree().paused:
 		return
+	if _aiming == "strafe" and event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		# Press on the middle of the line, drag the way to fly it, let go to fire.
+		if event.pressed:
+			var hit := _ray(event.position, GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES)
+			_strafe_at = hit.position if not hit.is_empty() else Vector3.INF
+		elif _strafe_at != Vector3.INF:
+			_fire_strafe(event.position)
+			_set_aiming("")
+		return
 	if _aiming != "" and event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			match _aiming:
@@ -89,6 +105,8 @@ func _unhandled_input(event: InputEvent) -> void:
 					_fire_cluster(event.position)
 				"bombard":
 					_fire_bombard(event.position)
+				"bomb":
+					_fire_bomb(event.position)
 				"smoke":
 					_fire_smoke(event.position)
 				"missile":
@@ -123,10 +141,20 @@ func _unhandled_input(event: InputEvent) -> void:
 			_select_rect.visible = true
 	elif event is InputEventKey and event.pressed and not event.echo:
 		if event.physical_keycode == CLUSTER_KEY:
-			_set_aiming("cluster" if _aiming != "cluster" and not _ready_rhinos().is_empty() else "")
+			if _aiming in ["cluster", "strafe"]:
+				_set_aiming("")
+			elif not _ready_rhinos().is_empty():
+				_set_aiming("cluster")
+			elif not _ready_talons("strafe").is_empty():
+				_set_aiming("strafe")
 			return
 		if event.physical_keycode == BOMBARD_KEY:
-			_set_aiming("bombard" if _aiming != "bombard" and not _ready_bisons().is_empty() else "")
+			if _aiming in ["bombard", "bomb"]:
+				_set_aiming("")
+			elif not _ready_bisons().is_empty():
+				_set_aiming("bombard")
+			elif not _ready_talons("bomb").is_empty():
+				_set_aiming("bomb")
 			return
 		if event.physical_keycode == SMOKE_KEY:
 			_set_aiming("smoke" if _aiming != "smoke" and not _ready_hippos().is_empty() else "")
@@ -230,7 +258,8 @@ func _ready_rhinos() -> Array:
 
 func _set_aiming(mode: String) -> void:
 	_aiming = mode
-	_aim_preview.visible = mode == "cluster" or mode == "bombard"
+	_strafe_at = Vector3.INF
+	_aim_preview.visible = mode in ["cluster", "bombard", "strafe", "bomb"]
 	_smoke_preview.visible = mode == "smoke"
 	_missile_preview.visible = mode == "missile"
 	_aim_label.visible = mode == "missile"
@@ -310,6 +339,69 @@ func _update_bombard_preview() -> void:
 		RhinoAim.dashed_circle(_aim_mesh, aims[i] + lift, b.stats.bombard_splash, 20)
 		_aim_mesh.surface_add_vertex(b.global_position + lift)
 		_aim_mesh.surface_add_vertex(aims[i] + lift)
+	_aim_mesh.surface_end()
+
+
+# ---------------------------------------------------------------- talon strafe run and bomb strike
+
+func _ready_talons(skill: String) -> Array:
+	_alive_selection()
+	return selected.filter(func(u): return u.strafe_ready() if skill == "strafe" else u.bomb_ready())
+
+
+## The strafe line being aimed: [middle, way to fly], or [] when the cursor is off the map.
+func _strafe_line(talons: Array, screen_pos: Vector2) -> Array:
+	var hit := _ray(screen_pos, GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES)
+	if _strafe_at == Vector3.INF:
+		return [] if hit.is_empty() else [hit.position, TalonAim.default_dir(talons, hit.position)]
+	var drag: Vector3 = (hit.position - _strafe_at) if not hit.is_empty() else Vector3.ZERO
+	drag.y = 0.0
+	return [_strafe_at, drag.normalized() if drag.length() > 2.0 else TalonAim.default_dir(talons, _strafe_at)]
+
+
+func _fire_strafe(screen_pos: Vector2) -> void:
+	var talons := _ready_talons("strafe")
+	var line := _strafe_line(talons, screen_pos)
+	if talons.is_empty() or line.is_empty():
+		return
+	commander.submit({"type": "strafe", "units": talons.map(func(u): return u.unit_id), "pos": line[0], "dir": line[1]})
+	_ping(line[0], UIKit.DANGER)
+
+
+func _update_strafe_preview() -> void:
+	var talons := _ready_talons("strafe")
+	if talons.is_empty():
+		_set_aiming("")
+		return
+	_aim_mesh.clear_surfaces()
+	var line := _strafe_line(talons, get_viewport().get_mouse_position())
+	if line.is_empty():
+		return
+	_aim_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
+	TalonAim.draw_strafe(_aim_mesh, talons, TalonAim.strafe(talons, line[0], line[1]))
+	_aim_mesh.surface_end()
+
+
+func _fire_bomb(screen_pos: Vector2) -> void:
+	var hit := _ray(screen_pos, GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES)
+	var talons := _ready_talons("bomb")
+	if hit.is_empty() or talons.is_empty():
+		return
+	commander.submit({"type": "bomb", "units": talons.map(func(u): return u.unit_id), "pos": hit.position})
+	_ping(hit.position, UIKit.DANGER)
+
+
+func _update_bomb_preview() -> void:
+	var talons := _ready_talons("bomb")
+	if talons.is_empty():
+		_set_aiming("")
+		return
+	_aim_mesh.clear_surfaces()
+	var hit := _ray(get_viewport().get_mouse_position(), GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES)
+	if hit.is_empty():
+		return
+	_aim_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
+	TalonAim.draw_bombs(_aim_mesh, talons, TalonAim.bombs(talons, hit.position))
 	_aim_mesh.surface_end()
 
 
@@ -507,11 +599,11 @@ func _build_hud() -> void:
 	row.add_child(sp)
 	set_spawn_point(0)
 
-	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nBisons: G bombardment (LMB fire, RMB cancel), onto the gun decks and roofs too\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nChimps / Rams: RMB next to a broken gate to send them in",
+	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nBisons: G bombardment (LMB fire, RMB cancel), onto the gun decks and roofs too\nTalons: F strafe run (press LMB on the target, drag the way to fly, let go) · G bomb strike (LMB fire) · RMB cancels\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nChimps / Rams: RMB next to a broken gate to send them in",
 			13, Color(0.85, 0.85, 0.85, 0.75))
 	help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	help.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	help.position = Vector2(14, help.position.y - 168)
+	help.position = Vector2(14, help.position.y - 186)
 	root.add_child(help)
 
 	_aim_label = UIKit.label("", 15, MISSILE_LINE)
@@ -542,6 +634,18 @@ func _process(_delta: float) -> void:
 		if ready == 0:
 			var soonest: float = bisons.map(func(u): return u.bombard_cd).min()
 			_selection_label.text += "  %ds" % ceili(soonest)
+	var talons := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_strafe())
+	if not talons.is_empty():
+		for skill in [["Strafe run", "strafe_cd", "F"], ["Bomb strike", "bomb_cd", "G"]]:
+			var ready := talons.filter(func(u): return u.get(skill[1]) <= 0.0 and not u.on_run()).size()
+			_selection_label.text += "\n%s %d/%d [%s]" % [skill[0], ready, talons.size(), skill[2]]
+			if ready == 0:
+				var soonest: float = talons.map(func(u): return u.get(skill[1])).min()
+				if soonest > 0.0:
+					_selection_label.text += "  %ds" % ceili(soonest)
+		var flying := talons.filter(func(u): return u.on_run()).size()
+		if flying > 0:
+			_selection_label.text += "\nOn an attack run %d" % flying
 	var hippos := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_smoke())
 	if not hippos.is_empty():
 		var ready := hippos.filter(func(u): return u.smoke_ready()).size()
@@ -579,6 +683,10 @@ func _process(_delta: float) -> void:
 		_update_aim_preview()
 	elif _aiming == "bombard":
 		_update_bombard_preview()
+	elif _aiming == "strafe":
+		_update_strafe_preview()
+	elif _aiming == "bomb":
+		_update_bomb_preview()
 	elif _aiming == "smoke":
 		_update_smoke_preview()
 	elif _aiming == "missile":
