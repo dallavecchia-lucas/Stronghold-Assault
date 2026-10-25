@@ -3,9 +3,9 @@ extends Node3D
 ## RTS view, this node working the mouse and keys), against the south face:
 ##
 ##   aa            a talon sent over the face: the roof's AA turrets lock on and shoot it down
-##   bison         a bison is clicked, G, LMB on one AA turret: its shell takes it out from beyond
+##   bison         a bison is selected, G, LMB on one AA turret: its shell takes it out from beyond
 ##                 the turrets' reach
-##   bomb_solo     one talon is clicked, G, LMB on the other AA turret: it slants in along the face,
+##   bomb_solo     one talon is selected, G, LMB on the other AA turret: it slants in along the face,
 ##                 drops its bomb on it and breaks away (the turret fires at it until it goes)
 ##   bomb_group    three talons are box-selected, G, LMB on the mortar: their bombs land round it
 ##                 along the roof, apart
@@ -251,7 +251,7 @@ func _aa_step() -> void:
 		_pan_to_point((decoy.global_position + Vector3(0.0, 0.0, 74.0)) * 0.5 + Vector3(0.0, 0.0, 8.0))
 
 
-## One strike the way the player does it: select (click the one, or drag a box round the group),
+## One strike the way the player does it: select (drag a box round the one or the group),
 ## the key, the cursor onto the target (for a strafe, press there and drag the way to fly), LMB;
 ## then the camera follows the run.
 func _strike_step(units: Array, skill: String, target: Vector3, drag: Vector3, caption: String, watch: Node3D) -> void:
@@ -264,22 +264,16 @@ func _strike_step(units: Array, skill: String, target: Vector3, drag: Vector3, c
 		_cursor_on = null
 		_pan(_centre(alive) + Vector3(0.0, 0.0, -12.0), 0.0, 0.8)  # first onto the ones to select
 		controller.camera_rig._target_zoom = FIELD_ZOOM
-	if alive.size() == 1 and _phase_t >= 1.0 and _phase_t < 1.7:
-		_cursor_on = alive[0].global_position + Vector3.UP * 0.8  # onto the one, following it
-	if alive.size() > 1 and _phase_at(1.0, "select"):
+	# A box dragged round them (round the one too: it is moving), the corner kept on them.
+	if _phase_t >= 1.0 and _phase_t < 1.5:
 		_move_cursor(_group_rect(alive).position, 1.0, 1.5)
-	if alive.size() == 1 and _phase_at(1.7, "click"):
+	if _phase_at(1.5, "press"):
 		_mouse_button(true)
+	if _phase_t > 1.5 and _phase_t < 2.1:
+		_move_cursor(_group_rect(alive).end, 1.5, 2.1)
+		_mouse_motion()
+	if _phase_at(2.1, "release"):
 		_mouse_button(false)
-		_cursor_on = null
-	if alive.size() > 1:
-		if _phase_at(1.5, "press"):
-			_mouse_button(true)
-		if _phase_t > 1.5 and _phase_t < 2.1:
-			_move_cursor(_group_rect(alive).end, 1.5, 2.1)
-			_mouse_motion()
-		if _phase_at(2.1, "release"):
-			_mouse_button(false)
 	if _phase_at(2.5, "key"):
 		print("STRIKE %5.1f s %s: %d of %d selected" % [t, phase, controller.selected.filter(func(u): return u in alive).size(), alive.size()])
 		var key := AttackerController.CLUSTER_KEY if skill == "strafe" else AttackerController.BOMBARD_KEY
@@ -548,7 +542,7 @@ func _group_rect(units: Array) -> Rect2:
 	var r := Rect2(_screen(units[0].global_position + Vector3.UP), Vector2.ZERO)
 	for u in units:
 		r = r.expand(_screen(u.global_position + Vector3.UP))
-	return r.grow(140.0)
+	return r.grow(140.0 if units.size() > 1 else 90.0)
 
 
 func _move_cursor(to: Vector2, start: float, end: float) -> void:
