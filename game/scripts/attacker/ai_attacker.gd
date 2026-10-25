@@ -103,7 +103,7 @@ func _launch_wave() -> void:
 func _push_keep(ids: Array) -> void:
 	# The keep is deep inside the mountain and only infiltrators can get to it. Chimps that make it
 	# in go raiding on their own (AttackerUnit._raid_target).
-	# Flyers hover over the breached side's gun deck, big units hold in front of that face
+	# Flyers circle over the breached side's gun deck, big units hold in front of that face
 	# (off to one side, clear of the tunnel), both picking off the defenders on it.
 	var inside := []
 	var flyers := []

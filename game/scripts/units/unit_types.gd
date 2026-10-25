@@ -6,7 +6,8 @@ extends RefCounted
 ##   "infantry"  shoots defenders, falls back to gates/keep when nothing else is in range
 ##   "artillery" lobs explosive shells, no line of sight needed, has a minimum range
 ##   "healer"    doesn't fight, heals the most damaged ally in range
-##   "flying"    ignores walls and pathfinding, hovers at FLY_HEIGHT
+##   "flying"    ignores walls and pathfinding, cruises at FLY_HEIGHT and never stops: it circles
+##               where it was sent and round what it fights (TalonFlight)
 ##   "melee"     strikes whatever is within reach (range), no line of sight needed
 ##   "anti_air"  no basic attack. Passive: locks onto one enemy flyer within aa_range and
 ##               chips at it (aa_dps) until it dies or leaves. Active: cluster bombing (rhino)
@@ -51,8 +52,9 @@ extends RefCounted
 ## forest_speed: movement speed multiplier inside a forest (LevelBuilder.FORESTS).
 ## climb_speed: m/s up and down stairs and ladders.
 ## structure_mult: damage multiplier against gates / the keep.
-## anim: procedural animation style until models are rigged (walk, hop, stomp, hover, roll),
-##   or "rigged" to play the model's own clips: anim_move / anim_idle, with the move clip
+## anim: procedural animation style until models are rigged (walk, hop, stomp, roll), "flight"
+##   for the Sky Talon's glide and wing beats (TalonFlight), or "rigged" to play the model's own
+##   clips: anim_move / anim_idle, with the move clip
 ##   sped up or slowed to match ground speed relative to anim_ref_speed (m/s).
 ## steer: only move where the model faces, turning at turn_rate (rad/s), no strafing.
 ## model: path to a processed GLB (front facing +Z, feet at origin).
@@ -89,7 +91,7 @@ const DATA := {
 		"name": "Sky Talon", "cost": 120, "hp": 110.0, "speed": 8.0,
 		"range": 26.0, "damage": 7.0, "fire_interval": 0.4, "spread": 0.05,
 		"structure_mult": 0.15, "radius": 0.8, "height": 2.1,
-		"role": "flying", "anim": "hover", "hotkey": KEY_V,
+		"role": "flying", "anim": "flight", "hotkey": KEY_V,
 		"model": "res://assets/units/sky_talon_battalion/sky_talon_battalion_rigged.glb",
 	},
 	"elephant": {

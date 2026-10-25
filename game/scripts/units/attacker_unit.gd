@@ -78,6 +78,9 @@ var _ring: MeshInstance3D
 var _aa_ring: MeshInstance3D
 var _aa_lock: Node3D = null
 var _turrets: ElephantTurrets  # set when the model carries flak cannons (stats.flak)
+var _flight: TalonFlight  # flyers: how they glide, beat their wings and circle
+## Where a flyer with nowhere to go circles: where it was last sent, or the fight it was in.
+var _circle_at := Vector3.ZERO
 var _next_gun := 0
 ## Missile salvo under way: tubes still to fire, and at what.
 var _salvo: Array[int] = []
@@ -262,6 +265,7 @@ func _ready() -> void:
 	_build_ring()
 	_build_hp_bar()
 	_retarget_cd = randf() * 0.3
+	_circle_at = global_position
 
 
 # ---------------------------------------------------------------- orders
@@ -361,6 +365,8 @@ func _die() -> void:
 	_end_salvo()
 	if _turrets:
 		_turrets.target = null
+	if _flight:
+		_flight.die()
 	collision_layer = 0
 	collision_mask = GameConfig.LAYER_WORLD
 	_agent.avoidance_enabled = false
@@ -902,7 +908,8 @@ func _physics_process(delta: float) -> void:
 	if is_bombarding():
 		_face(_bombard_aim, delta)  # stands still while it lays the gun and fires
 	elif engaged:
-		_face(target.global_position, delta)
+		if not is_flying():
+			_face(target.global_position, delta)  # flyers fire from the circle they fly round it
 		if _fire_cd <= 0.0 and not is_overheated():
 			_fire_at(target)
 	elif charge_gate:
@@ -915,7 +922,7 @@ func _physics_process(delta: float) -> void:
 		move_to = _approach(target)
 
 	if is_flying():
-		_fly(move_to, delta)
+		_fly(move_to, engaged, delta)
 		return
 
 	_desired_velocity = Vector3.ZERO
@@ -994,22 +1001,19 @@ func _follow_route(delta: float) -> void:
 		rotation.y = lerp_angle(rotation.y, atan2(-to.x, -to.z), minf(10.0 * delta, 1.0))
 
 
-## Flyers go in a straight line at cruising height and hover when they arrive.
-func _fly(move_to, delta: float) -> void:
-	var want := Vector3.ZERO
-	if move_to != null:
-		var to: Vector3 = move_to - global_position
-		to.y = 0.0
-		if to.length() > 2.0:
-			want = to.normalized() * stats.speed
-		elif order.type != "attack":
-			order = {"type": "idle"}
-	velocity.x = lerpf(velocity.x, want.x, delta * 2.0)
-	velocity.z = lerpf(velocity.z, want.z, delta * 2.0)
-	velocity.y = clampf((_ground_height() + UnitTypes.FLY_HEIGHT - global_position.y) * 1.5, -6.0, 6.0)
-	global_position += velocity * delta
-	if want.length() > 0.3 and not Combat.is_valid_target(target):
-		rotation.y = lerp_angle(rotation.y, atan2(-velocity.x, -velocity.z), 4.0 * delta)
+## Flyers never stop in the air (TalonFlight): they fly to where they are going and circle there,
+## or round the target they are fighting, close enough to stay in range of it.
+func _fly(move_to, engaged: bool, delta: float) -> void:
+	var round_at: Array
+	if engaged or (order.type == "attack" and Combat.is_valid_target(target)):
+		round_at = _flight.ring_round(target.global_position, TalonFlight.ATTACK_ABOVE, stats.range * 0.85)
+		_circle_at = target.global_position  # with nowhere else to go, it stays on over the fight
+	else:
+		round_at = _flight.ring_round(move_to if move_to != null else _circle_at, UnitTypes.FLY_HEIGHT, INF)
+	var circling := _flight.fly(round_at, _ground_height() + UnitTypes.FLY_HEIGHT, delta)
+	if circling and not engaged and move_to != null and order.type != "attack":
+		order = {"type": "idle"}
+		_circle_at = move_to
 
 
 ## Height of the terrain (the mountain included) under a flyer, so it cruises over the peak.
@@ -1092,10 +1096,8 @@ func _process(delta: float) -> void:
 		"stomp":
 			_model.position.y = absf(sin(_anim_t * 1.6)) * 0.06 if moving else lerpf(_model.position.y, 0.0, delta * 5.0)
 			_model.rotation.z = sin(_anim_t * 1.6) * 0.025 if moving else lerpf(_model.rotation.z, 0.0, delta * 5.0)
-		"hover":
-			_anim_t += delta * 2.0
-			_model.position.y = sin(_anim_t) * 0.3
-			_model.rotation.x = -clampf(spd / stats.speed, 0.0, 1.0) * 0.25
+		"flight":
+			_flight.animate(_model, delta)
 		"roll":
 			_model.position.y = randf_range(0.0, 0.02) if moving else 0.0
 		"rigged":
@@ -1108,7 +1110,7 @@ func _process(delta: float) -> void:
 		_:
 			_model.position.y = absf(sin(_anim_t * 2.2)) * 0.08 if moving else lerpf(_model.position.y, 0.0, delta * 8.0)
 			_model.rotation.z = sin(_anim_t * 2.2) * 0.06 if moving else lerpf(_model.rotation.z, 0.0, delta * 8.0)
-	if stats.anim not in ["hop", "hover", "rigged"]:
+	if stats.anim not in ["hop", "flight", "rigged"]:
 		_model.rotation.x = _recoil * (0.08 if stats.radius < 1.0 else 0.015)
 	if _hp_bar.visible:
 		_hp_bar.global_position = global_position + Vector3.UP * (stats.height + 0.5)
@@ -1139,6 +1141,9 @@ func _build_model() -> void:
 				a.set_meta("looped", true)
 		_anim.play(stats.anim_idle)
 		_anim.seek(randf() * _anim.current_animation_length)  # don't move in lockstep
+	if stats.anim == "flight":
+		_flight = TalonFlight.new(self, players[0])
+		m.position.y = -TalonFlight.BODY_HEIGHT  # banks and pitches about the body's centre
 	if has_bombard():
 		for skel in m.find_children("*", "Skeleton3D", true, false):
 			if skel.find_bone("muzzle") >= 0:

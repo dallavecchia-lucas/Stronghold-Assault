@@ -48,7 +48,11 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
 
 **Attacker (RTS)**
 - `LMB` click/drag to select, `Shift` to add · `RMB` attack-move, or attack a gate/defender you click on · `Ctrl+RMB` move without stopping
-- Spawn: `Z` Bear Rifleman · `X` Kangaroo Commando (fast) · `C` Wolf Medic (heals) · `V` Sky Talon (flies over the mountain) · `N` Mule Artillery (long-range shells)
+- Spawn: `Z` Bear Rifleman · `X` Kangaroo Commando (fast) · `C` Wolf Medic (heals) · `N` Mule Artillery (long-range shells)
+- `V` Sky Talon (the hawk): flies over the mountain, and flies like a hawk.
+  - It glides most of the time and beats its wings only now and then, a few strokes every few seconds (gliding it sinks a little and the strokes lift it back up), and all the way up on take-off or climbing over the mountain. It banks into its turns.
+  - It never hovers: wherever it has nowhere left to go, it circles. Sent somewhere, it circles the spot counterclockwise, the centre off its left wing, like a gunship flying a pylon turn. Sent at a target (or meeting one on an attack-move), it comes down and circles that instead, firing from the ring.
+  - Rings stay level and clear of the ground: next to the mountain a ring moves out in front of the face (and tightens) until it is, while staying in range of its target. Each talon flies a ring of its own (up to 8 m wider) at a height of its own (spread over 10 m), so a flock sent to one spot stacks up instead of flying through itself.
 - `B` War Elephant: the real anti-air unit. Heavy and slow, with no basic attack.
   - Passive flak: the cannons on its flanks swing up at one enemy flyer in its dashed ring (26 m) and stay on it until it dies or leaves. They take turns firing shells that burst around it. One elephant hits about as hard as five rhinos.
   - `O` missiles: then `LMB` an enemy aircraft (`RMB` or `O` cancels). The pods lift and eight homing missiles leave one after another (range 60 m, reload 25 s). With several elephants selected, only as many fire as it takes to bring the target down, counting missiles already on their way to it, nearest first. The rest stay ready and you keep aiming, so you can click the next target. If all of them together can't kill it, they all fire. The cursor says how many will fire.
@@ -158,6 +162,16 @@ godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie
 
 `-- --video --snap=30,45 --snap-out=/tmp/shot` saves just those frames (seconds into the video).
 
+### Sky Talon showcase
+
+`game/scenes/dev/talon_showcase.tscn` flies the Sky Talon on the real map: one takes off from the south field, beating its wings all the way up, then cruises west across it (long glides, a few wing beats now and then) and circles the spot it was sent to. Sent at a rifleman on the south gun deck, it circles him, firing down from a ring out in front of the face; he fires back (the talon gets the hit points to outlast him). Last, five talons sent to one spot each fly a ring of their own. The garrison's other posts hold fire.
+
+```sh
+godot --path game --headless --fixed-fps 30 res://scenes/dev/talon_showcase.tscn -- --test  # prints and checks: TALON SHOWCASE PASS / FAIL
+godot --path game --rendering-driver opengl3 --resolution 1280x720 --fixed-fps 30 res://scenes/dev/talon_showcase.tscn -- --snap=12,33 --snap-out=/tmp/talon  # just those frames
+godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie talon.avi --fixed-fps 30 res://scenes/dev/talon_showcase.tscn
+```
+
 ## Asset pipeline
 
 Meshy exports go in `assets_src/`, then get processed with Blender (headless):
@@ -217,6 +231,14 @@ The Bison Field Gun (two bisons with a gun slung between them) has no rig either
 python tools/blender/rig_bison_gun.py -- \
     --input assets_src/units/semi_futuristic_pair/semi_futuristic_pair_meshy.glb \
     --output game/assets/units/semi_futuristic_pair/semi_futuristic_pair_rigged.glb
+```
+
+The Sky Talon (the hawk) comes with Meshy's SmartRig, standing with its wings folded down its flanks, and no clips. `tools/blender/rig_talon.py` keeps Meshy's bones and weights for the body, head, legs and tail, and re-skins each wing onto two new bones in place of Meshy's wing bones: `wing_L` / `wing_R` (the inner wing, hinged at the shoulder) and `hand_L` / `hand_R` (the outer wing and its long feathers, hinged at the wrist). The box strapped to the left wing rides rigidly on `wing_L`, like a pod. The model stands 2.1 m tall with its feet at the origin (the rest pose), and the script bakes two looping clips in a flight pose: the body levelled out, the legs tucked back under the tail and each wing lifted out level, its hand swept forward so the feathers point out along the span (spread, the wings grow to a hawk's span, about twice its length). `Glide` holds the wings out with a slight dihedral, flexing in the air, while the tail steers and the head looks round and down at the ground. `Flap` is one 0.8 s wing beat: up with the hand tucked in, a full downstroke, the hand lagging behind the arm and the body lifting with each stroke. The game crossfades between them (`TalonFlight`). Same Blender/`bpy` 5.2 as above; `--preview DIR` renders the pose and the clips:
+
+```sh
+python tools/blender/rig_talon.py -- \
+    --input assets_src/units/sky_talon_battalion/sky_talon_battalion_rigged_meshy.glb \
+    --output game/assets/units/sky_talon_battalion/sky_talon_battalion_rigged.glb
 ```
 
 Static props (scenery, turrets) skip Blender: they go through [glTF-Transform](https://gltf-transform.dev) to put the pivot at the bottom center and shrink textures to 1024 px, and `game/scripts/match/props.gd` scales them to height at load time:
