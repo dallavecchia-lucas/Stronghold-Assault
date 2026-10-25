@@ -56,6 +56,10 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
   - Passive anti-air: locks onto one enemy flyer in its dashed ring and stays on it until it dies or leaves. One rhino is weak; it takes about five to bring a flyer down fast.
   - `F` cluster bombing: aim, then `LMB` to fire (`RMB` or `F` cancels). Each rhino shells a spot inside its 40 m zone for 8 s. Cooldown is 45 s. With several rhinos selected, the preview shows where each one's bombs will land. Rhinos that were moved together keep their formation's shape. Scattered rhinos aim as close to the cursor as their zones allow and spread around it instead of piling onto one spot.
   - `T` scout formation: with rhinos and other units selected, the rhinos ring the outside of the group so their anti-air covers it. Orders to the whole group keep the ring. Ordering a rhino on its own takes it out of the ring, and `T` again turns it off.
+- `L` Bison Field Gun (two bisons with an artillery gun slung between them): slow, with no basic attack and no passive.
+  - `G` bombardment: aim, then `LMB` to fire (`RMB` or `G` cancels). The bisons stop, lay the gun and fire one heavy shell at a spot up to 80 m away, twice the rhinos' reach. It hits for 240 within 6 m and reloads in 40 s. They carry on with their order once it has fired.
+  - The shells come down where the cursor is, up on the gun decks and the roofs too, so the bisons can wreck the machines (the gate machine guns, the mortar) and the soldiers on them from out in the field. The preview shows each bison's range and the blast where its shell will land.
+  - With several bisons selected, the shells cluster round the cursor 9 m apart like the rhinos' bombs, instead of piling onto one spot. Up on a deck or a roof, the spots on that level go first, so the shells spread along the deck instead of dropping off its edge.
 - `K` Hippo Heavy Gunner: heavy, slow, sprays suppressive fire from mounted machine guns.
   - The guns are inaccurate: rounds land around the target and can hit whatever stands next to it. They fire for 8 s in total (resting cools them at the same rate), then overheat and go silent for 2 s.
   - `R` smoke screen: aim, then `LMB` to fire (`RMB` or `R` cancels). The cone shows where the curtain will stand (the green band at its tip). The hippo fires three grenades at once. Each one bursts high up, then drops and bursts twice more on the way down, leaving a tall pillar. Together the pillars make a curtain that blocks line of sight for both sides for 30 s. Cooldown is 90 s. With several hippos selected, the one closest to the cursor fires.
@@ -68,7 +72,7 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
   - Basic attack: melee, it strikes whatever is within arm's reach.
   - Passive: moves 60% faster inside forests.
   - Infiltration: once a gate is down, `RMB` next to it sends selected Chimps in. Inside, you lose control of them. They hunt the defenders anywhere in the stronghold, climbing to the gun decks and up the ladders to the roofs. When no defender is left standing, they wreck the machines: the gate machine guns and the mortar. Respawned defenders draw them back.
-- Models in, roles still to be designed (placeholder stats): `H` Savanna Signal Scout · `L` Bison Field Gun · `Y` Armored Lioness · `U` Serpent Sniper
+- Models in, roles still to be designed (placeholder stats): `H` Savanna Signal Scout · `Y` Armored Lioness · `U` Serpent Sniper
 - `Tab` cycles spawn point · `Ctrl+1`–`5` save a group, `1`–`5` recall it
 - Camera: `WASD`/arrows/screen edge to pan, `Q`/`E` or middle mouse to rotate, wheel to zoom
 - `Esc` pauses (both sides)
@@ -140,6 +144,15 @@ godot --path game --rendering-driver opengl3 --resolution 1280x720 --fixed-fps 3
 ```sh
 godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie aa.avi --fixed-fps 30 res://scenes/dev/aa_squad_showcase.tscn -- --video > aa.log
 python3 tools/video/cut_showcase.py aa.avi aa.log media/aa_squad_showcase.mp4
+```
+
+### Bison showcase
+
+`game/scenes/dev/bison_showcase.tscn` aims the Bison Field Gun's bombardment the way a player does, in the RTS view: a lone bison out in the south field is clicked, `G`, the view pans up to the south face, and the cursor goes onto the gate machine gun on the gun deck, `LMB`. After its reload (cut short here) it hits the mortar on the roof. Then four bisons are box-selected and shell the deck, their shells spread along it between the two riflemen, and then the roof. The garrison's posts hold fire, and their machines don't get repaired.
+
+```sh
+godot --path game --headless --fixed-fps 30 res://scenes/dev/bison_showcase.tscn -- --test  # prints and checks: BISON SHOWCASE PASS / FAIL
+godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie bison.avi --fixed-fps 30 res://scenes/dev/bison_showcase.tscn
 ```
 
 `-- --video --snap=30,45 --snap-out=/tmp/shot` saves just those frames (seconds into the video).

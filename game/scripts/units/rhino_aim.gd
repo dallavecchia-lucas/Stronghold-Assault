@@ -8,7 +8,10 @@ extends RefCounted
 ##     so the bombs land in a copy of the formation.
 ##   Scattered: each rhino aims at the cursor as best its zone allows. Rhinos that can reach
 ##     the cursor take neighbouring spots around it instead of piling onto the same one (cluster(),
-##     which the AA Squad's rocket strike uses too).
+##     which the AA Squad's rocket strike and the bisons' bombardment use too).
+
+## Bisons' shells land this many splash radii apart.
+const BOMBARD_SPACING := 1.5
 
 
 ## Returns one aim point per rhino, in the same order.
@@ -52,6 +55,21 @@ static func _formation(rhinos: Array, target: Vector3) -> Array[Vector3]:
 	return out
 
 
+## Where each bison's shell goes when the player aims at one point (same order): as close to it as
+## its range allows, clustered round it like scattered rhinos. The point can be up on a gun deck or
+## a roof: the spots round it stay on that level where they can (cluster() with `space`).
+static func bombard(bisons: Array, target: Vector3) -> Array[Vector3]:
+	if bisons.is_empty():
+		return []
+	var at: Array[Vector3] = []
+	var reach: Array[float] = []
+	for b in bisons:
+		at.append(b.global_position)
+		reach.append(b.stats.bombard_range)
+	var space: PhysicsDirectSpaceState3D = bisons[0].get_world_3d().direct_space_state
+	return cluster(at, reach, bisons[0].stats.bombard_splash * BOMBARD_SPACING, target, space)
+
+
 static func _scattered(rhinos: Array, target: Vector3) -> Array[Vector3]:
 	var at: Array[Vector3] = []
 	var reach: Array[float] = []
@@ -64,7 +82,11 @@ static func _scattered(rhinos: Array, target: Vector3) -> Array[Vector3]:
 ## One spot around `target` for each shooter (standing at `at`, reaching `reach` over the ground):
 ## as close to it as the shooter's reach allows, and `spacing` clear of the others, so they cluster
 ## round it instead of piling onto one spot. Same order as `at`.
-static func cluster(at: Array[Vector3], reach: Array[float], spacing: float, target: Vector3) -> Array[Vector3]:
+## With `space`, the spots are put down on what is under them, and `target` may be up on a gun deck
+## or a roof: the spots on its level are taken first, so the shots spread along the deck instead of
+## dropping off its edge onto the ground below.
+static func cluster(at: Array[Vector3], reach: Array[float], spacing: float, target: Vector3,
+		space: PhysicsDirectSpaceState3D = null) -> Array[Vector3]:
 	# Spots around the cursor, nearest first: the cursor, then hexagonal rings. Each ring is gone
 	# round every other spot first, so a few shooters spread evenly round the cursor.
 	var spots: Array[Vector3] = [target]
@@ -73,6 +95,13 @@ static func cluster(at: Array[Vector3], reach: Array[float], spacing: float, tar
 		for k in n:
 			var a := TAU * ((k * 2) % n + (k * 2) / n) / float(n)
 			spots.append(target + Vector3(cos(a), 0.0, sin(a)) * spacing * ring)
+	if space:
+		var level: Array[Vector3] = []
+		var below: Array[Vector3] = []
+		for s in spots:
+			var p := _settle(space, s, target.y)
+			(level if absf(p.y - target.y) < 1.0 else below).append(p)
+		spots = level + below
 	# Most constrained shooters (farthest from the cursor relative to their reach) pick first.
 	var order := range(at.size())
 	order.sort_custom(func(a, b): return reach[a] - _flat(at[a], target) < reach[b] - _flat(at[b], target))
@@ -81,6 +110,8 @@ static func cluster(at: Array[Vector3], reach: Array[float], spacing: float, tar
 	var placed: Array[Vector3] = []
 	for i in order:
 		var best := clamp_to_zone(at[i], reach[i], target)
+		if space:
+			best = _settle(space, best, target.y)
 		if _crowded(best, placed, spacing):
 			for s in spots:
 				if _flat(s, at[i]) <= reach[i] and not _crowded(s, placed, spacing):
@@ -110,6 +141,15 @@ static func _crowded(p: Vector3, placed: Array[Vector3], spacing: float) -> bool
 
 static func _flat(a: Vector3, b: Vector3) -> float:
 	return Vector2(a.x - b.x, a.z - b.z).length()
+
+
+## What is under `p` (the top of whatever floor it is over, coming down from a little above
+## `level`), so a spot near a point up on a gun deck lands on the deck, not on the roof above it.
+static func _settle(space: PhysicsDirectSpaceState3D, p: Vector3, level: float) -> Vector3:
+	var top := maxf(level, p.y) + 4.0
+	var q := PhysicsRayQueryParameters3D.create(Vector3(p.x, top, p.z), Vector3(p.x, -5.0, p.z), GameConfig.LAYER_WORLD)
+	var hit := space.intersect_ray(q)
+	return Vector3(p.x, hit.position.y if not hit.is_empty() else 0.0, p.z)
 
 
 static func _ground(space: PhysicsDirectSpaceState3D, p: Vector3) -> Vector3:

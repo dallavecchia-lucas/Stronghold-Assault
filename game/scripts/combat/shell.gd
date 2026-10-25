@@ -6,12 +6,17 @@ var team := GameConfig.TEAM_DEFENDER
 var damage := 150.0
 var radius := 7.0
 var structure_mult := 0.5
+## Radius of the shell (m).
+var size := 0.25
+## Seconds between the smoke puffs it leaves behind (0: no trail).
+var trail := 0.0
 
 var _from: Vector3
 var _to: Vector3
 var _flight_time := 2.0
 var _t := 0.0
 var _arc := 10.0
+var _trail_cd := 0.0
 
 
 func launch(from: Vector3, to: Vector3) -> void:
@@ -26,8 +31,8 @@ func launch(from: Vector3, to: Vector3) -> void:
 func _ready() -> void:
 	var mi := MeshInstance3D.new()
 	var m := SphereMesh.new()
-	m.radius = 0.25
-	m.height = 0.5
+	m.radius = size
+	m.height = size * 2.0
 	mi.mesh = m
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = Color(0.15, 0.15, 0.15)
@@ -45,3 +50,8 @@ func _physics_process(delta: float) -> void:
 		queue_free()
 		return
 	global_position = _from.lerp(_to, _t) + Vector3.UP * _arc * 4.0 * _t * (1.0 - _t)
+	if trail > 0.0:
+		_trail_cd -= delta
+		if _trail_cd <= 0.0:
+			_trail_cd = trail
+			SmokeCloud.wisp(self, global_position, size * 3.0)

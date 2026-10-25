@@ -11,11 +11,17 @@ extends RefCounted
 ##   "anti_air"  no basic attack. Passive: locks onto one enemy flyer within aa_range and
 ##               chips at it (aa_dps) until it dies or leaves. Active: cluster bombing (rhino)
 ##               or a missile salvo (elephant).
+##   "siege"     no basic attack and no passive. Active: bombardment (bison).
 ## flak: the anti-air passive comes from the model's two flak cannons (ElephantTurrets): they
 ##   swing up at the flyer and take turns firing shells that burst around it, each only once
 ##   it is on target.
 ## cluster_*: cluster bombing ability. Fires a shell every cluster_interval for cluster_duration
 ##   seconds at a ground point within cluster_range, scattered over cluster_spread.
+## bombard_*: bombardment ability (Bison Field Gun). The unit stops, lays its gun on a point
+##   within bombard_range (flat distance) for bombard_aim_time seconds and fires one shell of
+##   bombard_damage over bombard_splash, scattered by bombard_spread per metre of range, then stands
+##   for bombard_hold seconds before carrying on. Reloads in bombard_cooldown. The point can be up
+##   on the gun decks and roofs.
 ## scouts: rings the outside of the rest of the selection in scout formation (T).
 ## missile_*: missile salvo ability. missile_count homing missiles of missile_damage each, one
 ##   every missile_interval, at an enemy flyer within missile_range (flat distance). Reloads in
@@ -137,10 +143,13 @@ const DATA := {
 	},
 	"bison_gun": {
 		"name": "Bison Field Gun", "cost": 260, "hp": 600.0, "speed": 3.0,
-		"range": 40.0, "damage": 40.0, "fire_interval": 2.0, "spread": 0.02,
+		"range": 0.0, "damage": 0.0, "fire_interval": 1.0, "spread": 0.0,
 		"structure_mult": 1.5, "radius": 1.6, "height": 2.4,
-		"role": "infantry", "anim": "rigged", "hotkey": KEY_L,
+		"role": "siege", "anim": "rigged", "hotkey": KEY_L,
 		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 1.85,
+		# One heavy shell at a time, from twice the rhinos' reach: onto the gun decks and roofs.
+		"bombard_range": 80.0, "bombard_cooldown": 40.0, "bombard_damage": 240.0,
+		"bombard_splash": 6.0, "bombard_spread": 0.008, "bombard_aim_time": 1.5, "bombard_hold": 1.0,
 		"model": "res://assets/units/semi_futuristic_pair/semi_futuristic_pair_rigged.glb",
 	},
 	"lioness": {
