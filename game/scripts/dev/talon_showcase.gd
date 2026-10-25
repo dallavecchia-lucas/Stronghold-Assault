@@ -12,10 +12,13 @@ extends Node3D
 ##
 ##   godot --path game --headless --fixed-fps 30 res://scenes/dev/talon_showcase.tscn -- --test
 ##   godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie talon.avi \
-##       --fixed-fps 30 res://scenes/dev/talon_showcase.tscn
+##       --fixed-fps 30 res://scenes/dev/talon_showcase.tscn -- --video > talon.log
+##   python3 tools/video/cut_showcase.py talon.avi talon.log media/talon_showcase.mp4
 ##
 ## --snap=t1,t2,.. --snap-out=prefix draws and saves only the frames at those times.
 ## --test prints what the talons do and checks it at the end (TALON SHOWCASE PASS / FAIL).
+## --video draws only the stretches in VIDEO (the rest is skipped, for a shorter render) and prints
+## the frames to keep for tools/video/cut_showcase.py.
 ## The garrison's posts hold fire, all but the rifleman the talon attacks: he fires back (the
 ## talon gets the hit points to outlast him).
 
@@ -27,6 +30,8 @@ const DECK_SOLDIER := "Soldier_south_2"
 ## The run, in seconds: [start, phase].
 const SCRIPT := [[0.0, "takeoff"], [7.0, "cruise"], [22.0, "circle"], [40.0, "attack"], [62.0, "flock"],
 		[82.0, "end"]]
+## What the video shows of it (seconds): two bursts of wing beats on the way, one on the ring.
+const VIDEO := [[0.3, 5.0], [8.0, 16.5], [23.0, 33.0], [49.0, 57.0], [72.0, 80.0]]
 
 var level: LevelBuilder
 var commander: AttackerCommander
@@ -37,7 +42,12 @@ var soldier: Node3D
 var t := -1.0
 var phase := ""
 var test := false
+var video := false
 var _phase_t := 0.0
+## Frames drawn so far, whether the current one is in the video, and where the cut began.
+var _frame := -1
+var _shown := true
+var _cut_from := 0
 ## Per phase: seconds flown, seconds beating the wings, wing bursts begun, slowest speed, ring
 ## distance range, most bank, seconds turning right.
 var _log := {}
@@ -53,7 +63,11 @@ var _snapping := false
 
 
 func _ready() -> void:
+	seed(7)  # the same run every time
 	test = "--test" in OS.get_cmdline_user_args()
+	video = "--video" in OS.get_cmdline_user_args()
+	if video:
+		RenderingServer.render_loop_enabled = false  # nothing to see while the level loads
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--snap="):
 			_snaps = Array(arg.get_slice("=", 1).split(",")).map(func(x): return float(x))
@@ -91,6 +105,8 @@ func _start() -> void:
 	hero = _talon(TAKEOFF + Vector3.UP * 0.2, CIRCLE_AT)
 	print("TALON hero ring %.1f m, height %+.1f m" % [hero._flight.ring, hero._flight.height])
 	t = 0.0
+	if video:
+		print("VIDEO START frame %d" % (_frame + 1))
 
 
 func _talon(pos: Vector3, to: Vector3) -> AttackerUnit:
@@ -155,6 +171,8 @@ func _record(delta: float) -> void:
 		e.flapping += delta
 		if not _was_flapping:
 			e.bursts += 1
+			if test:
+				print("TALON %5.1f s %-8s wing beats" % [t, phase])
 	_was_flapping = flapping
 	if u.velocity.y > 1.5:
 		e.climbing += delta
@@ -187,11 +205,27 @@ func _record(delta: float) -> void:
 
 
 func _process(_delta: float) -> void:
+	_frame += 1
 	if t < 0.0:
 		return
 	_camera()
+	if video:
+		_cut()
 	if not _snaps.is_empty():
 		_snap()
+
+
+## Draws the frames in VIDEO only; the others are recorded as copies, cut out afterwards.
+func _cut() -> void:
+	var shown := VIDEO.any(func(r): return t >= r[0] and t < r[1])
+	RenderingServer.render_loop_enabled = shown
+	if shown == _shown:
+		return
+	_shown = shown
+	if shown:
+		print("CUT frames %d-%d" % [_cut_from, _frame - 1])
+	else:
+		_cut_from = _frame
 
 
 ## The camera: beside the talon on take-off, behind it on the way, up over the ring while it
@@ -269,6 +303,10 @@ func _finish() -> void:
 	for c in _checks:
 		print("TALON CHECK ", c)
 	print("TALON SHOWCASE %s" % ("FAIL" if _failed else "PASS"))
+	if video:
+		if not _shown:
+			print("CUT frames %d-%d" % [_cut_from, _frame])
+		print("VIDEO END frame %d" % _frame)
 	get_tree().quit()
 
 

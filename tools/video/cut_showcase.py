@@ -5,6 +5,7 @@ showcase printed while it was recorded:
     VIDEO START frame N      the video's first frame (the ones before it are the level loading)
     VIDEO END frame N        its last frame
     FAST k frames A-B        frames A..B play k times faster (every k-th one is kept)
+    CUT frames A-B           frames A..B are left out
 
     godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie aa.avi \
         --fixed-fps 30 res://scenes/dev/aa_squad_showcase.tscn -- --video > aa.log
@@ -28,12 +29,16 @@ def main() -> None:
     start = int(re.search(r"VIDEO START frame (\d+)", text).group(1))
     end = int(re.search(r"VIDEO END frame (\d+)", text).group(1))
     fast = [(int(k), int(a), int(b)) for k, a, b in re.findall(r"FAST (\d+) frames (\d+)-(\d+)", text)]
-    # Keep the frames from the start to the end, and every k-th one of each fast stretch.
+    cuts = [(int(a), int(b)) for a, b in re.findall(r"CUT frames (\d+)-(\d+)", text)]
+    # Keep the frames from the start to the end, every k-th one of each fast stretch, none of a cut.
     keep = f"between(n\\,{start}\\,{end})"
     for k, a, b in fast:
         keep += f"*if(between(n\\,{a}\\,{b})\\,not(mod(n-{a}\\,{k}))\\,1)"
-    kept = end - start + 1 - sum((b - a + 1) - len(range(a, b + 1, k)) for k, a, b in fast)
-    print(f"frames {start}-{end}, {len(fast)} fast stretch(es): {kept} frames, {kept / FPS:.1f} s")
+    for a, b in cuts:
+        keep += f"*not(between(n\\,{a}\\,{b}))"
+    kept = end - start + 1 - sum((b - a + 1) - len(range(a, b + 1, k)) for k, a, b in fast) \
+        - sum(min(b, end) - max(a, start) + 1 for a, b in cuts if b >= start and a <= end)
+    print(f"frames {start}-{end}, {len(fast)} fast stretch(es), {len(cuts)} cut(s): {kept} frames, {kept / FPS:.1f} s")
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-stats", "-i", avi,
             "-vf", f"select='{keep}',setpts=N/{FPS}/TB", "-r", str(FPS), "-an",
             "-c:v", "libx264", "-preset", "slow", "-crf", "20", "-pix_fmt", "yuv420p", "-movflags", "+faststart",

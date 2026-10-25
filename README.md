@@ -164,12 +164,18 @@ godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie
 
 ### Sky Talon showcase
 
-`game/scenes/dev/talon_showcase.tscn` flies the Sky Talon on the real map: one takes off from the south field, beating its wings all the way up, then cruises west across it (long glides, a few wing beats now and then) and circles the spot it was sent to. Sent at a rifleman on the south gun deck, it circles him, firing down from a ring out in front of the face; he fires back (the talon gets the hit points to outlast him). Last, five talons sent to one spot each fly a ring of their own. The garrison's other posts hold fire.
+`game/scenes/dev/talon_showcase.tscn` flies the Sky Talon on the real map (`media/talon_showcase.mp4`): one takes off from the south field, beating its wings all the way up, then cruises west across it (long glides, a few wing beats now and then) and circles the spot it was sent to. Sent at a rifleman on the south gun deck, it circles him, firing down from a ring out in front of the face; he fires back (the talon gets the hit points to outlast him). Last, five talons sent to one spot each fly a ring of their own. The garrison's other posts hold fire.
 
 ```sh
 godot --path game --headless --fixed-fps 30 res://scenes/dev/talon_showcase.tscn -- --test  # prints and checks: TALON SHOWCASE PASS / FAIL
 godot --path game --rendering-driver opengl3 --resolution 1280x720 --fixed-fps 30 res://scenes/dev/talon_showcase.tscn -- --snap=12,33 --snap-out=/tmp/talon  # just those frames
-godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie talon.avi --fixed-fps 30 res://scenes/dev/talon_showcase.tscn
+```
+
+`-- --video` draws only the stretches the video shows (the run is the same every time) and prints the frames to keep, so the recording renders in a fraction of the time; `tools/video/cut_showcase.py` cuts it into the mp4:
+
+```sh
+godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie talon.avi --fixed-fps 30 res://scenes/dev/talon_showcase.tscn -- --video > talon.log
+python3 tools/video/cut_showcase.py talon.avi talon.log media/talon_showcase.mp4
 ```
 
 ## Asset pipeline
