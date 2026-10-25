@@ -22,15 +22,15 @@ extends Node3D
 ##   python3 tools/video/cut_showcase.py flame.avi flame.log media/flame_squad_showcase.mp4
 ##
 ## --test prints what the squad does and checks it at the end (FLAME SHOWCASE PASS / FAIL); with
-## --hall the squad is handed its CLEAR order as soon as it is bought (it walks out of the spawn hall
-## and the gate tunnel to the forest on its own), and only the clearing is checked. So does
+## --hall the squad is handed its CLEAR order as soon as it is bought (it walks out of the spawn
+## hall and the gate tunnel to the forest on its own), and only the clearing is checked. So does
 ## --video, the showcase video: the lone trooper first, then the run with cameras cut in, captions
 ## and the keys the player presses. Most of the clearing plays AUTO_VIDEO times faster; the run
 ## prints the frames to keep and speed up for cutting the recording, and draws only those.
 ## --snap=t1,t2,.. --snap-out=prefix draws and saves only the frames at those times (seconds since
-## the start). --video renders with FXAA instead of the project's MSAA. Video-only: the work lights in the hall and the tunnel, the ruler under the lone
-## trooper's flame. The garrison's posts and the AA turrets hold fire; the Gunner Squad is left out
-## (the Flame Squad deploys in its hall).
+## the start). --video renders without the project's MSAA. Video-only: the work lights in the hall
+## and the tunnel, the ruler under the lone trooper's flame. The garrison's posts and the AA turrets
+## hold fire; the Gunner Squad is left out (the Flame Squad deploys in its hall).
 
 ## Waypoints of the drive (world): the spawn hall's ramp, the junction, the gate tunnel, the open
 ## ground, the field, and the edge of the forest (LevelBuilder.FORESTS[0]) facing the trees.
@@ -147,10 +147,9 @@ func _ready() -> void:
 			_snap_out = arg.get_slice("=", 1)
 	if video:
 		RenderingServer.render_loop_enabled = false  # nothing to see while the level loads
-		# FXAA instead of the project's MSAA: as smooth at this size, in half the time on a software
-		# renderer.
+		# Without the project's MSAA: barely rougher at this size, and recorded in half the time on a
+		# software renderer.
 		get_viewport().msaa_3d = Viewport.MSAA_DISABLED
-		get_viewport().screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
 	level = LevelBuilder.new()
 	add_child(level)
 	level.build()
