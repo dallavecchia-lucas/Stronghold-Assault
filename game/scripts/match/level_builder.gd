@@ -51,6 +51,8 @@ const SIDES := {
 ## Rifle posts on the gun decks: [side, bay].
 const RIFLE_POSTS := [["south", 2], ["south", 4], ["east", 2], ["west", 4], ["north", 3], ["east", 4]]
 const MORTAR_MOUNT := "MOUNT_AA_S3_1"
+## Roof mounts that carry autonomous AA turrets (AATurret): two on every face, over bays 2 and 4.
+const AA_TURRETS := ["S2_2", "S4_2", "E2_2", "E4_2", "W2_2", "W4_2", "N2_2", "N4_2"]
 ## Navigation layer bit for the links only infiltrators may take.
 const NAV_INFILTRATORS := 2
 ## Navigation layer bit for the links through the gates the defenders' Gunner Squad takes, and how
@@ -86,6 +88,7 @@ var nav_region: NavigationRegion3D
 var keep: Structure
 var gates := {}  # side -> Structure
 var stations := []  # possessable defender stations, in hotkey order
+var aa_turrets := []  # autonomous, nobody takes them over
 var spawn_points: Array[Vector3] = []
 var spawn_names: Array[String] = []
 var _stronghold: Node3D
@@ -124,7 +127,7 @@ func build() -> void:
 	_build_keep()
 	_build_scenery()
 	_build_spawns()
-	_build_mounts(_build_stations())
+	_build_mounts(_build_stations() + _build_aa_turrets())
 	rebake_navigation()
 
 
@@ -577,6 +580,22 @@ func _build_stations() -> Array:
 	squad.gates = gates.values()
 	add_child(squad)
 	stations.append(squad)
+	return used
+
+
+## The AA turrets on the roofs; returns the mounts used.
+func _build_aa_turrets() -> Array:
+	var used := []
+	for key in AA_TURRETS:
+		var mount := _marker("MOUNT_AA_%s" % key)
+		used.append(String(mount.name))
+		var side: String = SIDES.keys().filter(func(k): return SIDES[k].face == key[0])[0]
+		var t := AATurret.new()
+		t.name = "AA_%s" % key
+		t.station_name = "AA Turret · %s Roof" % side.capitalize()
+		_place_facing_out(t, side, mount.global_position)
+		add_child(t)
+		aa_turrets.append(t)
 	return used
 
 

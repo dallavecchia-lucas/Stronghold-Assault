@@ -21,7 +21,7 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
 
 - **Attacker wins** by destroying the Keep. **Defender wins** by holding for 10 minutes.
 
-**The map.** The stronghold is a mountain with a bunker dug into each of its four faces (`game/assets/stronghold/stronghold.glb`). The Keep is the reactor in the core hall under the peak. Attackers come from the south, east and west. Each of those faces has a blast-door gate on its middle ground tunnel; every other tunnel is welded shut. Once a gate is down, only Chimps and Breaching Rams can get inside; everyone else fights from outside. Inside, they can also climb the stair shafts to the gun decks and the ladders to the roofs. Forest groves stand off to the sides of the attack lanes. The defenders hold the gun decks and roofs: a machine gun over each gate, riflemen along the decks and the mortar on the south roof. The guns can't fire into the doorway right below them; the mortar covers it.
+**The map.** The stronghold is a mountain with a bunker dug into each of its four faces (`game/assets/stronghold/stronghold.glb`). The Keep is the reactor in the core hall under the peak. Attackers come from the south, east and west. Each of those faces has a blast-door gate on its middle ground tunnel; every other tunnel is welded shut. Once a gate is down, only Chimps and Breaching Rams can get inside; everyone else fights from outside. Inside, they can also climb the stair shafts to the gun decks and the ladders to the roofs. Forest groves stand off to the sides of the attack lanes. The defenders hold the gun decks and roofs: a machine gun over each gate, riflemen along the decks, the mortar on the south roof and two AA turrets on every roof. The guns can't fire into the doorway right below them; the mortar covers it.
 
 **Defender (first person)**
 - `1`–`9`: take over a post (machine guns, mortar, riflemen) · `G`: the Gunner Squad · `Tab`: jump to the post with the most enemies nearby · `B`: buy an AA Squad · `F1`–`F6`: take command of a bought squad
@@ -45,14 +45,20 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
     - GUARD: it stays where it is and only watches the sky.
     - Either way it locks on (3 s, like you) to any enemy aircraft within 85 m and shoots it down, and never fires at ground units.
 - Posts you aren't controlling keep fighting on their own; dead posts come back after a short delay
+- AA turrets: two on every roof, on their own (nobody takes them over). Each turns to the nearest enemy aircraft it can see within 45 m, locks on (1.2 s) and fires a homing missile at it every 3 s (18 damage), Sky Talons on their attack runs included. 150 HP: a bison's shell or a talon's bomb takes one out; it is rebuilt after 75 s.
 
 **Attacker (RTS)**
 - `LMB` click/drag to select, `Shift` to add · `RMB` attack-move, or attack a gate/defender you click on · `Ctrl+RMB` move without stopping
 - Spawn: `Z` Bear Rifleman · `X` Kangaroo Commando (fast) · `C` Wolf Medic (heals) · `N` Mule Artillery (long-range shells)
 - `V` Sky Talon (the hawk): flies over the mountain, and flies like a hawk.
   - It glides most of the time and beats its wings only now and then, a few strokes every few seconds (gliding it sinks a little, less while it circles and soars, and the strokes lift it back up), and all the way up on take-off or climbing over the mountain. It banks into its turns.
-  - It never hovers: wherever it has nowhere left to go, it circles. Sent somewhere, it circles the spot counterclockwise, the centre off its left wing, like a gunship flying a pylon turn. Sent at a target (or meeting one on an attack-move), it comes down and circles that instead, firing from the ring.
-  - Rings stay level and clear of the ground: next to the mountain a ring moves out in front of the face (and tightens) until it is, while staying in range of its target. Each talon flies a ring of its own (up to 8 m wider) at a height of its own (spread over 12 m), so a flock sent to one spot stacks up instead of flying through itself.
+  - It never hovers: wherever it has nowhere left to go, it circles. Sent somewhere (or at a target), it circles the spot counterclockwise, the centre off its left wing, like a gunship flying a pylon turn.
+  - Rings stay level and clear of the ground: next to the mountain a ring moves out in front of the face (and tightens) until it is. Each talon flies a ring of its own (up to 8 m wider) at a height of its own (spread over 12 m), so a flock sent to one spot stacks up instead of flying through itself. Flying on, it looks ahead and climbs over the mountain in time.
+  - No basic attack and no passive: it attacks with two skills, each reused after 90 s. `F` and `G` aim them when the selection has no ready rhinos (`F`) or bisons (`G`), whose skills come first.
+  - `F` strafe run, like an A-10's: press `LMB` on the target and drag the way to fly, let go to fire (a click flies it from the talons to the target; `RMB` or `F` cancels). The line is 26 m long and has to lie inside the talon's circle (80 m round it). Several talons fly parallel lanes 7 m apart, side by side in the order they are in across the line; a lane that doesn't fit its talon's circle slides along itself until it does. Each talon flies round behind its lane, lines up, dives in along it firing ahead of itself, so its rounds walk down the lane (18 damage within 2.5 m each, about 40 of them), then pulls up and breaks away from the mountain.
+  - `G` bomb strike: `LMB` a spot (`RMB` or `G` cancels). Each talon flies over its spot and drops one bomb (260 within 7 m, full damage against gates). Several talons' bombs land round the spot 10.5 m apart like the bisons' shells, up on the gun decks and roofs too. Against the mountain a talon slants in along the face instead of flying into it.
+  - The runs fly round the stronghold, never into it: each plans its height along the whole pass from the ground under it, low over the target and always high enough to climb over the deck, the roof or the mountain ahead, and where the mountain blocks a straight run-in (a line along a face) it comes in at an angle from the open field and turns onto the line. Once on a run it flies it through, whatever its orders.
+  - It is not invincible on a run: the AA turrets and the machine guns shoot at it. Take the turrets out first (bisons can, from beyond their reach).
 - `B` War Elephant: the real anti-air unit. Heavy and slow, with no basic attack.
   - Passive flak: the cannons on its flanks swing up at one enemy flyer in its dashed ring (26 m) and stay on it until it dies or leaves. They take turns firing shells that burst around it. One elephant hits about as hard as five rhinos.
   - `O` missiles: then `LMB` an enemy aircraft (`RMB` or `O` cancels). The pods lift and eight homing missiles leave one after another (range 60 m, reload 25 s). With several elephants selected, only as many fire as it takes to bring the target down, counting missiles already on their way to it, nearest first. The rest stay ready and you keep aiming, so you can click the next target. If all of them together can't kill it, they all fire. The cursor says how many will fire.
@@ -164,7 +170,7 @@ godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie
 
 ### Sky Talon showcase
 
-`game/scenes/dev/talon_showcase.tscn` flies the Sky Talon on the real map (`media/talon_showcase.mp4`): one takes off from the south field, beating its wings all the way up, then cruises west across it (long glides, a few wing beats now and then) and circles the spot it was sent to. Sent at a rifleman on the south gun deck, it circles him, firing down from a ring out in front of the face; he fires back (the talon gets the hit points to outlast him). Last, five talons sent to one spot each fly a ring of their own. The garrison's other posts hold fire.
+`game/scenes/dev/talon_showcase.tscn` flies the Sky Talon on the real map (`media/talon_showcase.mp4`): one takes off from the south field, beating its wings all the way up, then cruises west across it (long glides, a few wing beats now and then) and circles the spot it was sent to. Last, five talons sent to one spot each fly a ring of their own. The garrison's posts and the AA turrets hold fire.
 
 ```sh
 godot --path game --headless --fixed-fps 30 res://scenes/dev/talon_showcase.tscn -- --test  # prints and checks: TALON SHOWCASE PASS / FAIL
@@ -177,6 +183,19 @@ godot --path game --rendering-driver opengl3 --resolution 1280x720 --fixed-fps 3
 godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie talon.avi --fixed-fps 30 res://scenes/dev/talon_showcase.tscn -- --video > talon.log
 python3 tools/video/cut_showcase.py talon.avi talon.log media/talon_showcase.mp4
 ```
+
+### Sky Talon strike showcase
+
+`game/scenes/dev/talon_strike_showcase.tscn` aims the Sky Talon's skills the way a player does, in the RTS view, against the south face (`media/talon_strike_showcase.mp4`). A talon sent over the face is shot down by the roof's AA turrets; a bison shells one turret from beyond their reach. One talon is clicked, `G`, `LMB` on the other turret: it slants in along the face, bombs it and breaks away while the turret fires at it. Three talons are box-selected, `G`, `LMB` on the mortar: their bombs land apart along the roof. One talon, `F`, `LMB` pressed on a rifleman on the gun deck and dragged along the deck: it comes in from the field and strafes down the deck. Three talons, `F`, pressed on the other rifleman and dragged up the mountain: three parallel lanes across the face, the talons climbing over the deck and the roof as they fire. The garrison's posts hold fire; the turrets don't (and stay down once destroyed).
+
+```sh
+godot --path game --headless --fixed-fps 30 res://scenes/dev/talon_strike_showcase.tscn -- --test  # prints and checks: TALON STRIKE PASS / FAIL
+godot --path game --rendering-driver opengl3 --resolution 1280x720 --fixed-fps 30 res://scenes/dev/talon_strike_showcase.tscn -- --snap=31.5,88.6 --snap-out=/tmp/strike  # just those frames
+godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie strike.avi --fixed-fps 30 res://scenes/dev/talon_strike_showcase.tscn -- --video > strike.log
+python3 tools/video/cut_showcase.py strike.avi strike.log media/talon_strike_showcase.mp4
+```
+
+The test also checks that no talon on a run ever goes into the ground or the stronghold. `-- --video` plays the waits and the flying into position at triple speed and cuts the time between strikes.
 
 ## Asset pipeline
 

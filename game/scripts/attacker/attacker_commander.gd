@@ -13,6 +13,10 @@ extends Node
 ##   {"type": "cluster", "units": [ids], "pos": Vector3}   rhinos bomb around pos (RhinoAim)
 ##   {"type": "bombard", "units": [ids], "pos": Vector3}   bisons each fire a shell round pos,
 ##               up on the gun decks and roofs too (RhinoAim.bombard)
+##   {"type": "strafe", "units": [ids], "pos": Vector3, "dir": Vector3}   talons strafe parallel
+##               lanes centred round pos, flying along dir (TalonAim.strafe)
+##   {"type": "bomb", "units": [ids], "pos": Vector3}   talons each drop a bomb round pos
+##               (TalonAim.bombs)
 ##   {"type": "smoke", "units": [ids], "pos": Vector3}   the ready hippo closest to pos lays a
 ##                                                     smoke screen toward it (HippoSmoke)
 ##   {"type": "missile", "units": [ids], "target": NodePath}   elephants fire missile salvos at
@@ -67,6 +71,10 @@ func submit(cmd: Dictionary) -> int:
 			_cluster(cmd.units, cmd.pos)
 		"bombard":
 			_bombard(cmd.units, cmd.pos)
+		"strafe":
+			_strafe(cmd.units, cmd.pos, cmd.dir)
+		"bomb":
+			_bomb(cmd.units, cmd.pos)
 		"smoke":
 			_smoke(cmd.units, cmd.pos)
 		"missile":
@@ -141,6 +149,20 @@ func _bombard(ids: Array, pos: Vector3) -> void:
 	var aims := RhinoAim.bombard(bisons, pos)
 	for i in bisons.size():
 		bisons[i].start_bombard(aims[i])
+
+
+func _strafe(ids: Array, pos: Vector3, dir: Vector3) -> void:
+	var talons := _resolve(ids).filter(func(u): return u.strafe_ready())
+	var lanes := TalonAim.strafe(talons, pos, dir)
+	for i in talons.size():
+		talons[i].start_strafe(lanes[i][0], lanes[i][1])
+
+
+func _bomb(ids: Array, pos: Vector3) -> void:
+	var talons := _resolve(ids).filter(func(u): return u.bomb_ready())
+	var spots := TalonAim.bombs(talons, pos)
+	for i in talons.size():
+		talons[i].start_bomb(spots[i])
 
 
 func _smoke(ids: Array, pos: Vector3) -> void:

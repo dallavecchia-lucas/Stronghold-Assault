@@ -99,7 +99,7 @@ static func cluster(at: Array[Vector3], reach: Array[float], spacing: float, tar
 		var level: Array[Vector3] = []
 		var below: Array[Vector3] = []
 		for s in spots:
-			var p := _settle(space, s, target.y)
+			var p := settle(space, s, target.y)
 			(level if absf(p.y - target.y) < 1.0 else below).append(p)
 		spots = level + below
 	# Most constrained shooters (farthest from the cursor relative to their reach) pick first.
@@ -111,7 +111,7 @@ static func cluster(at: Array[Vector3], reach: Array[float], spacing: float, tar
 	for i in order:
 		var best := clamp_to_zone(at[i], reach[i], target)
 		if space:
-			best = _settle(space, best, target.y)
+			best = settle(space, best, target.y)
 		if _crowded(best, placed, spacing):
 			for s in spots:
 				if _flat(s, at[i]) <= reach[i] and not _crowded(s, placed, spacing):
@@ -145,7 +145,7 @@ static func _flat(a: Vector3, b: Vector3) -> float:
 
 ## What is under `p` (the top of whatever floor it is over, coming down from a little above
 ## `level`), so a spot near a point up on a gun deck lands on the deck, not on the roof above it.
-static func _settle(space: PhysicsDirectSpaceState3D, p: Vector3, level: float) -> Vector3:
+static func settle(space: PhysicsDirectSpaceState3D, p: Vector3, level: float) -> Vector3:
 	var top := maxf(level, p.y) + 4.0
 	var q := PhysicsRayQueryParameters3D.create(Vector3(p.x, top, p.z), Vector3(p.x, -5.0, p.z), GameConfig.LAYER_WORLD)
 	var hit := space.intersect_ray(q)

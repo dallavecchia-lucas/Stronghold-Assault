@@ -7,7 +7,8 @@ extends RefCounted
 ##   "artillery" lobs explosive shells, no line of sight needed, has a minimum range
 ##   "healer"    doesn't fight, heals the most damaged ally in range
 ##   "flying"    ignores walls and pathfinding, cruises at FLY_HEIGHT and never stops: it circles
-##               where it was sent and round what it fights (TalonFlight)
+##               where it was sent (TalonFlight). The Sky Talon has no basic attack: it strafes and
+##               bombs (strafe_*, bomb_*)
 ##   "melee"     strikes whatever is within reach (range), no line of sight needed
 ##   "anti_air"  no basic attack. Passive: locks onto one enemy flyer within aa_range and
 ##               chips at it (aa_dps) until it dies or leaves. Active: cluster bombing (rhino)
@@ -36,6 +37,13 @@ extends RefCounted
 ##   smoke_min_range to smoke_range away. Each bursts at smoke_height, then drops and bursts twice
 ##   more on the way down, leaving a pillar of smoke_radius clouds. The curtain blocks line of
 ##   sight for smoke_duration seconds.
+## strafe_*: strafe run (Sky Talon). It dives along a line strafe_length long anywhere inside
+##   strafe_range of it, firing a round every strafe_interval that lands on the line ahead of it and
+##   hits for strafe_damage within strafe_splash (TalonRun). Several talons fly parallel lanes
+##   strafe_lane apart (TalonAim). Reused after strafe_cooldown.
+## bomb_*: bomb strike (Sky Talon). It flies over a spot within bomb_range of it and drops one bomb,
+##   bomb_damage within bomb_splash (times bomb_structure_mult against gates). Several talons' bombs
+##   cluster round the aim like the bisons' shells. Reused after bomb_cooldown.
 ## pellets: shotgun. Each shot is this many pellets, spread over a cone of `spread` radians.
 ## ram_*: ram ability (Breaching Ram). A surge to ram_speed times its speed for ram_duration
 ##   seconds, reused after ram_cooldown. Enemy soldiers it runs over lose ram_trample_damage and are
@@ -89,9 +97,13 @@ const DATA := {
 	},
 	"talon": {
 		"name": "Sky Talon", "cost": 120, "hp": 110.0, "speed": 8.0,
-		"range": 26.0, "damage": 7.0, "fire_interval": 0.4, "spread": 0.05,
-		"structure_mult": 0.15, "radius": 0.8, "height": 2.1,
+		"range": 0.0, "damage": 0.0, "fire_interval": 1.0, "spread": 0.0,
+		"structure_mult": 0.3, "radius": 0.8, "height": 2.1,
 		"role": "flying", "anim": "flight", "hotkey": KEY_V,
+		"strafe_range": 80.0, "strafe_length": 26.0, "strafe_lane": 7.0, "strafe_damage": 18.0,
+		"strafe_splash": 2.5, "strafe_interval": 0.08, "strafe_cooldown": 90.0,
+		"bomb_range": 80.0, "bomb_damage": 260.0, "bomb_splash": 7.0, "bomb_structure_mult": 1.0,
+		"bomb_cooldown": 90.0,
 		"model": "res://assets/units/sky_talon_battalion/sky_talon_battalion_rigged.glb",
 	},
 	"elephant": {

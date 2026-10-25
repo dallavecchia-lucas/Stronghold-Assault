@@ -45,6 +45,7 @@ func _think() -> void:
 
 	_reassign_idle()
 	_ram_gates()
+	_talon_strikes()
 
 
 func _plan_wave() -> void:
@@ -150,6 +151,45 @@ func _ram_gates() -> void:
 	for gate in by_gate:
 		commander.submit({"type": "ram", "units": by_gate[gate]})
 		commander.submit({"type": "attack", "units": by_gate[gate], "target": gate.get_path()})
+
+
+## Talons strike whatever is in their reach: bombs on the AA turrets first, then the machines and
+## the gates; strafe runs (along the face, next to the mountain) on the defenders.
+func _talon_strikes() -> void:
+	for u in commander.units.values():
+		if not u.has_bomb() or not u.is_alive() or u.on_run():
+			continue
+		if u.bomb_ready():
+			var t := _in_reach(u, u.stats.bomb_range, func(d): return d.get("station_kind") == "aa")
+			if t == null:
+				t = _in_reach(u, u.stats.bomb_range, func(d): return d.get("station_kind") in ["mg", "artillery"] or d in level.gates.values())
+			if t:
+				commander.submit({"type": "bomb", "units": [u.unit_id], "pos": t.global_position})
+				continue
+		if u.strafe_ready():
+			var t := _in_reach(u, u.stats.strafe_range, func(d): return not d.is_in_group("structures") and d.get("station_kind") not in ["aa", "mg", "artillery"])
+			if t:
+				var to: Vector3 = t.global_position - u.global_position
+				var dir := Vector3(to.x, 0.0, to.z).normalized()
+				var out := Vector3(t.global_position.x, 0.0, t.global_position.z)
+				if out.length() < LevelBuilder.FACE_DIST + 10.0:
+					var along := out.normalized().cross(Vector3.UP)
+					dir = along if along.dot(dir) >= 0.0 else -along
+				commander.submit({"type": "strafe", "units": [u.unit_id], "pos": t.global_position, "dir": dir})
+
+
+## The nearest live defender `pick` takes (or gate) within `reach` of `u` (flat), with room to spare.
+func _in_reach(u: AttackerUnit, reach: float, pick: Callable) -> Node3D:
+	var best: Node3D = null
+	var best_d := reach * 0.85
+	for d in level.get_tree().get_nodes_in_group("damageable"):
+		if d.team == u.team or not d.is_alive() or not pick.call(d):
+			continue
+		var dist := Vector2(d.global_position.x - u.global_position.x, d.global_position.z - u.global_position.z).length()
+		if dist < best_d:
+			best_d = dist
+			best = d
+	return best
 
 
 ## Units with nothing to do look for the next objective.

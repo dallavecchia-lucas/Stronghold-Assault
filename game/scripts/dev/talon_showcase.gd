@@ -6,9 +6,8 @@ extends Node3D
 ##   cruise   it flies west across the field: long glides, a few wing beats every few seconds
 ##   circle   at the end of the move it circles the spot, banked into the turn, the centre off its
 ##            left wing, like a gunship flying a pylon turn
-##   attack   ordered at a rifleman on the south gun deck, it circles him and fires down from
-##            the ring
 ##   flock    five talons sent to one spot stack up in rings of their own
+## (Its strafe runs and bomb strikes: talon_strike_showcase.tscn.)
 ##
 ##   godot --path game --headless --fixed-fps 30 res://scenes/dev/talon_showcase.tscn -- --test
 ##   godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie talon.avi \
@@ -19,26 +18,22 @@ extends Node3D
 ## --test prints what the talons do and checks it at the end (TALON SHOWCASE PASS / FAIL).
 ## --video draws only the stretches in VIDEO (the rest is skipped, for a shorter render) and prints
 ## the frames to keep for tools/video/cut_showcase.py.
-## The garrison's posts hold fire, all but the rifleman the talon attacks: he fires back (the
-## talon gets the hit points to outlast him).
+## The garrison's posts and AA turrets hold fire.
 
 const TAKEOFF := Vector3(80.0, 0.0, 168.0)
 const CIRCLE_AT := Vector3(-62.0, 0.0, 150.0)
 const FLOCK_FROM := Vector3(70.0, 16.0, 200.0)
 const FLOCK_AT := Vector3(0.0, 0.0, 128.0)
-const DECK_SOLDIER := "Soldier_south_2"
 ## The run, in seconds: [start, phase].
-const SCRIPT := [[0.0, "takeoff"], [7.0, "cruise"], [22.0, "circle"], [40.0, "attack"], [62.0, "flock"],
-		[82.0, "end"]]
+const SCRIPT := [[0.0, "takeoff"], [7.0, "cruise"], [22.0, "circle"], [40.0, "flock"], [60.0, "end"]]
 ## What the video shows of it (seconds): two bursts of wing beats on the way, one on the ring.
-const VIDEO := [[0.3, 5.0], [8.0, 16.5], [23.0, 33.0], [49.0, 57.0], [72.0, 80.0]]
+const VIDEO := [[0.3, 5.0], [8.0, 16.5], [23.0, 33.0], [50.0, 58.0]]
 
 var level: LevelBuilder
 var commander: AttackerCommander
 var cam: Camera3D
 var hero: AttackerUnit
 var flock: Array = []
-var soldier: Node3D
 var t := -1.0
 var phase := ""
 var test := false
@@ -52,7 +47,6 @@ var _cut_from := 0
 ## distance range, most bank, seconds turning right.
 var _log := {}
 var _was_flapping := false
-var _soldier_hp := 0.0
 var _checks: Array[String] = []
 var _failed := false
 var _closest_pair := INF
@@ -76,11 +70,8 @@ func _ready() -> void:
 	level = LevelBuilder.new()
 	add_child(level)
 	level.build()
-	for s in level.stations:
-		if String(s.name) == DECK_SOLDIER:
-			soldier = s
-		else:
-			s.process_mode = Node.PROCESS_MODE_DISABLED
+	for s in level.stations + level.aa_turrets:
+		s.process_mode = Node.PROCESS_MODE_DISABLED
 	var units_root := Node3D.new()
 	add_child(units_root)
 	commander = AttackerCommander.new()
@@ -144,11 +135,6 @@ func _enter(p: String) -> void:
 			_say("Cruising", "it glides most of the time and beats its wings now and then")
 		"circle":
 			_say("Nowhere left to go: it circles", "banked into the turn, the centre off its left wing, like a gunship")
-		"attack":
-			_soldier_hp = soldier.hp
-			hero.hp = hero.stats.hp * 10.0
-			commander.submit({"type": "attack", "units": [hero.unit_id], "target": soldier.get_path()})
-			_say("Attack: a rifleman on the south gun deck", "it circles him, firing down from the ring")
 		"flock":
 			for i in 5:
 				flock.append(_talon(FLOCK_FROM + Vector3(i * 4.0, 0.0, i * 3.0), FLOCK_AT))
@@ -180,8 +166,7 @@ func _record(delta: float) -> void:
 			e.climb_flapping += delta
 	if _phase_t > 1.0:
 		e.slowest = minf(e.slowest, speed)
-	# round the middle of its ring (which moves out from the mountain, off the rifleman)
-	var center: Vector3 = f._ring[0] if phase in ["circle", "attack"] else Vector3.INF
+	var center: Vector3 = f._ring[0] if phase == "circle" else Vector3.INF
 	if center != Vector3.INF and _phase_t > 12.0:
 		var d := _flat(u.global_position, center)
 		e.ring_min = minf(e.ring_min, d)
@@ -194,7 +179,7 @@ func _record(delta: float) -> void:
 		var to := center - u.global_position
 		if Vector2(left.x, left.z).dot(Vector2(to.x, to.z).normalized()) > 0.8:
 			e.left_of += delta
-	if phase == "flock" and _phase_t > 14.0:
+	if phase == "flock" and _phase_t > 12.0:
 		for i in flock.size():
 			for j in range(i + 1, flock.size()):
 				_closest_pair = minf(_closest_pair, flock[i].global_position.distance_to(flock[j].global_position))
@@ -229,7 +214,7 @@ func _cut() -> void:
 
 
 ## The camera: beside the talon on take-off, behind it on the way, up over the ring while it
-## circles, down in the field under the gun deck for the attack and up over the flock.
+## circles and up over the flock.
 func _camera() -> void:
 	var p := hero.global_position if is_instance_valid(hero) else CIRCLE_AT
 	var fwd := -hero.global_basis.z if is_instance_valid(hero) else Vector3.FORWARD
@@ -250,10 +235,6 @@ func _camera() -> void:
 			else:
 				at = p - fwd * 12.0 + right * 5.0 + Vector3.UP * 3.0
 				look = p + fwd * 8.0
-		"attack":
-			var deck := soldier.global_position
-			at = Vector3(deck.x + 18.0, 3.5, deck.z + 36.0)
-			look = deck.lerp(p, 0.6)
 		_:
 			at = FLOCK_AT + Vector3(-22.0, 30.0, 36.0)
 			look = FLOCK_AT + Vector3.UP * 15.0
@@ -290,15 +271,12 @@ func _finish() -> void:
 	var share: float = cruise.flapping / cruise.time
 	_check(share > 0.1 and share < 0.45 and cruise.bursts >= 2,
 			"cruise: glides most of the time (beating %.0f%% of it, %d bursts)" % [share * 100.0, cruise.bursts])
-	for p in ["circle", "attack"]:
-		var e: Dictionary = _log[p]
-		_check(e.slowest > cruise_speed * 0.8, "%s: never stops (slowest %.1f m/s)" % [p, e.slowest])
-		_check(e.ring_max - e.ring_min < 6.0, "%s: keeps to a ring (%.1f to %.1f m out)" % [p, e.ring_min, e.ring_max])
-		_check(e.bank > 15.0 and e.right < 0.5, "%s: banked left into a counterclockwise turn (bank %.0f°, %.1f s turning right)" % [p, e.bank, e.right])
-		_check(e.left_of > (e.time - 12.0) * 0.8, "%s: the centre off its left wing (%.1f of %.1f s)" % [p, e.left_of, e.time - 12.0])
 	var circle: Dictionary = _log.circle
+	_check(circle.slowest > cruise_speed * 0.8, "circle: never stops (slowest %.1f m/s)" % circle.slowest)
+	_check(circle.ring_max - circle.ring_min < 6.0, "circle: keeps to a ring (%.1f to %.1f m out)" % [circle.ring_min, circle.ring_max])
+	_check(circle.bank > 15.0 and circle.right < 0.5, "circle: banked left into a counterclockwise turn (bank %.0f°, %.1f s turning right)" % [circle.bank, circle.right])
+	_check(circle.left_of > (circle.time - 12.0) * 0.8, "circle: the centre off its left wing (%.1f of %.1f s)" % [circle.left_of, circle.time - 12.0])
 	_check(circle.flapping / circle.time < 0.35, "circle: soars, few wing beats (%.0f%%)" % [circle.flapping / circle.time * 100.0])
-	_check(soldier.hp < _soldier_hp, "attack: the rifleman hit from the ring (%.0f -> %.0f HP)" % [_soldier_hp, maxf(soldier.hp, 0.0)])
 	_check(_closest_pair > 2.5, "flock: the rings keep the five apart (closest %.1f m)" % _closest_pair)
 	for c in _checks:
 		print("TALON CHECK ", c)

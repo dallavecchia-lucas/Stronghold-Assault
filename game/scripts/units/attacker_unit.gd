@@ -10,6 +10,9 @@ extends CharacterBody3D
 ## healer, flying, anti_air).
 
 signal died(unit: AttackerUnit)
+## A Sky Talon's strafe round landed / it dropped its bomb (for showcases and the HUD).
+signal strafe_impact(at: Vector3)
+signal bomb_dropped(bomb: TalonBomb, spot: Vector3)
 
 const HEAL_COLOR := Color(0.35, 1.0, 0.45)
 const AA_COLOR := Color(1.0, 0.9, 0.4)
@@ -52,6 +55,9 @@ var heat := 0.0
 var ram_cd := 0.0
 ## Seconds until the bombardment can be fired again.
 var bombard_cd := 0.0
+## Seconds until the strafe run and the bomb strike can be flown again.
+var strafe_cd := 0.0
+var bomb_cd := 0.0
 ## Gate this ram is charging (RamCharge), and its slot across the doorway.
 var charge_gate: Structure = null:
 	set(g):
@@ -106,6 +112,7 @@ var _trampled := {}
 var _dust_cd := 0.0
 var _butt := 0.0
 var _wisp_cd := 0.0
+var _strafe_shots := 0
 var _hp_bar: Node3D
 var _hp_fill: MeshInstance3D
 var _fire_cd := 0.0
@@ -145,9 +152,9 @@ func is_controllable() -> bool:
 	return is_alive() and not raiding
 
 
-## Medics, rhinos, elephants and bisons never shoot at what they are ordered to attack.
+## Medics, rhinos, elephants, bisons and talons never shoot at what they are ordered to attack.
 func has_basic_attack() -> bool:
-	return role != "healer" and role != "anti_air" and role != "siege"
+	return role != "healer" and role != "anti_air" and role != "siege" and stats.damage > 0.0
 
 
 func has_cluster_bomb() -> bool:
@@ -194,6 +201,27 @@ func has_bombard() -> bool:
 
 func bombard_ready() -> bool:
 	return has_bombard() and bombard_cd <= 0.0 and is_alive()
+
+
+func has_strafe() -> bool:
+	return stats.has("strafe_cooldown")
+
+
+func strafe_ready() -> bool:
+	return has_strafe() and strafe_cd <= 0.0 and is_alive() and not on_run()
+
+
+func has_bomb() -> bool:
+	return stats.has("bomb_cooldown")
+
+
+func bomb_ready() -> bool:
+	return has_bomb() and bomb_cd <= 0.0 and is_alive() and not on_run()
+
+
+## Flying a strafe run or a bomb strike (TalonRun): it flies it through, whatever its orders.
+func on_run() -> bool:
+	return _flight != null and _flight.run != null
 
 
 ## Standing still to lay the gun or after the shot.
@@ -655,6 +683,59 @@ func muzzle_position() -> Vector3:
 	return global_position - global_basis.z * 3.0 + Vector3.UP * stats.height
 
 
+## Talon active: a strafe run from `a` to `b` (TalonRun), firing down the line as it dives along
+## it. False while on cooldown or on another run.
+func start_strafe(a: Vector3, b: Vector3) -> bool:
+	if not strafe_ready():
+		return false
+	strafe_cd = stats.strafe_cooldown
+	_flight.start(TalonRun.new(self, a, b, b - a, false, UnitTypes.FLY_HEIGHT + _flight.height))
+	return true
+
+
+## Talon active: a bomb strike, one bomb dropped on `spot` flying over it (TalonRun). False while
+## on cooldown or on another run.
+func start_bomb(spot: Vector3) -> bool:
+	if not bomb_ready():
+		return false
+	bomb_cd = stats.bomb_cooldown
+	_flight.start(TalonRun.new(self, spot, spot, TalonAim.bomb_dir(self, spot), true, UnitTypes.FLY_HEIGHT + _flight.height))
+	return true
+
+
+## One round of a strafe run, at `at` on the line (put down on what is there, coming down from
+## `level`): from the talon's chest to there, or to whatever is in the way, and a small blast
+## where it lands.
+func strafe_shot(at: Vector3, level: float) -> void:
+	var space := get_world_3d().direct_space_state
+	var to := RhinoAim.settle(space, at, level)
+	var muzzle := global_position + Vector3.UP * TalonFlight.BODY_HEIGHT - global_basis.z * 1.6
+	var q := PhysicsRayQueryParameters3D.create(muzzle, to + (to - muzzle).normalized() * 0.5,
+			GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES, [get_rid()])
+	var hit := space.intersect_ray(q)
+	if not hit.is_empty():
+		to = hit.position
+	Combat.damage_area(self, to, stats.strafe_splash, stats.strafe_damage, team, stats.structure_mult)
+	Combat.spawn_tracer(self, muzzle, to, Combat.ATTACKER_TRACER, 0.06)
+	Combat.spawn_impact(self, to, false)
+	_strafe_shots += 1
+	if _strafe_shots % 3 == 0:
+		Combat.spawn_explosion(self, to, 1.4)
+	strafe_impact.emit(to)
+
+
+## The bomb of a bomb strike, from the talon's belly onto `spot`.
+func drop_bomb(spot: Vector3) -> void:
+	var b := TalonBomb.new()
+	b.team = team
+	b.damage = stats.bomb_damage
+	b.radius = stats.bomb_splash
+	b.structure_mult = stats.bomb_structure_mult
+	get_tree().current_scene.add_child(b)
+	b.drop(global_position + Vector3.UP * (TalonFlight.BODY_HEIGHT - 0.6), spot)
+	bomb_dropped.emit(b, spot)
+
+
 ## Hippo active: three smoke grenades into the cone toward `toward` (HippoSmoke). False while
 ## on cooldown.
 func start_smoke(toward: Vector3) -> bool:
@@ -891,6 +972,10 @@ func _physics_process(delta: float) -> void:
 		ram_cd = maxf(ram_cd - delta, 0.0)
 		if _ram_left > 0.0:
 			_ram_tick(delta)
+	if has_strafe():
+		strafe_cd = maxf(strafe_cd - delta, 0.0)
+	if has_bomb():
+		bomb_cd = maxf(bomb_cd - delta, 0.0)
 	if has_bombard():
 		bombard_cd = maxf(bombard_cd - delta, 0.0)
 		if _bombard_left > 0.0:
@@ -908,8 +993,7 @@ func _physics_process(delta: float) -> void:
 	if is_bombarding():
 		_face(_bombard_aim, delta)  # stands still while it lays the gun and fires
 	elif engaged:
-		if not is_flying():
-			_face(target.global_position, delta)  # flyers fire from the circle they fly round it
+		_face(target.global_position, delta)
 		if _fire_cd <= 0.0 and not is_overheated():
 			_fire_at(target)
 	elif charge_gate:
@@ -922,7 +1006,7 @@ func _physics_process(delta: float) -> void:
 		move_to = _approach(target)
 
 	if is_flying():
-		_fly(move_to, engaged, delta)
+		_fly(move_to, delta)
 		return
 
 	_desired_velocity = Vector3.ZERO
@@ -1001,27 +1085,13 @@ func _follow_route(delta: float) -> void:
 		rotation.y = lerp_angle(rotation.y, atan2(-to.x, -to.z), minf(10.0 * delta, 1.0))
 
 
-## Flyers never stop in the air (TalonFlight): they fly to where they are going and circle there,
-## or round the target they are fighting, close enough to stay in range of it.
-func _fly(move_to, engaged: bool, delta: float) -> void:
-	var round_at: Array
-	if engaged or (order.type == "attack" and Combat.is_valid_target(target)):
-		round_at = _flight.ring_round(target.global_position, TalonFlight.ATTACK_ABOVE, stats.range * 0.85)
-		_circle_at = target.global_position  # with nowhere else to go, it stays on over the fight
-	else:
-		round_at = _flight.ring_round(move_to if move_to != null else _circle_at, UnitTypes.FLY_HEIGHT, INF)
-	var circling := _flight.fly(round_at, _ground_height() + UnitTypes.FLY_HEIGHT, delta)
-	if circling and not engaged and move_to != null and order.type != "attack":
+## Flyers never stop in the air (TalonFlight): they fly to where they are going and circle there
+## (on an attack run, the run steers them instead).
+func _fly(move_to, delta: float) -> void:
+	var round_at := _flight.ring_round(move_to if move_to != null else _circle_at)
+	if _flight.fly(round_at, delta) and move_to != null and order.type != "attack":
 		order = {"type": "idle"}
 		_circle_at = move_to
-
-
-## Height of the terrain (the mountain included) under a flyer, so it cruises over the peak.
-func _ground_height() -> float:
-	var p := global_position
-	var q := PhysicsRayQueryParameters3D.create(Vector3(p.x, 200.0, p.z), Vector3(p.x, -5.0, p.z), GameConfig.LAYER_WORLD)
-	var hit := get_world_3d().direct_space_state.intersect_ray(q)
-	return maxf(hit.position.y, 0.0) if not hit.is_empty() else 0.0
 
 
 func _on_velocity_computed(safe: Vector3) -> void:

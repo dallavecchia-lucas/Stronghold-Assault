@@ -5,7 +5,9 @@ extends RefCounted
 ## strokes lift it back up (taking off and climbing over the mountain it keeps beating). It never
 ## stops in the air: it banks into its turns, and wherever it has nowhere left to go it circles,
 ## counterclockwise seen from above with the centre off its left wing, like a gunship flying a
-## pylon turn: round its destination at the end of a move and round its target in a fight.
+## pylon turn. It looks ahead as it flies and climbs over the mountain in time. On an attack run
+## (TalonRun: a strafe run or a bomb strike) the run steers it instead, and it glides down into
+## the dive without a wing beat.
 ## The Glide and Flap clips come from tools/blender/rig_talon.py.
 
 ## Circling radius (m). Each talon flies its own ring, up to ORBIT_SPREAD wider, and its own
@@ -18,8 +20,8 @@ const HEIGHT_SPREAD := 12.0
 ## a ring moves out from it (away from the middle of the map), and tightens, until it is.
 const CLEARANCE := 8.0
 const MIN_RING := 7.0
-## Circling a target it comes down to ATTACK_ABOVE over it (gunships fly lower than they cruise).
-const ATTACK_ABOVE := 12.0
+## On the way it cruises FLY_HEIGHT over the highest ground under it and this far ahead (m).
+const LOOK_AHEAD := 20.0
 ## Most it turns (rad/s), how fast it rolls into and out of a turn, and its steepest bank.
 const TURN_RATE := 1.2
 const TURN_ACCEL := 1.6
@@ -42,6 +44,8 @@ const BODY_HEIGHT := 1.3
 ## This talon's ring (m) and its cruising height above the others' (m).
 var ring := ORBIT_RADIUS
 var height := 0.0
+## The attack run it is on, if any.
+var run: TalonRun = null
 
 var _unit: AttackerUnit
 var _anim: AnimationPlayer
@@ -53,11 +57,8 @@ var _level := 0.0  # above (+) or below (-) its cruising height, from gliding an
 var _beats := 0.0  # wing beats left in this burst
 var _glide := 0.0  # seconds of gliding left before the next burst
 var _circling := false
-## The last ring worked out (ring_round): the point, height over it and reach it was for, and
-## [centre, radius, height].
+## The last ring worked out (ring_round): the point it was for, and [centre, radius, height].
 var _ring_for := Vector3.INF
-var _ring_above := 0.0
-var _ring_reach := 0.0
 var _ring: Array = []
 
 
@@ -76,76 +77,97 @@ func _init(unit: AttackerUnit, anim: AnimationPlayer) -> void:
 	_glide = randf_range(0.5, 2.0)
 
 
-## The ring to fly round `point`, `above` metres over the ground there (or over the point itself,
-## when it is up on the mountain), within `reach` of it (in a straight line): [centre, radius,
-## height]. Rings stay level and clear of the ground; if there is no way to keep one in reach it
-## goes round the point itself, as high as it has to.
-func ring_round(point: Vector3, above: float, reach: float) -> Array:
-	if _ring_for.distance_to(point) < 1.5 and above == _ring_above and reach == _ring_reach:
+## The ring to fly round `point`, FLY_HEIGHT over the ground there (or over the point itself,
+## when it is up on the mountain): [centre, radius, height]. Rings stay level and clear of the
+## ground; if there is no way to keep one so, it goes round the point itself, as high as it has to.
+func ring_round(point: Vector3) -> Array:
+	if _ring_for.distance_to(point) < 1.5:
 		return _ring
 	_ring_for = point
-	_ring_above = above
-	_ring_reach = reach
 	var base := maxf(point.y, _ground_at(point))
-	var top := base + maxf(above + height, CLEARANCE + 1.0)
-	var span := sqrt(maxf(reach * reach - pow(top - point.y, 2.0), 0.0))  # how far out it may go
+	var top := base + UnitTypes.FLY_HEIGHT + height
 	var out := Vector3(point.x, 0.0, point.z)
 	out = out.normalized() if out.length() > 1.0 else Vector3.FORWARD
 	var r := ring
 	while r >= MIN_RING:
 		for s in range(0, 31, 3):
-			if s + r > span:
-				break
 			var c := point + out * s
 			if _highest(c, r) <= top - CLEARANCE:
 				_ring = [c, r, top]
 				return _ring
 		r *= 0.8
-	_ring = [point, minf(ring, maxf(span, MIN_RING)), maxf(top, _highest(point, ring) + CLEARANCE)]
+	_ring = [point, ring, maxf(top, _highest(point, ring) + CLEARANCE)]
 	return _ring
 
 
-## Flies one step on toward `round_at` ([centre, radius, height], from ring_round) and on round it.
-## On the way it keeps cruising_y (FLY_HEIGHT over the ground below); on the ring, the ring's
-## height. True once it is circling.
-func fly(round_at: Array, cruising_y: float, delta: float) -> bool:
+## Starts an attack run; it flies it before anything else.
+func start(p_run: TalonRun) -> void:
+	run = p_run
+
+
+## Flies one step: on its attack run if it is on one, else on toward `round_at` ([centre, radius,
+## height], from ring_round) and on round it. On the way it cruises FLY_HEIGHT over the ground
+## under it and ahead; on the ring, at the ring's height. True once it is circling.
+func fly(round_at: Array, delta: float) -> bool:
 	var u := _unit
-	var center: Vector3 = round_at[0]
-	var radius: float = round_at[1]
-	var r := Vector2(u.global_position.x - center.x, u.global_position.z - center.z)
-	var d := r.length()
-	_circling = d < radius * 1.3
-	# A field that leads in toward the centre from far off and onto the ring close in
-	# (counterclockwise: the tangent is the radius turned a quarter left).
+	var cruise: float = u.stats.speed
+	var cruising_y := _cruising() + height
 	var want := Vector2(-sin(u.rotation.y), -cos(u.rotation.y))
-	var along := 0.0  # how much of the way is round the ring: it turns steadily into it
-	if d > 0.01:
-		var rn := r / d
-		var tangent := Vector2(rn.y, -rn.x)
-		var d2 := d * d
-		var r2 := radius * radius
-		along = 2.0 * d * radius / (d2 + r2)
-		want = -rn * (d2 - r2) / (d2 + r2) + tangent * along
-	var error := angle_difference(u.rotation.y, atan2(-want.x, -want.y))
-	var turn := error * 2.0 + _speed / radius * along
+	var turn := 0.0
+	var y := cruising_y
+	var fast := 1.0
+	if run:
+		var steer := run.steer(cruising_y, _speed, delta)
+		if run.phase == TalonRun.Phase.DONE:
+			run = null
+		want = steer.want
+		y = steer.y
+		fast = steer.speed
+		_circling = false
+	else:
+		var center: Vector3 = round_at[0]
+		var radius: float = round_at[1]
+		var r := Vector2(u.global_position.x - center.x, u.global_position.z - center.z)
+		var d := r.length()
+		_circling = d < radius * 1.3
+		# A field that leads in toward the centre from far off and onto the ring close in
+		# (counterclockwise: the tangent is the radius turned a quarter left).
+		if d > 0.01:
+			var rn := r / d
+			var tangent := Vector2(rn.y, -rn.x)
+			var d2 := d * d
+			var r2 := radius * radius
+			var along := 2.0 * d * radius / (d2 + r2)  # how much of the way is round the ring
+			want = -rn * (d2 - r2) / (d2 + r2) + tangent * along
+			turn = _speed / radius * along  # it turns steadily into the ring
+		if _circling:
+			y = round_at[2]
+	turn += angle_difference(u.rotation.y, atan2(-want.x, -want.y)) * 2.0
 	_turn = move_toward(_turn, clampf(turn, -TURN_RATE, TURN_RATE), TURN_ACCEL * delta)
 	u.rotation.y = wrapf(u.rotation.y + _turn * delta, -PI, PI)
 
-	var cruise: float = u.stats.speed
-	_speed = move_toward(_speed, cruise * (1.08 if _beats > 0.0 else 1.0), cruise * 0.25 * delta)
-	var y: float = round_at[2] if _circling else cruising_y + height
+	_speed = move_toward(_speed, cruise * fast * (1.08 if _beats > 0.0 else 1.0), cruise * 0.25 * delta)
+	var diving := run != null and run.phase == TalonRun.Phase.RUN
+	if run:
+		_level = move_toward(_level, 0.0, delta)  # on a run it keeps to its plan
 	var climb := y + _level - u.global_position.y
-	_wings(climb, delta)
+	_wings(climb, delta, diving)
 	var fwd := -u.global_basis.z
-	u.velocity = Vector3(fwd.x * _speed, clampf(climb * 1.2, -4.0, 6.0), fwd.z * _speed)
+	# On a run it dives and pulls up harder than it climbs and sinks cruising.
+	var vy := clampf(climb * 2.5, -12.0, 12.0) if run else clampf(climb * 1.2, -4.0, 6.0)
+	u.velocity = Vector3(fwd.x * _speed, vy, fwd.z * _speed)
 	u.global_position += u.velocity * delta
 	return _circling
 
 
 ## Glide or beat the wings: bursts of a few beats every few seconds (further apart while circling,
-## where it soars), and for as long as it has to climb.
-func _wings(climb: float, delta: float) -> void:
-	var labouring := climb > 2.0
+## where it soars), and for as long as it has to climb; none while it dives on a run.
+func _wings(climb: float, delta: float, diving: bool) -> void:
+	var labouring := climb > 2.0 and not diving
+	if diving and _beats > 0.0:
+		_beats = 0.0
+		_anim.play("Glide", 0.3)
+		_anim.speed_scale = 1.0
 	if _beats > 0.0:
 		_level = minf(_level + CLIMB_RATE * delta, RISE_MAX)
 		_beats -= delta * _anim.speed_scale / BEAT
@@ -160,7 +182,7 @@ func _wings(climb: float, delta: float) -> void:
 	var lowest := -SOAR_MAX if _circling else -SINK_MAX
 	_level = maxf(_level - (SOAR_RATE if _circling else SINK_RATE) * delta, lowest)
 	_glide -= delta
-	if _glide <= 0.0 or _level <= lowest or labouring:
+	if not diving and (_glide <= 0.0 or _level <= lowest or labouring):
 		_beats = randi_range(2, 3)
 		_anim.play("Flap", 0.3)
 
@@ -170,7 +192,7 @@ func animate(model: Node3D, delta: float) -> void:
 	var g: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 	var bank := clampf(atan(_speed * _turn / g), -MAX_BANK, MAX_BANK)
 	_bank = lerpf(_bank, bank, minf(delta * 4.0, 1.0))
-	var pitch := clampf(atan2(_unit.velocity.y, maxf(_speed, 1.0)) * 0.7, -0.3, 0.35)
+	var pitch := clampf(atan2(_unit.velocity.y, maxf(_speed, 1.0)) * 0.8, -0.6, 0.5)
 	_pitch = lerpf(_pitch, pitch, minf(delta * 3.0, 1.0))
 	model.rotation = Vector3(_pitch, 0.0, _bank)
 	model.position = Vector3.UP * BODY_HEIGHT
@@ -180,6 +202,15 @@ func animate(model: Node3D, delta: float) -> void:
 func die() -> void:
 	_anim.play("Flap", 0.15)
 	_anim.speed_scale = 1.8
+
+
+## Highest ground under it and up to LOOK_AHEAD ahead, plus FLY_HEIGHT.
+func _cruising() -> float:
+	var fwd := -_unit.global_basis.z
+	var h := 0.0
+	for d in [0.0, LOOK_AHEAD * 0.5, LOOK_AHEAD]:
+		h = maxf(h, _ground_at(_unit.global_position + fwd * d))
+	return h + UnitTypes.FLY_HEIGHT
 
 
 ## Highest ground under a ring (its centre and twelve points round it).
