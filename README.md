@@ -152,6 +152,7 @@ python3 tools/video/cut_showcase.py aa.avi aa.log media/aa_squad_showcase.mp4
 
 ```sh
 godot --path game --headless --fixed-fps 30 res://scenes/dev/bison_showcase.tscn -- --test  # prints and checks: BISON SHOWCASE PASS / FAIL
+godot --path game --rendering-driver opengl3 --resolution 1280x720 --fixed-fps 30 res://scenes/dev/bison_showcase.tscn -- --snap=9,24 --snap-out=/tmp/bison  # just those frames
 godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie bison.avi --fixed-fps 30 res://scenes/dev/bison_showcase.tscn
 ```
 

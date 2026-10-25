@@ -12,15 +12,20 @@ extends Node3D
 ##   godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie bison.avi \
 ##       --fixed-fps 30 res://scenes/dev/bison_showcase.tscn
 ##
+## --snap=t1,t2,.. --snap-out=prefix draws and saves only the frames at those times, for checking
+## shots without recording the whole run.
 ## --test prints where the shells land and what they hit, and checks it at the end (BISON
 ## SHOWCASE PASS / FAIL). The garrison's posts hold fire, and their machines don't get repaired.
 
 ## The bisons: the lone one, then the group, out in the south field. Their shells fly 60-75 m.
-const SOLO_AT := Vector3(-14.0, 0.0, 142.0)
+const SOLO_AT := Vector3(-8.0, 0.0, 140.0)
 const GROUP_AT := [Vector3(4.0, 0.0, 136.0), Vector3(10.0, 0.0, 136.0), Vector3(7.0, 0.0, 142.0),
 		Vector3(13.0, 0.0, 142.0)]
 ## The south deck's riflemen the group aims between (LevelBuilder.RIFLE_POSTS: south bays 2 and 4).
 const DECK_SOLDIERS := ["Soldier_south_2", "Soldier_south_4"]
+## How far out the view is over the bisons, and up at the face while aiming.
+const FIELD_ZOOM := 46.0
+const FACE_ZOOM := 30.0
 ## The run, in seconds: [start, phase].
 const SCRIPT := [[0.0, "intro"], [2.5, "solo_deck"], [15.0, "solo_roof"], [27.5, "group_deck"],
 		[40.0, "group_roof"], [52.5, "outro"], [55.0, "end"]]
@@ -53,10 +58,18 @@ var _pan_t := Vector2.ZERO
 var _caption: Label
 var _keycap: Label
 var _status: Label
+var _snaps: Array = []
+var _snap_out := "snap"
+var _snapping := false
 
 
 func _ready() -> void:
 	test = "--test" in OS.get_cmdline_user_args()
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--snap="):
+			_snaps = Array(arg.get_slice("=", 1).split(",")).map(func(x): return float(x))
+		elif arg.begins_with("--snap-out="):
+			_snap_out = arg.get_slice("=", 1)
 	level = LevelBuilder.new()
 	add_child(level)
 	level.build()
@@ -87,7 +100,7 @@ func _ready() -> void:
 	rig.pitch = deg_to_rad(-50.0)
 	rig._target_zoom = 46.0
 	rig.zoom = 46.0
-	rig.focus(SOLO_AT + Vector3(10, 0, -12))
+	rig.focus(SOLO_AT + Vector3(10, 0, -8))
 	_pan_from = rig.position
 	_pan_to = rig.position
 	_build_overlay()
@@ -101,6 +114,7 @@ func _start() -> void:
 		group.append(_bison(p))
 	for n in [mg, mortar] + deck_soldiers:
 		print("BISON %s at %s, %.0f m from the lone bison" % [n.name, n.global_position, _flat(n.global_position, SOLO_AT)])
+	print("BISON VIDEO START frame %d" % Engine.get_frames_drawn())  # the navmesh bake comes before it
 	t = 0.0
 
 
@@ -143,6 +157,21 @@ func _process(delta: float) -> void:
 	_update_cursor()
 	_update_pan(delta)
 	_update_status()
+	if not _snaps.is_empty():
+		_snap()
+
+
+func _snap() -> void:
+	RenderingServer.render_loop_enabled = t >= _snaps[0] - 0.05
+	if t >= _snaps[0] and not _snapping:
+		_snapping = true
+		var at: float = _snaps[0]
+		await RenderingServer.frame_post_draw
+		get_viewport().get_texture().get_image().save_png("%s_%04.1f.png" % [_snap_out, at])
+		_snaps.pop_front()
+		_snapping = false
+		if _snaps.is_empty():
+			get_tree().quit()
 
 
 ## One bombardment the way the player does it: select (click the lone bison, or drag a box round
@@ -161,6 +190,7 @@ func _bombard_step(units: Array, click: AttackerUnit, aim: Vector3, caption: Str
 				u.bombard_cd = 0.0
 		controller._set_selection([])
 		_pan(centre + Vector3(0, 0, -10), 0.0, 1.0)
+		rig._target_zoom = FIELD_ZOOM
 		_cursor_on = null
 	if _phase_at(1.2, "select"):
 		if click:
@@ -184,7 +214,9 @@ func _bombard_step(units: Array, click: AttackerUnit, aim: Vector3, caption: Str
 		_keycap.visible = true
 	if _phase_at(3.9, "pan"):
 		_keycap.visible = false
-		_pan(Vector3(aim.x, 0.0, aim.z + 20.0), 3.9, 6.0)
+		# Over the face the view rides up to the deck or the roof under it, which centres them.
+		_pan(Vector3(aim.x, 0.0, aim.z + 1.0), 3.9, 6.0)
+		rig._target_zoom = FACE_ZOOM
 	if _phase_at(4.6, "aim"):
 		_cursor_on = null
 		_move_cursor(_screen(aim), 4.6, 6.4)
