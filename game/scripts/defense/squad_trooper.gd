@@ -1,14 +1,15 @@
 class_name SquadTrooper
 extends CharacterBody3D
-## One trooper of a defender squad (DefenderSquad): a Gunner Squad's Heavy Gunner or an AA Squad's
-## Missile Trooper. The squad tells it where to stand (goal) and where to aim (aim_point); the
-## trooper walks there itself, around whatever is in the way, and faces its aim. The squad's leader
-## is driven instead (drive()), from the player's keys or the squad's AI. What it fights with comes
-## from the subclass (_build_weapon(), _weapon_tick()).
+## One trooper of a defender squad (DefenderSquad): a Gunner Squad's Heavy Gunner, an AA Squad's
+## Missile Trooper or a Flame Squad's Flame Trooper. The squad tells it where to stand (goal) and
+## where to aim (aim_point); the trooper walks there itself, around whatever is in the way, and
+## faces its aim. The squad's leader is driven instead (drive()), from the player's keys or the
+## squad's AI. What it fights with comes from the subclass (_build_weapon(), _weapon_tick()).
 ##
 ## Animation: the rigged model's eight walk clips sit around Idle in a 2D blend space, by where
-## the trooper is going relative to where it faces, sped up past their natural speeds. Both models'
-## clips are baked at the same speeds (tools/blender/rig_heavy_gunner.py, rig_missile_trooper.py).
+## the trooper is going relative to where it faces, sped up past their natural speeds. The models'
+## clips are all baked at the same speeds (tools/blender/rig_heavy_gunner.py, rig_missile_trooper.py,
+## rig_flame_trooper.py).
 ## The rig (a TrooperRig) bends the spine onto the aim.
 
 signal died(trooper: SquadTrooper)

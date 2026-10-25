@@ -7,12 +7,13 @@ extends CanvasLayer
 ##
 ## The roster of bought squads (DefenderArmory) sits in a hotbar at the bottom (SquadHotbar):
 ## F1-F6 takes command of a squad, Ctrl+F1-F6 changes its auto order without leaving the post
-## the player is on, and B buys another AA Squad.
+## the player is on, B buys another AA Squad and N a Flame Squad.
 
 const THREAT_RADIUS := 45.0
 const SWITCH_FADE := 0.18
 const ROSTER_KEYS := [KEY_F1, KEY_F2, KEY_F3, KEY_F4, KEY_F5, KEY_F6]
 const BUY_KEY := KEY_B
+const BUY_FLAME_KEY := KEY_N
 
 var level: LevelBuilder
 ## The defenders' credits and bought squads; null: no roster.
@@ -72,6 +73,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.physical_keycode == BUY_KEY:
 			buy_squad()
 			return
+		if event.physical_keycode == BUY_FLAME_KEY:
+			buy_squad("flame")
+			return
 	for i in mini(stations.size(), 10):
 		if event.is_action_pressed("slot_%d" % (i + 1)):
 			select_station(i)
@@ -98,31 +102,33 @@ func select_squad(k: int, instant := false) -> void:
 	_switch_to(armory.squads[k], instant)
 
 
-## Ctrl+F<n>: the k-th squad's next auto order (MINES / GUARD), wherever the player is.
+## Ctrl+F<n>: the k-th squad's next auto order (MINES / GUARD, CLEAR / GUARD), wherever the
+## player is.
 func cycle_squad_order(k: int) -> void:
 	if armory == null or k < 0 or k >= armory.squads.size():
 		return
-	var s: AASquad = armory.squads[k]
+	var s: DefenderSquad = armory.squads[k]
 	s.cycle_order()
-	_flash_prompt("%s: %s" % [s.station_name, AASquad.ORDER_NAMES[s.order]])
+	_flash_prompt("%s: %s" % [s.station_name, s.order_name()])
 
 
-## B: buys an AA Squad if there are the credits and room on the roster.
-func buy_squad() -> AASquad:
+## B: buys an AA Squad (N: a Flame Squad, `kind` "flame") if there are the credits and room on the
+## roster.
+func buy_squad(kind := "aa") -> DefenderSquad:
 	if armory == null:
 		return null
 	if armory.squads.size() >= DefenderArmory.MAX_SQUADS:
 		_flash_prompt("The roster is full")
 		return null
-	if not armory.can_buy():
-		_flash_prompt("Not enough credits (%d of %d)" % [int(armory.credits), DefenderArmory.AA_COST])
+	if not armory.can_buy(kind):
+		_flash_prompt("Not enough credits (%d of %d)" % [int(armory.credits), DefenderArmory.COSTS[kind]])
 		return null
-	var s := armory.buy()
+	var s := armory.buy(kind)
 	_flash_prompt("%s deployed · F%d to take command" % [s.station_name, armory.squads.find(s) + 1])
 	return s
 
 
-func _on_squad_bought(s: AASquad) -> void:
+func _on_squad_bought(s: DefenderSquad) -> void:
 	s.became_unavailable.connect(_on_station_unavailable)
 
 
@@ -339,5 +345,5 @@ func _process(delta: float) -> void:
 	else:
 		_weapon_label.text = "No post"
 		_status_label.text = "—"
-		_hint_label.text = "Number keys or Tab to take over a post" + (" · F1-F6 a squad · B buy an AA Squad" if armory else "")
+		_hint_label.text = "Number keys or Tab to take over a post" + (" · F1-F6 a squad · B buy an AA Squad · N a Flame Squad" if armory else "")
 		_heat_bar.visible = false

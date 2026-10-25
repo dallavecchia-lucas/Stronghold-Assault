@@ -83,6 +83,12 @@ const FORESTS := [[42.0, 140.0, 16.0], [-44.0, 150.0, 18.0], [135.0, 125.0, 24.0
 ## Ground per tree in a grove (m²), and the closest two grove trees stand.
 const FOREST_AREA_PER_TREE := 45.0
 const FOREST_TREE_SPACING := 4.5
+## Inside a grove, a spot is forest while a tree still stands this close to it (m): burnt down, the
+## ground is open (ForestTree).
+const FOREST_NEAR := 8.0
+## Once a burnt tree has fallen the navmesh is rebaked without it, this long after the first of a
+## run of them (s), so trees falling one after another make one rebake.
+const REBAKE_DELAY := 6.0
 
 var nav_region: NavigationRegion3D
 var keep: Structure
@@ -96,6 +102,7 @@ var _stronghold: Node3D
 var _baking := false
 var _rebake_queued := false
 var _first_bake_done := false
+var _clearing := false
 
 
 func build() -> void:
@@ -137,6 +144,17 @@ func rebake_navigation() -> void:
 		return
 	_baking = true
 	nav_region.bake_navigation_mesh(true)
+
+
+## Something that blocked the way is gone (a burnt tree has fallen): rebake the navmesh soon,
+## once for a run of them.
+func clear_obstacle() -> void:
+	if _clearing:
+		return
+	_clearing = true
+	get_tree().create_timer(REBAKE_DELAY, false).timeout.connect(func():
+		_clearing = false
+		rebake_navigation())
 
 
 func _on_bake_finished() -> void:
@@ -255,12 +273,28 @@ func _marker(marker_name: String) -> Node3D:
 	return _stronghold.find_child(marker_name, true, false) as Node3D
 
 
-## True if `p` stands inside one of the forest groves.
-static func in_forest(p: Vector3) -> bool:
-	for f in FORESTS:
+## Index into FORESTS of the grove `p` stands in, or -1.
+static func grove_at(p: Vector3) -> int:
+	for k in FORESTS.size():
+		var f: Array = FORESTS[k]
 		if Vector2(p.x - f[0], p.z - f[1]).length() <= f[2]:
+			return k
+	return -1
+
+
+## True if `p` stands in forest: inside one of the groves, with trees still standing round it.
+static func in_forest(p: Vector3) -> bool:
+	if grove_at(p) < 0:
+		return false
+	for t in ForestTree.standing:
+		if Vector2(p.x - t.global_position.x, p.z - t.global_position.z).length() <= FOREST_NEAR:
 			return true
 	return false
+
+
+## How far `p` is from the base: from the mountain's footprint, flat (0 on or inside it).
+static func base_distance(p: Vector3) -> float:
+	return Vector2(maxf(absf(p.x) - MOUNTAIN_HALF, 0.0), maxf(absf(p.z) - MOUNTAIN_HALF, 0.0)).length()
 
 
 ## Link for infiltrators only, along `route` (world points, walked or climbed in order).
@@ -419,7 +453,7 @@ func _build_scenery() -> void:
 	while placed < 100 and tries < 4000:
 		tries += 1
 		var p := Vector3(rng.randf_range(-MAP_HALF + 5, MAP_HALF - 5), 0, rng.randf_range(-MAP_HALF + 5, MAP_HALF - 5))
-		if _off_limits(p, lanes) or in_forest(p):
+		if _off_limits(p, lanes) or grove_at(p) >= 0:
 			continue
 		if rng.randf() < 0.55:
 			_tree(p, rng)
@@ -457,23 +491,19 @@ func _build_forests(rng: RandomNumberGenerator, lanes: Array) -> void:
 			_tree(p, rng)
 
 
-func _tree(p: Vector3, rng: RandomNumberGenerator) -> void:
-	var h := rng.randf_range(6.0, 11.0)
-	var body := StaticBody3D.new()
-	body.collision_layer = GameConfig.LAYER_WORLD
-	body.collision_mask = 0
-	body.position = p
-	var cs := CollisionShape3D.new()
-	var trunk := CylinderShape3D.new()
-	trunk.radius = 0.4
-	trunk.height = h * 0.5
-	cs.shape = trunk
-	cs.position.y = h * 0.25
-	body.add_child(cs)
-	var model := Props.instance(Props.TREES[rng.randi() % Props.TREES.size()], h)
+## A tree that burns (ForestTree), `h` tall (random if 0), one of `models` (Props paths).
+func _tree(p: Vector3, rng: RandomNumberGenerator, h := 0.0, models: Array = Props.TREES) -> ForestTree:
+	if h <= 0.0:
+		h = rng.randf_range(6.0, 11.0)
+	var path: String = models[rng.randi() % models.size()]
+	var model := Props.instance(path, h)
 	model.rotation.y = rng.randf() * TAU
-	body.add_child(model)
-	nav_region.add_child(body)
+	var fp := Props.footprint(path, h)
+	var tree := ForestTree.new()
+	tree.position = p
+	tree.setup(h, model, maxf(fp.x, fp.y) * 0.5, grove_at(p))
+	nav_region.add_child(tree)
+	return tree
 
 
 func _rock(p: Vector3, rng: RandomNumberGenerator) -> void:

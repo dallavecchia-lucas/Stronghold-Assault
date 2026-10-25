@@ -1,16 +1,19 @@
 class_name DefenderArmory
 extends Node
-## The defenders' war chest: credits that come in over time and buy AA Squads (AASquad). A bought
-## squad deploys in a gate spawn hall (east, west and south in turn, behind the Gunner Squad in the
-## south one), joins the roster (the hotbar: DefenderController) and sets out on its auto order. It
-## leaves the roster when all its troopers are down.
+## The defenders' war chest: credits that come in over time and buy squads: AA Squads (AASquad) and
+## Flame Squads (FlameSquad). A bought squad deploys in a gate spawn hall (east, west and south in
+## turn, behind the Gunner Squad in the south one), joins the roster (the hotbar: DefenderController)
+## and sets out on its auto order. It leaves the roster when all its troopers are down.
 
-signal squad_bought(squad: AASquad)
-signal squad_lost(squad: AASquad)
+signal squad_bought(squad: DefenderSquad)
+signal squad_lost(squad: DefenderSquad)
 
 const START_CREDITS := 400.0
 const INCOME := 6.0
 const AA_COST := 350
+const FLAME_COST := 300
+## What each kind costs.
+const COSTS := {"aa": AA_COST, "flame": FLAME_COST}
 ## One per hotbar key (F1-F6).
 const MAX_SQUADS := 6
 ## Spawn halls the squads deploy in, in turn, and where in each hall (SPAWN_<face>3's frame, like
@@ -22,29 +25,33 @@ var level: LevelBuilder
 var credits := START_CREDITS
 var income := INCOME
 ## Squads on the roster, in hotbar order.
-var squads: Array[AASquad] = []
+var squads: Array[DefenderSquad] = []
 
 var _bought := 0
+## Squads bought of each kind (they are numbered by kind: AA Squad 2, Flame Squad 1).
+var _numbers := {"aa": 0, "flame": 0}
 
 
 func _process(delta: float) -> void:
 	credits += income * delta
 
 
-func can_buy() -> bool:
-	return credits >= AA_COST and squads.size() < MAX_SQUADS
+func can_buy(kind := "aa") -> bool:
+	return credits >= COSTS[kind] and squads.size() < MAX_SQUADS
 
 
-## Buys an AA Squad and deploys it; null if there aren't the credits or the roster is full.
-func buy() -> AASquad:
-	if not can_buy():
+## Buys a squad of `kind` ("aa", "flame") and deploys it; null if there aren't the credits or the
+## roster is full.
+func buy(kind := "aa") -> DefenderSquad:
+	if not can_buy(kind):
 		return null
-	credits -= AA_COST
+	credits -= COSTS[kind]
 	_bought += 1
+	_numbers[kind] += 1
 	var hall: String = HALLS[(_bought - 1) % HALLS.size()]
-	var squad := AASquad.new()
-	squad.setup(_bought)
-	squad.name = "AASquad%d" % _bought
+	var squad: DefenderSquad = FlameSquad.new() if kind == "flame" else AASquad.new()
+	squad.setup(_numbers[kind])
+	squad.name = ("FlameSquad%d" if kind == "flame" else "AASquad%d") % _numbers[kind]
 	squad.home = level.squad_post(hall, POST_OFFSETS[hall])
 	squad.gates = level.gates.values()
 	squad.wiped_out.connect(_on_wiped_out)
@@ -54,7 +61,7 @@ func buy() -> AASquad:
 	return squad
 
 
-func _on_wiped_out(squad: AASquad) -> void:
+func _on_wiped_out(squad: DefenderSquad) -> void:
 	squads.erase(squad)
 	squad_lost.emit(squad)
 	# The fallen troopers finish going down before the squad goes.
