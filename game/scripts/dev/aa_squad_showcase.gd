@@ -200,7 +200,7 @@ func _deploy() -> void:
 	dc.armory = armory
 	add_child(dc)
 	for k in 3:
-		aa.append(dc.buy_squad())
+		aa.append(dc.buy_squad() as AASquad)
 	# Out in the south field (they deployed in the spawn halls): AA 1 and AA 2 facing south, AA 3
 	# by the perimeter.
 	_place(aa[0], AA1_AT, PI)

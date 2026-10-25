@@ -126,11 +126,12 @@ func _autotest_step(delta: float) -> void:
 		_autotest_events = step
 		if player_controller is DefenderController:
 			var dc: DefenderController = player_controller
-			# Buy two AA Squads early, drive them now and then and swap their orders.
+			# Buy two AA Squads and a Flame Squad early, drive them now and then and swap their orders.
 			if step == 2:
-				armory.credits += DefenderArmory.AA_COST
+				armory.credits += DefenderArmory.AA_COST + DefenderArmory.FLAME_COST
 				dc.buy_squad()
 				dc.buy_squad()
+				dc.buy_squad("flame")
 			if step % 7 == 5:
 				for s in armory.squads:
 					s.cycle_order()
@@ -176,5 +177,6 @@ func _autotest_report() -> void:
 			_autotest_t, commander.units.size(), commander.supply, level.keep.hp, ", ".join(gates)])
 	if armory:
 		for s in armory.squads:
-			print("AUTOTEST %s alive=%d order=%s plan=%s mines_down=%d stats=%s" % [s.station_name, s.troopers.size(),
-					AASquad.ORDER_NAMES[s.order], s.plan, s.mines.size(), s.stats])
+			var extra := "mines_down=%d" % (s as AASquad).mines.size() if s is AASquad else "trees_burnt=%d" % (s as FlameSquad).burnt.size()
+			print("AUTOTEST %s alive=%d order=%s plan=%s %s stats=%s" % [s.station_name, s.troopers.size(),
+					s.order_name(), s.get("plan"), extra, s.get("stats")])

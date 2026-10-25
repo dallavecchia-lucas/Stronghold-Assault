@@ -215,6 +215,35 @@ func get_hud_info() -> Dictionary:
 			"hint": "WASD move · RMB on an aircraft for 3 s: lock on · LMB missiles (locked) or rocket strike (ground) · F mines · V order (%s)" % ORDER_NAMES[order]}
 
 
+func roster_label() -> String:
+	return "AA %d" % number
+
+
+func order_name() -> String:
+	return ORDER_NAMES[order]
+
+
+func order_color() -> Color:
+	return MINE_LINE if order == Order.MINES else UIKit.WARN
+
+
+## True while the slot should catch the eye (locked on).
+func alert() -> bool:
+	return locked
+
+
+func doing(driving: bool) -> String:
+	if locked:
+		return "LOCKED"
+	if lock_target != null:
+		return "LOCKING"
+	if driving:
+		return "YOU"
+	if order == Order.GUARD:
+		return "HOLDING"
+	return {"here": "LAYING", "return": "TO BASE", "perimeter": "PERIMETER"}.get(plan, "")
+
+
 ## Next auto order (MINES -> GUARD -> MINES). Takes effect at once if nobody drives the squad.
 func cycle_order() -> void:
 	set_order(((order + 1) % ORDER_NAMES.size()) as Order)

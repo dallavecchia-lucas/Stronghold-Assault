@@ -1,15 +1,15 @@
 class_name DefenderSquad
 extends Node3D
 ## A defender post of five troopers (SquadTrooper) that the player takes over in third person: the
-## Gunner Squad and the AA Squads. The player drives the trooper in the middle of the formation;
-## the other four follow it (SquadFormation: a wedge in the open, squeezing in and filing behind the
-## leader through tunnels, around trees and rocks) and aim wherever the player aims. Blast doors open
-## for the squad as it comes up to them (Structure.hold_open), so it can sally out through a
-## standing gate. Left to itself the squad runs its own AI (_ai_control). Lost troopers are replaced
-## one at a time from the post; when all five are down the squad is gone for RESPAWN_TIME (or for
-## good, if it doesn't respawn). If the leader falls, the trooper nearest it takes the lead (and the
-## player's camera and keys) and the others follow it as they did the old one, a column walking on
-## down the same trail.
+## Gunner Squad, the AA Squads and the Flame Squads. The player drives the trooper in the middle of
+## the formation; the other four follow it (SquadFormation: a wedge in the open, squeezing in and
+## filing behind the leader through tunnels, around trees and rocks) and aim wherever the player
+## aims. Blast doors open for the squad as it comes up to them (Structure.hold_open), so it can
+## sally out through a standing gate. Left to itself the squad runs its own AI (_ai_control). Lost
+## troopers are replaced one at a time from the post; when all five are down the squad is gone for
+## RESPAWN_TIME (or for good, if it doesn't respawn). If the leader falls, the trooper nearest it
+## takes the lead (and the player's camera and keys) and the others follow it as they did the old
+## one, a column walking on down the same trail.
 ##
 ## What the troopers fight with, and the squad's AI, come from the subclass.
 ##
@@ -82,6 +82,10 @@ var input := {"move": Vector2.ZERO, "fire": false, "aim": false, "hustle": false
 var heading := 0.0
 ## Where each follower was sent (world), for the HUD map.
 var goals := {}
+## Followers off on work of their own (a Flame Squad's troopers each burning a tree), trooper ->
+## world point: they walk there instead of to their place in the formation, and the subclass aims
+## them. Taken out of it, a trooper falls back in.
+var free := {}
 
 var hp: float:
 	get:
@@ -116,6 +120,38 @@ var _walled := {}
 ## A new trooper of the squad's kind (not yet in the tree).
 func _new_trooper() -> SquadTrooper:
 	return null
+
+
+## Names a bought squad after its purchase number (DefenderArmory).
+func setup(_n: int) -> void:
+	pass
+
+
+## For the roster of bought squads (SquadHotbar): its name in a slot, its auto order (and the
+## colour it is shown in), whether the slot should catch the eye, and a word on what it is up to.
+func roster_label() -> String:
+	return station_name
+
+
+func order_name() -> String:
+	return ""
+
+
+func order_color() -> Color:
+	return UIKit.WARN
+
+
+func alert() -> bool:
+	return false
+
+
+func doing(_driving: bool) -> String:
+	return ""
+
+
+## Next auto order (Ctrl+F<n>, or V while driving the squad).
+func cycle_order() -> void:
+	pass
 
 
 func _ready() -> void:
@@ -214,6 +250,7 @@ func _share_exclusions() -> void:
 func _on_trooper_died(t: SquadTrooper) -> void:
 	troopers.erase(t)
 	goals.erase(t)
+	free.erase(t)
 	_on_trail.erase(t)
 	_trail_rest.erase(t)
 	_walled.erase(t)
@@ -422,6 +459,15 @@ func _update_followers(delta: float) -> void:
 	goals.clear()
 	for i in followers.size():
 		var f := followers[i]
+		if free.has(f):
+			f.goal = free[f]
+			goals[f] = f.goal
+			f.trail_point = Vector3.INF
+			_on_trail[f] = false
+			f.pace = Vector3.ZERO
+			f.following = true
+			f.set_priority(0.6)
+			continue
 		var slot := formation.slot_of(i)
 		var back_to := 0.0
 		var side := 0.0

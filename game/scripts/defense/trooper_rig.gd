@@ -2,8 +2,8 @@ class_name TrooperRig
 extends SkeletonModifier3D
 ## Poses a squad trooper's upper body after its walk / idle clips: the spine bends and turns onto
 ## the aim. Subclasses pose the weapon on top (_pose_weapon). Bone names come from
-## tools/blender/rig_heavy_gunner.py and rig_missile_trooper.py, which share the body's; the
-## models' front is +Z and their left +X.
+## tools/blender/rig_heavy_gunner.py, rig_missile_trooper.py and rig_flame_trooper.py, which share
+## the body's; the models' front is +Z and their left +X.
 
 ## Share of the aim each spine bone takes, from the hips up.
 const SPINE := {"spine_1": 0.3, "spine_2": 0.35, "chest": 0.35}

@@ -1,8 +1,9 @@
 class_name SquadHud
 extends Control
-## Squad panel (Gunner Squad, AA Squads), bottom left while the player drives the squad: its
-## formation, each trooper's health, and a small map turned with the camera (up is where the
-## player looks) showing the troopers, the spot each follower is making for, and attackers close by.
+## Squad panel (Gunner Squad, AA Squads, Flame Squads), bottom left while the player drives the
+## squad: its formation, each trooper's health, and a small map turned with the camera (up is where
+## the player looks) showing the troopers, the spot each follower is making for, and attackers close
+## by.
 
 const SIZE := Vector2(250, 300)
 const MAP := 120.0  # map radius (px)

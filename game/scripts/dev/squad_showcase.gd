@@ -153,22 +153,7 @@ func _build_grove() -> void:
 
 ## A tree like LevelBuilder's, always a birch: tall and bare-trunked below the crown.
 func _birch(p: Vector3, rng: RandomNumberGenerator) -> void:
-	var h := rng.randf_range(10.0, 12.5)
-	var body := StaticBody3D.new()
-	body.collision_layer = GameConfig.LAYER_WORLD
-	body.collision_mask = 0
-	body.position = p
-	var cs := CollisionShape3D.new()
-	var trunk := CylinderShape3D.new()
-	trunk.radius = 0.4
-	trunk.height = h * 0.5
-	cs.shape = trunk
-	cs.position.y = h * 0.25
-	body.add_child(cs)
-	var model := Props.instance(Props.TREES[BIRCHES[rng.randi() % BIRCHES.size()]], h)
-	model.rotation.y = rng.randf() * TAU
-	body.add_child(model)
-	level.nav_region.add_child(body)
+	level._tree(p, rng, rng.randf_range(10.0, 12.5), BIRCHES.map(func(i): return Props.TREES[i]))
 
 
 func _build_lights() -> void:

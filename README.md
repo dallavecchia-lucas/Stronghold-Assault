@@ -21,10 +21,10 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
 
 - **Attacker wins** by destroying the Keep. **Defender wins** by holding for 10 minutes.
 
-**The map.** The stronghold is a mountain with a bunker dug into each of its four faces (`game/assets/stronghold/stronghold.glb`). The Keep is the reactor in the core hall under the peak. Attackers come from the south, east and west. Each of those faces has a blast-door gate on its middle ground tunnel; every other tunnel is welded shut. Once a gate is down, only Chimps and Breaching Rams can get inside; everyone else fights from outside. Inside, they can also climb the stair shafts to the gun decks and the ladders to the roofs. Forest groves stand off to the sides of the attack lanes. The defenders hold the gun decks and roofs: a machine gun over each gate, riflemen along the decks, the mortar on the south roof and two AA turrets on every roof. The guns can't fire into the doorway right below them; the mortar covers it.
+**The map.** The stronghold is a mountain with a bunker dug into each of its four faces (`game/assets/stronghold/stronghold.glb`). The Keep is the reactor in the core hall under the peak. Attackers come from the south, east and west. Each of those faces has a blast-door gate on its middle ground tunnel; every other tunnel is welded shut. Once a gate is down, only Chimps and Breaching Rams can get inside; everyone else fights from outside. Inside, they can also climb the stair shafts to the gun decks and the ladders to the roofs. Forest groves stand off to the sides of the attack lanes; they burn (the Flame Squads), and a burnt forest never grows back. The defenders hold the gun decks and roofs: a machine gun over each gate, riflemen along the decks, the mortar on the south roof and two AA turrets on every roof. The guns can't fire into the doorway right below them; the mortar covers it.
 
 **Defender (first person)**
-- `1`–`9`: take over a post (machine guns, mortar, riflemen) · `G`: the Gunner Squad · `Tab`: jump to the post with the most enemies nearby · `B`: buy an AA Squad · `F1`–`F6`: take command of a bought squad
+- `1`–`9`: take over a post (machine guns, mortar, riflemen) · `G`: the Gunner Squad · `Tab`: jump to the post with the most enemies nearby · `B`: buy an AA Squad · `N`: buy a Flame Squad · `F1`–`F6`: take command of a bought squad
 - Rifleman: `WASD` move, `Shift` sprint, `Space` jump, `LMB` fire, `RMB` aim, `R` reload
 - Machine gun: mouse aim, `LMB` fire, `RMB` zoom; it overheats if you hold the trigger too long
 - Mortar: `WASD` move the spotter view, `Q`/`E` rotate, wheel zoom, `LMB` fire on the ring
@@ -44,6 +44,14 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
     - MINES (a bought squad's first order): handed back out in the field, it lays mines where it is, then walks back to the base laying them on the path behind it whenever they are ready again; once at the base it lays them along the perimeter outside the gates, where the fewest are and away from the other squads.
     - GUARD: it stays where it is and only watches the sky.
     - Either way it locks on (3 s, like you) to any enemy aircraft within 85 m and shoots it down, and never fires at ground units.
+- Flame Squads (third person): five Flame Troopers, the Crimson Warden with twin fuel tanks on her back and a flame gun at her hip. They move, follow, path round trees and file through tunnels exactly like the Gunner Squad (same keys, formation and camera).
+  - Buying: `N` buys a squad for 300 credits (`B` an AA Squad for 350); like an AA Squad it deploys in a gate spawn hall, joins the roster (`F1`–`F6`, `Ctrl+F1`–`F6`) and is gone for good once all five are down.
+  - `LMB`: every trooper burns where you aim, a jet of flame 6 m ahead (shorter where a wall, the ground or a trunk stops it). Attackers in it burn (90 a second) and keep burning for 2.5 s after. Burning runs the tanks' pressure down (14 s of flame from full); it comes back while you let go (6 s from empty). Run dry, the gun vents for 2 s. The pressure panel (above the weapon panel) has a bar per trooper.
+  - Trees: hold the flame on a trunk for 8 s and the canopy catches, which destroys the tree. A quick sweep isn't enough: off the trunk for a moment, the heat drains away (the panel shows how close the tree under your flame is). A burning tree blazes, blackens and crumbles to a charred trunk, which falls about 30 s after the tree caught; then the way is clear (the navmesh is rebaked without it). Burnt trees never grow back, and a burnt-down part of a forest no longer counts as forest (Chimps lose their speed there).
+  - Auto orders (`V` while driving the squad, or `Ctrl+F<n>`), for when you aren't driving it:
+    - CLEAR (a bought squad's first order): it clears the forests round the base, closest to the base first and working its way outwards. It walks in formation to the standing forest tree nearest the base (one a little further out but much nearer the squad goes first, so it finishes a stand of trees before walking on). There the troopers spread out, each to a tree of its own nearest the base, and hold the flame on its trunk until it catches, then take the next. With none left in reach the squad forms up and walks on; with the whole forest done, on to the next forest. Lone trees out in the field are left standing. With nothing left to burn it goes back to its hall.
+    - GUARD: it stays where it is.
+    - Either way, attackers on the ground within 16 m come first: it forms up, walks at the nearest (on GUARD, no more than 6 m off its spot) and burns it, then goes back to its order.
 - Posts you aren't controlling keep fighting on their own; dead posts come back after a short delay
 - AA turrets: two on every roof, on their own (nobody takes them over). Each turns to the nearest enemy aircraft it can see within 45 m, locks on (1.2 s) and fires a homing missile at it every 3 s (18 damage), Sky Talons on their attack runs included. 150 HP: a bison's shell or a talon's bomb takes one out; it is rebuilt after 75 s.
 
@@ -184,6 +192,19 @@ godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie
 python3 tools/video/cut_showcase.py talon.avi talon.log media/talon_showcase.mp4
 ```
 
+### Flame Squad showcase
+
+`game/scenes/dev/flame_squad_showcase.tscn` records the Flame Squad (`media/flame_squad_showcase.mp4`): a lone Flame Trooper's walk, strafe and flame (a ruler on the ground shows its 6 m), then a squad bought with `N` and driven out of the south spawn hall the way a player would: up the spawn ramp and through the gate tunnel in file, out through the blast door into a wedge and across the field to the forest east of the south lane. Chimps rush it out of the trees and burn. At the forest's edge a quick sweep of the flame across a trunk doesn't do it (the heat drains away again); held on it, the canopy catches after 8 s. Then the player goes back to a rifleman and the squad, on its CLEAR order, clears the forest on its own from the base outwards, each trooper burning a tree, the burnt trees falling 30 s later, and walks on to the next forest. The garrison's posts and the AA turrets hold fire; the Gunner Squad is left out (the Flame Squad deploys in its hall).
+
+```sh
+godot --path game --headless --fixed-fps 30 res://scenes/dev/flame_squad_showcase.tscn -- --test  # prints and checks: FLAME SHOWCASE PASS / FAIL
+godot --path game --rendering-driver opengl3 --resolution 1280x720 --fixed-fps 30 res://scenes/dev/flame_squad_showcase.tscn -- --video --snap=64,96 --snap-out=/tmp/flame  # just those frames
+godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie flame.avi --fixed-fps 30 res://scenes/dev/flame_squad_showcase.tscn -- --video > flame.log
+python3 tools/video/cut_showcase.py flame.avi flame.log media/flame_squad_showcase.mp4
+```
+
+`-- --video` cuts in the cameras, captions and the keys the player presses, and plays most of the clearing 4× to 6× faster (drawing only the frames it keeps).
+
 ### Sky Talon strike showcase
 
 `game/scenes/dev/talon_strike_showcase.tscn` aims the Sky Talon's skills the way a player does, in the RTS view, against the south face (`media/talon_strike_showcase.mp4`). A talon sent over the face is shot down by the roof's AA turrets; a bison shells one turret from beyond their reach. One talon is clicked, `G`, `LMB` on the other turret: it slants in along the face, bombs it and breaks away while the turret fires at it. Three talons are box-selected, `G`, `LMB` on the mortar: their bombs land apart along the roof. One talon, `F`, `LMB` pressed on a rifleman on the gun deck and dragged along the deck: it comes in from the field and strafes down the deck. Three talons, `F`, pressed on the other rifleman and dragged up the mountain: three parallel lanes across the face, the talons climbing over the deck and the roof as they fire. The garrison's posts hold fire; the turrets don't (and stay down once destroyed).
@@ -248,6 +269,14 @@ The Missile Trooper (the AA Squad's) is the Armored Sentinel, whose export has a
 python tools/blender/rig_missile_trooper.py -- \
     --input assets_src/defenders/armored_sentinel/armored_sentinel_meshy.glb \
     --output game/assets/defenders/armored_sentinel/missile_trooper_rigged.glb
+```
+
+The Flame Trooper (the Flame Squad's) is the Crimson Warden, who already wears twin fuel tanks and holds a flame gun at her right hip; her export has the same Mixamo-style auto-rig and a Running clip. `tools/blender/rig_flame_trooper.py` rebuilds the bones with the Heavy Gunner's names (keeping the body's weights; the auto-rig's right foot chain is off by one bone), scales her to 1.95 m and re-skins the gun rigidly onto a `gun` bone in the right hand (`nozzle` marks the muzzle, its Y axis along the barrel: the game lights the flame there, `FlameRig`), the tank pack rigidly onto the chest, and takes the hose's pull off the legs. The gun points about 29° off to her right, so every clip twists the torso that far to the left (like the Heavy Gunner's), the right arm stays on the gun and the left one swings; the feet, off-centre in the export, are planted evenly either side of the hips. It bakes the same `Idle` and eight `Walk_<dir>` clips as the Heavy Gunner:
+
+```sh
+python tools/blender/rig_flame_trooper.py -- \
+    --input assets_src/defenders/crimson_warden/crimson_warden_meshy.glb \
+    --output game/assets/defenders/crimson_warden/flame_trooper_rigged.glb
 ```
 
 The Bison Field Gun (two bisons with a gun slung between them) has no rig either: `tools/blender/rig_bison_gun.py` builds one. It scales the model to 2.4 m with its origin between the eight hooves. The export has both bisons mid-stride, so the script first stands their legs the way they stand at mid-stance (moving them with their bones, then relaxing the skin where they join the body as rigidly as it can) and binds the rig there. Each bison gets its own bones (`L_` for the one on the pair's left, `R_` for the other) and both walk the elephant's lateral-sequence walk, R a little out of step with L: planted hooves stay put by IK and roll over the toe, the knees and hocks fold in the swing, the bodies ride and sway over their legs, the heads nod and the tails swing. The gun rides on a `carriage` bone that follows where the two bisons' flanks carry it; `muzzle` marks the barrel tip. It bakes `Walk` (authored at 1.85 m/s, the UnitTypes `anim_ref_speed`) and `Idle`. Same Blender/`bpy` 5.2 as above; `--preview DIR` renders the clips:
