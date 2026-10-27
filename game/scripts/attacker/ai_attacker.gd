@@ -16,6 +16,9 @@ var _wave_side := "south"
 var _first_wave_delay := 15.0
 
 const SPAWN_SIDES := ["south", "east", "west"]
+## A flash grenade lands where it is thrown: kangaroos throw with little of their reach to spare (the
+## infantry's stand in front of a gun deck is just inside it).
+const FLASH_SPARE := 0.97
 
 
 func _process(delta: float) -> void:
@@ -46,6 +49,7 @@ func _think() -> void:
 	_reassign_idle()
 	_ram_gates()
 	_talon_strikes()
+	_kangaroo_flashes()
 
 
 func _plan_wave() -> void:
@@ -178,10 +182,32 @@ func _talon_strikes() -> void:
 				commander.submit({"type": "strafe", "units": [u.unit_id], "pos": t.global_position, "dir": dir})
 
 
-## The nearest live defender `pick` takes (or gate) within `reach` of `u` (flat), with room to spare.
-func _in_reach(u: AttackerUnit, reach: float, pick: Callable) -> Node3D:
+## Kangaroos throw flash grenades at the defenders in their reach: the gun decks' riflemen and
+## machine guns, the mortar, squads out in the field (not ones blinded already or with a grenade on
+## its way). The ready ones in reach of the same defender throw together, their flashes spread round
+## it (KangarooFlash.spots). Raiders throw on their own.
+func _kangaroo_flashes() -> void:
+	var ready := commander.units.values().filter(func(u): return u.flash_ready() and not u.raiding)
+	while not ready.is_empty():
+		var u: AttackerUnit = ready.pop_front()
+		var unflashed := func(d): return d.get("station_kind") in ["soldier", "mg", "artillery"] and not FlashGrenade.is_blind(d) \
+				and not FlashGrenade.coming(level, d.global_position, u.stats.flash_radius * 0.6)
+		var t := _in_reach(u, u.stats.flash_range, unflashed, FLASH_SPARE)
+		if t == null:
+			continue
+		var group := [u]
+		for o in ready.duplicate():
+			if Vector2(o.global_position.x - t.global_position.x, o.global_position.z - t.global_position.z).length() < o.stats.flash_range * FLASH_SPARE:
+				group.append(o)
+				ready.erase(o)
+		commander.submit({"type": "flash", "units": group.map(func(k): return k.unit_id), "pos": t.global_position})
+
+
+## The nearest live defender `pick` takes (or gate) within `reach` of `u` (flat), with room to spare
+## (within `spare` of it).
+func _in_reach(u: AttackerUnit, reach: float, pick: Callable, spare := 0.85) -> Node3D:
 	var best: Node3D = null
-	var best_d := reach * 0.85
+	var best_d := reach * spare
 	for d in level.get_tree().get_nodes_in_group("damageable"):
 		if d.team == u.team or not d.is_alive() or not pick.call(d):
 			continue

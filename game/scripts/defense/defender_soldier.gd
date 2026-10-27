@@ -285,6 +285,8 @@ func _start_reload() -> void:
 func _ai_update(delta: float) -> void:
 	velocity.x = move_toward(velocity.x, 0.0, delta * 20.0)
 	velocity.z = move_toward(velocity.z, 0.0, delta * 20.0)
+	if FlashGrenade.is_blind(self):
+		return  # flashed: can't see to shoot
 	_retarget_cd -= delta
 	if _retarget_cd <= 0.0:
 		_retarget_cd = 0.4 + randf() * 0.2

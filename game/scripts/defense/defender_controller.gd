@@ -8,9 +8,15 @@ extends CanvasLayer
 ## The roster of bought squads (DefenderArmory) sits in a hotbar at the bottom (SquadHotbar):
 ## F1-F6 takes command of a squad, Ctrl+F1-F6 changes its auto order without leaving the post
 ## the player is on, B buys another AA Squad and N a Flame Squad.
+##
+## A kangaroo's flash grenade going off where the post the player is on sees it (FlashGrenade) turns
+## the screen full white for as long as it blinds, then it clears.
 
 const THREAT_RADIUS := 45.0
 const SWITCH_FADE := 0.18
+## Eyes over a post's spot (m), and how long the white takes to clear once the blindness wears off.
+const EYE_HEIGHT := 1.65
+const FLASH_FADE := 0.8
 const ROSTER_KEYS := [KEY_F1, KEY_F2, KEY_F3, KEY_F4, KEY_F5, KEY_F6]
 const BUY_KEY := KEY_B
 const BUY_FLAME_KEY := KEY_N
@@ -36,10 +42,13 @@ var _threat := {}
 var _threat_cd := 0.0
 var _switching := false
 var _hotbar: SquadHotbar
+var _whiteout: ColorRect
+var _whiteout_tw: Tween
 
 
 func _ready() -> void:
 	layer = 2
+	add_to_group("flash_watchers")
 	stations = level.stations
 	for s in stations:
 		s.became_unavailable.connect(_on_station_unavailable)
@@ -204,6 +213,30 @@ func _on_station_unavailable(s) -> void:
 	_prompt.visible = true
 
 
+## A flash grenade went off at `at` (FlashGrenade): if the post the player is on has it in sight within
+## `radius`, the player is blinded: the screen goes white for `seconds`.
+func on_flash(at: Vector3, radius: float, seconds: float) -> void:
+	if current == null:
+		return
+	if FlashGrenade.sees(level, at, current.get_station_position() + Vector3.UP * EYE_HEIGHT, radius):
+		flash_screen(seconds)
+
+
+## Full white for `seconds` (a flash on top of a flash starts it over), then it clears.
+func flash_screen(seconds: float) -> void:
+	if _whiteout_tw:
+		_whiteout_tw.kill()
+	_whiteout.color.a = 1.0
+	_whiteout_tw = create_tween()
+	_whiteout_tw.tween_interval(seconds)
+	_whiteout_tw.tween_property(_whiteout, "color:a", 0.0, FLASH_FADE).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+
+
+## How white the screen is (1: blinded by a flash).
+func whiteout() -> float:
+	return _whiteout.color.a
+
+
 func _flash_prompt(text: String) -> void:
 	if current == null:
 		return
@@ -303,6 +336,15 @@ func _build_hud() -> void:
 	_fade.color = Color(0, 0, 0, 0)
 	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(_fade)
+
+	# A flash grenade's white, over every HUD (the squad panel's layer too), under the pause menu.
+	var flash_layer := CanvasLayer.new()
+	flash_layer.layer = 4
+	add_child(flash_layer)
+	_whiteout = UIKit.full_rect(ColorRect.new()) as ColorRect
+	_whiteout.color = Color(1, 1, 1, 0)
+	_whiteout.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	flash_layer.add_child(_whiteout)
 
 
 func _refresh_threat() -> void:

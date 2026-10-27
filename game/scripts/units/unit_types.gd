@@ -45,6 +45,18 @@ extends RefCounted
 ##   bomb_damage within bomb_splash (times bomb_structure_mult against gates). Several talons' bombs
 ##   cluster round the aim like the bisons' shells. Reused after bomb_cooldown.
 ## pellets: shotgun. Each shot is this many pellets, spread over a cone of `spread` radians.
+## burst: side-mounted SMGs (Kangaroo). Each shot is a burst of this many rounds, burst_interval
+##   apart, the two guns taking turns (from the model's muzzle_L / muzzle_R bones); fire_interval is
+##   from one burst to the next.
+## flash_*: flash grenade (Kangaroo). It stops, rears up like a boxer and throws a grenade at a spot
+##   within flash_range (the Throw clip: the grenade leaves the paw flash_release seconds in, the
+##   clip is done at flash_time). It bursts on landing: every defender within flash_radius that sees
+##   it is blinded for flash_blind seconds (the defending player's screen goes white). Several
+##   kangaroos' grenades cluster round the aim like the bisons' shells (KangarooFlash). Reused after
+##   flash_cooldown.
+## resupply_*: passive (Kangaroo). Each kangaroo resupplies up to resupply_units allies within
+##   resupply_range whose skills are cooling down: their cooldowns run resupply_cdr shorter. It
+##   doesn't stack: no unit takes more than one kangaroo's (AttackerCommander hands them out).
 ## ram_*: ram ability (Breaching Ram). A surge to ram_speed times its speed for ram_duration
 ##   seconds, reused after ram_cooldown. Enemy soldiers it runs over lose ram_trample_damage and are
 ##   tossed away at ram_toss m/s. Ordered at a ground gate while ramming, up to ram_gate_slots rams
@@ -60,10 +72,12 @@ extends RefCounted
 ## forest_speed: movement speed multiplier inside a forest (LevelBuilder.FORESTS).
 ## climb_speed: m/s up and down stairs and ladders.
 ## structure_mult: damage multiplier against gates / the keep.
-## anim: procedural animation style until models are rigged (walk, hop, stomp, roll), "flight"
+## anim: procedural animation style until models are rigged (walk, stomp, roll), "flight"
 ##   for the Sky Talon's glide and wing beats (TalonFlight), or "rigged" to play the model's own
 ##   clips: anim_move / anim_idle, with the move clip
-##   sped up or slowed to match ground speed relative to anim_ref_speed (m/s).
+##   sped up or slowed to match ground speed relative to anim_ref_speed (m/s), within anim_scale
+##   ([slowest, fastest], default [0.6, 2.0]: a kangaroo hops at about the same rate whatever its
+##   speed, lengthening its bounds instead).
 ## steer: only move where the model faces, turning at turn_rate (rad/s), no strafing.
 ## model: path to a processed GLB (front facing +Z, feet at origin).
 
@@ -82,9 +96,17 @@ const DATA := {
 	},
 	"kangaroo": {
 		"name": "Kangaroo Commando", "cost": 75, "hp": 90.0, "speed": 7.2,
-		"range": 20.0, "damage": 13.0, "fire_interval": 0.6, "spread": 0.05,
+		"range": 20.0, "damage": 4.5, "fire_interval": 0.85, "spread": 0.06,
 		"structure_mult": 0.4, "radius": 0.55, "height": 2.0,
-		"role": "infantry", "anim": "hop", "hotkey": KEY_X,
+		"role": "infantry", "anim": "rigged", "hotkey": KEY_X,
+		"anim_move": "Hop", "anim_idle": "Idle", "anim_ref_speed": 7.2, "anim_scale": [0.8, 1.3],
+		"infiltrator": true, "raider": true, "climb_speed": 3.5,
+		# Side-mounted SMGs: short bursts, the two guns taking turns.
+		"burst": 4, "burst_interval": 0.07,
+		"flash_cooldown": 30.0, "flash_range": 26.0, "flash_radius": 10.0, "flash_blind": 2.0,
+		"flash_release": 0.95, "flash_time": 1.62,
+		# Carries the supplies: nearby units get their skills back sooner.
+		"resupply_range": 9.0, "resupply_units": 3, "resupply_cdr": 0.15,
 		"model": "res://assets/units/kangaroo_commando/kangaroo_commando_rigged.glb",
 	},
 	"medic": {

@@ -21,7 +21,7 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
 
 - **Attacker wins** by destroying the Keep. **Defender wins** by holding for 10 minutes.
 
-**The map.** The stronghold is a mountain with a bunker dug into each of its four faces (`game/assets/stronghold/stronghold.glb`). The Keep is the reactor in the core hall under the peak. Attackers come from the south, east and west. Each of those faces has a blast-door gate on its middle ground tunnel; every other tunnel is welded shut. Once a gate is down, only Chimps and Breaching Rams can get inside; everyone else fights from outside. Inside, they can also climb the stair shafts to the gun decks and the ladders to the roofs. Forest groves stand off to the sides of the attack lanes; they burn (the Flame Squads), and a burnt forest never grows back. The defenders hold the gun decks and roofs: a machine gun over each gate, riflemen along the decks, the mortar on the south roof and two AA turrets on every roof. The guns can't fire into the doorway right below them; the mortar covers it.
+**The map.** The stronghold is a mountain with a bunker dug into each of its four faces (`game/assets/stronghold/stronghold.glb`). The Keep is the reactor in the core hall under the peak. Attackers come from the south, east and west. Each of those faces has a blast-door gate on its middle ground tunnel; every other tunnel is welded shut. Once a gate is down, only Chimps, Breaching Rams and Kangaroo Commandos can get inside; everyone else fights from outside. Inside, they can also climb the stair shafts to the gun decks and the ladders to the roofs. Forest groves stand off to the sides of the attack lanes; they burn (the Flame Squads), and a burnt forest never grows back. The defenders hold the gun decks and roofs: a machine gun over each gate, riflemen along the decks, the mortar on the south roof and two AA turrets on every roof. The guns can't fire into the doorway right below them; the mortar covers it.
 
 **Defender (first person)**
 - `1`–`9`: take over a post (machine guns, mortar, riflemen) · `G`: the Gunner Squad · `Tab`: jump to the post with the most enemies nearby · `B`: buy an AA Squad · `N`: buy a Flame Squad · `F1`–`F6`: take command of a bought squad
@@ -53,11 +53,12 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
     - GUARD: it stays where it is.
     - Either way, attackers on the ground within 16 m come first: it forms up, walks at the nearest (on GUARD, no more than 6 m off its spot) and burns it, then goes back to its order.
 - Posts you aren't controlling keep fighting on their own; dead posts come back after a short delay
+- Flash grenades (the Kangaroo Commandos'): a post or trooper within 10 m of the bang that has it in sight is blinded for 2 s, and left to itself it can't fight (the guns, the mortar and the riflemen hold their fire, a squad's troopers too, and an AA Squad drops its lock). If it catches the post you are on, your screen goes full white for 2 s, then clears.
 - AA turrets: two on every roof, on their own (nobody takes them over). Each turns to the nearest enemy aircraft it can see within 45 m, locks on (1.2 s) and fires a homing missile at it every 3 s (18 damage), Sky Talons on their attack runs included. 150 HP: a bison's shell or a talon's bomb takes one out; it is rebuilt after 75 s.
 
 **Attacker (RTS)**
 - `LMB` click/drag to select, `Shift` to add · `RMB` attack-move, or attack a gate/defender you click on · `Ctrl+RMB` move without stopping
-- Spawn: `Z` Bear Rifleman · `X` Kangaroo Commando (fast) · `C` Wolf Medic (heals) · `N` Mule Artillery (long-range shells)
+- Spawn: `Z` Bear Rifleman · `C` Wolf Medic (heals) · `N` Mule Artillery (long-range shells)
 - `V` Sky Talon (the hawk): flies over the mountain, and flies like a hawk.
   - It glides most of the time and beats its wings only now and then, a few strokes every few seconds (gliding it sinks a little, less while it circles and soars, and the strokes lift it back up), and all the way up on take-off or climbing over the mountain. It banks into its turns.
   - It never hovers: wherever it has nowhere left to go, it circles. Sent somewhere (or at a target), it circles the spot counterclockwise, the centre off its left wing, like a gunship flying a pylon turn.
@@ -81,15 +82,21 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
 - `K` Hippo Heavy Gunner: heavy, slow, sprays suppressive fire from mounted machine guns.
   - The guns are inaccurate: rounds land around the target and can hit whatever stands next to it. They fire for 8 s in total (resting cools them at the same rate), then overheat and go silent for 2 s.
   - `R` smoke screen: aim, then `LMB` to fire (`RMB` or `R` cancels). The cone shows where the curtain will stand (the green band at its tip). The hippo fires three grenades at once. Each one bursts high up, then drops and bursts twice more on the way down, leaving a tall pillar. Together the pillars make a curtain that blocks line of sight for both sides for 30 s. Cooldown is 90 s. With several hippos selected, the one closest to the cursor fires.
-- `M` Breaching Ram (big horn sheep): breaks gates, and with the Chimp the only unit that can get inside the stronghold.
+- `M` Breaching Ram (big horn sheep): breaks gates, and with the Chimp and the Kangaroo Commando the only units that can get inside the stronghold.
   - Basic attack: shotgun. Each blast throws 7 pellets into a small cone in front of it (range 7 m).
   - `Space` ram: a surge of speed (2.2×) for 6 s. Cooldown is 60 s. Enemy soldiers it runs over lose health and are tossed out of its way.
   - Gate charge: `RMB` a ground gate while ramming, and the rams line up across its doorway and slam into it once each for a heavy hit (350). Only 3 fit in front of a doorway at a time: the nearest ones that can still get there before their ram runs out take the places (rams already charging it keep theirs). The rest call their ram off and go at the gate with their shotguns.
   - Infiltration: once a gate is down, `RMB` next to it sends selected rams in. Like the Chimps, inside you lose control of them. They make for the Keep on their own and fight every defender they run into on the way (within about 18 m, up the stairs to the gun decks too), ramming soldiers whenever the ram is ready and finishing them with the shotgun.
-- `J` Night Ops Chimp: fast melee fighter, and with the Breaching Ram the only unit that can get inside the stronghold.
+- `J` Night Ops Chimp: fast melee fighter, and with the Breaching Ram and the Kangaroo Commando the only units that can get inside the stronghold.
   - Basic attack: melee, it strikes whatever is within arm's reach.
   - Passive: moves 60% faster inside forests.
   - Infiltration: once a gate is down, `RMB` next to it sends selected Chimps in. Inside, you lose control of them. They hunt the defenders anywhere in the stronghold, climbing to the gun decks and up the ladders to the roofs. When no defender is left standing, they wreck the machines: the gate machine guns and the mortar. Respawned defenders draw them back.
+- `X` Kangaroo Commando: fast, and with the Breaching Ram and the Chimp the only units that can get inside the stronghold.
+  - It moves like a real kangaroo: it hops on both hind feet together, its tail swinging against the legs and its forepaws tucked in at the chest. Like a real one it hops at about the same rate whatever its speed, taking longer bounds instead.
+  - Basic attack: the two SMGs mounted on either side of its chest fire short bursts (4 rounds), the guns taking turns. At a target above it (up on a gun deck) it rears its chest up to bring them onto it.
+  - `R` flash grenade: aim, then `LMB` to throw (`RMB` or `R` cancels); with a selected hippo's smoke screen ready, `R` aims that first. Each kangaroo stops, stands up tall like a boxer (propped on its tail) and lobs a grenade up to 26 m. It goes off on landing in a white flash: every defender within 10 m that has it in sight is blinded for 2 s, and the defending player's screen goes full white if the post they are on is caught. Cooldown is 30 s. With several kangaroos selected, the grenades cluster round the cursor 15 m apart like the bisons' shells, instead of piling onto one spot, up on the gun decks and roofs too; the cursor on a defender up on a deck puts them at its feet. The preview shows each kangaroo's throw and where its flash will reach.
+  - Passive, supplies: each kangaroo resupplies up to 3 units within 9 m whose skills are cooling down (other kangaroos included, itself not): their skills come back 15% sooner. A small ammo box floats over every unit it resupplies. It doesn't stack: a unit next to several kangaroos still gets 15%, and the kangaroos share out the units round them, each taking its nearest, so two kangaroos look after six.
+  - Infiltration: once a gate is down, `RMB` next to it sends selected kangaroos in. Like the Chimps and Rams, inside you lose control of them: they hunt the defenders (up the stairs to the gun decks and the roofs too), shooting them with their SMGs and flashing them whenever a grenade is ready.
 - Models in, roles still to be designed (placeholder stats): `H` Savanna Signal Scout · `Y` Armored Lioness · `U` Serpent Sniper
 - `Tab` cycles spawn point · `Ctrl+1`–`5` save a group, `1`–`5` recall it
 - Camera: `WASD`/arrows/screen edge to pan, `Q`/`E` or middle mouse to rotate, wheel to zoom
@@ -218,6 +225,19 @@ python3 tools/video/cut_showcase.py strike.avi strike.log media/talon_strike_sho
 
 The test also checks that no talon on a run ever goes into the ground or the stronghold. `-- --video` plays the waits and the flying into position at triple speed and cuts the time between strikes.
 
+### Kangaroo showcase
+
+`game/scenes/dev/kangaroo_showcase.tscn` runs the Kangaroo Commando through its paces on the real map, against the south face, the way a player uses it in the RTS view (`media/kangaroo_showcase.mp4`). A lone kangaroo hops down the south attack lane. Three are box-selected, `R`, the cursor on the gate machine gun, `LMB`: they rear up and throw, their grenades spread along the gun deck, and the bangs blind the gunner and both riflemen there. Then the defender's side: the player on a deck rifleman, a kangaroo flashes the post and the screen goes white. A kangaroo hops up to five units whose skills are cooling down: ammo boxes over the three nearest, their cooldowns running faster; a second kangaroo takes the other two (the cut never stacks). The three gun down a rifleman in front of the face with their SMGs, and last the south gate falls and they storm the base, hunting the guards inside and the riflemen on the deck on their own and flashing them. The garrison's posts hold fire until the storm, the AA turrets throughout.
+
+```sh
+godot --path game --headless --fixed-fps 30 res://scenes/dev/kangaroo_showcase.tscn -- --test  # prints and checks: KANGAROO SHOWCASE PASS / FAIL
+godot --path game --rendering-driver opengl3 --resolution 1280x720 --fixed-fps 30 res://scenes/dev/kangaroo_showcase.tscn -- --video --snap=18.5,66.8 --snap-out=/tmp/kangaroo  # just those frames
+godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie kangaroo.avi --fixed-fps 30 res://scenes/dev/kangaroo_showcase.tscn -- --video > kangaroo.log
+python3 tools/video/cut_showcase.py kangaroo.avi kangaroo.log media/kangaroo_showcase.mp4
+```
+
+`-- --video` cuts in the cameras (beside the hopper, in slow motion as it bounds past, close by a kangaroo rearing up to throw, along the deck as the grenades go off, through the rifleman's eyes as the flash whites out the screen, and inside the base for the storm), plays the climb to the deck and the fight there 2× faster and cuts the waits.
+
 ## Asset pipeline
 
 Meshy exports go in `assets_src/`, then get processed with Blender (headless):
@@ -293,6 +313,14 @@ The Sky Talon (the hawk) comes with Meshy's SmartRig, standing with its wings fo
 python tools/blender/rig_talon.py -- \
     --input assets_src/units/sky_talon_battalion/sky_talon_battalion_rigged_meshy.glb \
     --output game/assets/units/sky_talon_battalion/sky_talon_battalion_rigged.glb
+```
+
+The Kangaroo Commando comes with Meshy's auto-rig and no clips, crouched the way a kangaroo stands before a hop. `tools/blender/rig_kangaroo.py` rebuilds the auto-rig's bones with clean names (keeping the weights of the body, head, tail and hind legs), replaces its arm chains, which sit in the side-mounted SMGs, with forelimb chains re-skinned along the real forelimbs, and binds the gear rigidly: the SMGs on the chest, the gun on its back on the spine, the supply pack on the hips, the goggles on the head. `muzzle_L` / `muzzle_R` mark the SMGs' muzzles and `grenade` the right paw's grip (the game fires and throws from there; `KangarooRig` rears the chest up onto the aim). It scales the model to 2 m with its origin between the hind feet and bakes three clips: `Idle` (crouched, breathing, the head looking round, the tail resting on the ground), `Hop` (one bound at 7.2 m/s: both feet land together ahead of the hips and sweep back planted by IK, push off from the toes and swing forward through a long flight, the tail swinging against the legs and the forepaws tucked in) and `Throw` (it rears up like a boxer, propped on its tail with its paws up in a guard, winds up with the right paw cocked by its ear, throws, follows through and drops back into its crouch). Same Blender/`bpy` 5.2 as above; `--preview DIR` renders the clips:
+
+```sh
+python tools/blender/rig_kangaroo.py -- \
+    --input assets_src/units/kangaroo_commando/kangaroo_commando_rigged_meshy.glb \
+    --output game/assets/units/kangaroo_commando/kangaroo_commando_rigged.glb
 ```
 
 Static props (scenery, turrets) skip Blender: they go through [glTF-Transform](https://gltf-transform.dev) to put the pivot at the bottom center and shrink textures to 1024 px, and `game/scripts/match/props.gd` scales them to height at load time:

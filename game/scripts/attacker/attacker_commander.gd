@@ -19,11 +19,17 @@ extends Node
 ##               (TalonAim.bombs)
 ##   {"type": "smoke", "units": [ids], "pos": Vector3}   the ready hippo closest to pos lays a
 ##                                                     smoke screen toward it (HippoSmoke)
+##   {"type": "flash", "units": [ids], "pos": Vector3}   kangaroos each throw a flash grenade round
+##               pos, up on the gun decks and roofs too (KangarooFlash.spots)
 ##   {"type": "missile", "units": [ids], "target": NodePath}   elephants fire missile salvos at
 ##               an enemy flyer, only as many as the kill takes (ElephantMissiles)
 ##   {"type": "ram", "units": [ids]}   breaching rams surge forward (AttackerUnit.start_ram)
 ##   {"type": "scout", "units": [ids]}   toggle scout formation: the rhinos in the selection
 ##                                       ring the rest of it so their anti-air covers the mass
+##
+## It also hands out the kangaroos' supplies (their passive): each kangaroo resupplies the units
+## nearest it whose skills are cooling down, up to resupply_units of them, and no unit takes
+## supplies from two kangaroos (_update_resupply).
 
 signal unit_spawned(unit: AttackerUnit)
 signal unit_died(unit: AttackerUnit)
@@ -32,6 +38,8 @@ const UNIT_CAP := 60
 const BASE_INCOME := 12.0
 ## How far outside the edge of the mass scouting rhinos keep.
 const SCOUT_MARGIN := 5.0
+## Seconds between handing out the kangaroos' supplies.
+const RESUPPLY_EVERY := 0.25
 
 var supply := 250.0
 var income := BASE_INCOME
@@ -44,6 +52,7 @@ var _next_formation := 1
 ## Scout formations: [{"rhinos": [ids], "escorts": [ids]}]
 var scout_groups: Array = []
 var _scout_cd := 0.0
+var _resupply_cd := 0.0
 
 
 func _process(delta: float) -> void:
@@ -52,6 +61,10 @@ func _process(delta: float) -> void:
 	if _scout_cd <= 0.0:
 		_scout_cd = 0.5
 		_update_scouts()
+	_resupply_cd -= delta
+	if _resupply_cd <= 0.0:
+		_resupply_cd = RESUPPLY_EVERY
+		_update_resupply()
 
 
 func can_afford(type_id: String) -> bool:
@@ -77,6 +90,8 @@ func submit(cmd: Dictionary) -> int:
 			_bomb(cmd.units, cmd.pos)
 		"smoke":
 			_smoke(cmd.units, cmd.pos)
+		"flash":
+			_flash(cmd.units, cmd.pos)
 		"missile":
 			_missiles(cmd.units, cmd.target)
 		"ram":
@@ -177,6 +192,42 @@ func _missiles(ids: Array, target_path: NodePath) -> void:
 		return
 	for e in ElephantMissiles.allocate(_resolve(ids).filter(func(u): return u.has_missiles()), target):
 		e.start_missiles(target)
+
+
+func _flash(ids: Array, pos: Vector3) -> void:
+	var kangaroos := _resolve(ids).filter(func(u): return u.flash_ready() and not u.raiding)
+	var spots := KangarooFlash.spots(kangaroos, pos)
+	for i in kangaroos.size():
+		kangaroos[i].start_flash(spots[i])
+
+
+# ---------------------------------------------------------------- kangaroo supplies
+
+## Each kangaroo resupplies the units nearest it whose skills are cooling down (itself aside), up to
+## resupply_units of them; the closest pairs go first, and a unit one kangaroo already supplies is
+## left to it, so the cut never stacks and the others' supplies go further.
+func _update_resupply() -> void:
+	var pairs := []
+	for k in units.values():
+		if not k.is_alive() or not k.resupplies():
+			continue
+		for u in units.values():
+			if u == k or not u.is_alive() or not u.cooling_down():
+				continue
+			var d: float = k.global_position.distance_to(u.global_position)
+			if d <= k.stats.resupply_range:
+				pairs.append([d, k, u])
+	pairs.sort_custom(func(a, b): return a[0] < b[0])
+	var load := {}
+	var cut := {}
+	for p in pairs:
+		var k: AttackerUnit = p[1]
+		if cut.has(p[2]) or load.get(k, 0) >= k.stats.resupply_units:
+			continue
+		cut[p[2]] = k.stats.resupply_cdr
+		load[k] = load.get(k, 0) + 1
+	for u in units.values():
+		u.resupply = cut.get(u, 0.0)
 
 
 # ---------------------------------------------------------------- scout formation

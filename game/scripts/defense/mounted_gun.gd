@@ -275,6 +275,8 @@ func _try_fire(player: bool) -> bool:
 
 ## AI crew: track the nearest attacker in the firing arc and shoot in bursts.
 func _ai_update(delta: float) -> bool:
+	if FlashGrenade.is_blind(self):
+		return false  # flashed: the crew can't see to shoot
 	_retarget_cd -= delta
 	if _retarget_cd <= 0.0:
 		_retarget_cd = 0.4

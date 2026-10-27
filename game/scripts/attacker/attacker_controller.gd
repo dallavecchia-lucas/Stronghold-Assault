@@ -12,6 +12,7 @@ extends CanvasLayer
 ## G: aim the selected bisons' bombardment (LMB fire, RMB/G cancel)
 ##    with no bison ready, the selected talons' bomb strike (LMB fire, RMB/G cancel)
 ## R: aim a selected hippo's smoke screen (LMB fire, RMB/R cancel)
+##    with no hippo ready, the selected kangaroos' flash grenades (LMB fire, RMB/R cancel)
 ## O: aim the selected elephants' missiles: LMB an enemy aircraft (RMB/O cancel)
 ## Space: the selected breaching rams ram (then RMB a gate to charge it)
 
@@ -44,9 +45,10 @@ var _spawn_buttons := {}
 var _spawn_point_buttons: Array[Button] = []
 var _marker: MeshInstance3D
 ## Ability aim mode: "" (off), "cluster" (rhinos), "bombard" (bisons), "smoke" (hippos),
-## "missile" (elephants), "strafe" or "bomb" (talons).
+## "missile" (elephants), "strafe" or "bomb" (talons), "flash" (kangaroos).
 ## Cluster: preview of every rhino's aim zone and where its bombs will land.
 ## Bombard: every ready bison's range and where its shell will land (its blast).
+## Flash: every ready kangaroo's throw and where its grenade will go off (the flash's reach).
 ## Smoke: the firing hippo's aim cone, with the band where the curtain will stand.
 ## Missile: each ready elephant's missile range, the aircraft under the cursor and lines from
 ## the elephants that would fire at it.
@@ -109,6 +111,8 @@ func _unhandled_input(event: InputEvent) -> void:
 					_fire_bomb(event.position)
 				"smoke":
 					_fire_smoke(event.position)
+				"flash":
+					_fire_flash(event.position)
 				"missile":
 					# Elephants that didn't fire stay ready for the next target: keep aiming.
 					if _fire_missiles(event.position) and not _ready_elephants().is_empty():
@@ -157,7 +161,13 @@ func _unhandled_input(event: InputEvent) -> void:
 				_set_aiming("bomb")
 			return
 		if event.physical_keycode == SMOKE_KEY:
-			_set_aiming("smoke" if _aiming != "smoke" and not _ready_hippos().is_empty() else "")
+			# A ready hippo's smoke screen comes first, then the kangaroos' flash grenades.
+			if _aiming in ["smoke", "flash"]:
+				_set_aiming("")
+			elif not _ready_hippos().is_empty():
+				_set_aiming("smoke")
+			else:
+				_set_aiming("flash" if not _ready_kangaroos().is_empty() else "")
 			return
 		if event.physical_keycode == MISSILE_KEY:
 			_set_aiming("missile" if _aiming != "missile" and not _ready_elephants().is_empty() else "")
@@ -259,7 +269,7 @@ func _ready_rhinos() -> Array:
 func _set_aiming(mode: String) -> void:
 	_aiming = mode
 	_strafe_at = Vector3.INF
-	_aim_preview.visible = mode in ["cluster", "bombard", "strafe", "bomb"]
+	_aim_preview.visible = mode in ["cluster", "bombard", "strafe", "bomb", "flash"]
 	_smoke_preview.visible = mode == "smoke"
 	_missile_preview.visible = mode == "missile"
 	_aim_label.visible = mode == "missile"
@@ -444,6 +454,48 @@ func _update_smoke_preview() -> void:
 			Mats.unshaded(SMOKE_FILL, true), Mats.unshaded(SMOKE_LINE, true))
 
 
+# ---------------------------------------------------------------- kangaroo flash grenades
+
+func _ready_kangaroos() -> Array:
+	_alive_selection()
+	return selected.filter(func(u): return u.flash_ready())
+
+
+## Where the cursor puts the flash grenades (null: off the map): on a defender under it, at its feet
+## (up on the gun deck, not on the parapet in front of it); else the ground, deck or roof under it.
+func _flash_target(screen_pos: Vector2):
+	var hit := _ray(screen_pos, GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES | GameConfig.LAYER_DEFENDERS)
+	if hit.is_empty():
+		return null
+	var d = Combat.find_damageable(hit.collider)
+	if d and d.team != GameConfig.TEAM_ATTACKER and not d.is_in_group("structures"):
+		return d.global_position
+	return hit.position
+
+
+func _fire_flash(screen_pos: Vector2) -> void:
+	var at = _flash_target(screen_pos)
+	var kangaroos := _ready_kangaroos()
+	if at == null or kangaroos.is_empty():
+		return
+	commander.submit({"type": "flash", "units": kangaroos.map(func(u): return u.unit_id), "pos": at})
+	_ping(at, KangarooFlash.COLOR)
+
+
+func _update_flash_preview() -> void:
+	var kangaroos := _ready_kangaroos()
+	if kangaroos.is_empty():
+		_set_aiming("")
+		return
+	_aim_mesh.clear_surfaces()
+	var at = _flash_target(get_viewport().get_mouse_position())
+	if at == null:
+		return
+	_aim_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
+	KangarooFlash.draw(_aim_mesh, kangaroos, KangarooFlash.spots(kangaroos, at))
+	_aim_mesh.surface_end()
+
+
 # ---------------------------------------------------------------- elephant missiles
 
 func _ready_elephants() -> Array:
@@ -599,11 +651,11 @@ func _build_hud() -> void:
 	row.add_child(sp)
 	set_spawn_point(0)
 
-	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nBisons: G bombardment (LMB fire, RMB cancel), onto the gun decks and roofs too\nTalons: F strafe run (press LMB on the target, drag the way to fly, let go) · G bomb strike (LMB fire) · RMB cancels\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nChimps / Rams: RMB next to a broken gate to send them in",
+	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nBisons: G bombardment (LMB fire, RMB cancel), onto the gun decks and roofs too\nTalons: F strafe run (press LMB on the target, drag the way to fly, let go) · G bomb strike (LMB fire) · RMB cancels\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nKangaroos: R flash grenade (LMB fire, RMB cancel) when no hippo's smoke is ready · they resupply units nearby\nChimps / Rams / Kangaroos: RMB next to a broken gate to send them in",
 			13, Color(0.85, 0.85, 0.85, 0.75))
 	help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	help.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	help.position = Vector2(14, help.position.y - 186)
+	help.position = Vector2(14, help.position.y - 204)
 	root.add_child(help)
 
 	_aim_label = UIKit.label("", 15, MISSILE_LINE)
@@ -658,6 +710,17 @@ func _process(_delta: float) -> void:
 		else:
 			var hottest: float = hippos.map(func(u): return u.heat / u.stats.overheat_time).max()
 			_selection_label.text += "\nGuns heat %d%%" % int(hottest * 100.0)
+	var kangaroos := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_flash())
+	if not kangaroos.is_empty():
+		var ready := kangaroos.filter(func(u): return u.flash_ready()).size()
+		_selection_label.text += "\nFlash grenade %d/%d [R]" % [ready, kangaroos.size()]
+		if ready == 0:
+			var soonest: float = kangaroos.map(func(u): return u.flash_cd).min()
+			if soonest > 0.0:
+				_selection_label.text += "  %ds" % ceili(soonest)
+	var supplied := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.resupply > 0.0)
+	if not supplied.is_empty():
+		_selection_label.text += "\nResupplied %d · skills back %d%% sooner" % [supplied.size(), roundi(supplied[0].resupply * 100.0)]
 	var elephants := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_missiles())
 	if not elephants.is_empty():
 		var ready := elephants.filter(func(u): return u.missiles_ready()).size()
@@ -689,6 +752,8 @@ func _process(_delta: float) -> void:
 		_update_bomb_preview()
 	elif _aiming == "smoke":
 		_update_smoke_preview()
+	elif _aiming == "flash":
+		_update_flash_preview()
 	elif _aiming == "missile":
 		_update_missile_preview()
 	for type_id in _spawn_buttons:
