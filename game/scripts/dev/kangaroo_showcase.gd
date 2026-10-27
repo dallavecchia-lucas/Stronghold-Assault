@@ -61,10 +61,12 @@ const SHOTS := [["intro", 0.0, 2.0, "trio"], ["hop", 0.0, 9.0, "hop"], ["flash",
 		["storm", 19.6, 24.6, "deck_east"], ["storm", 24.6, 30.0, "deck_west"], ["outro", 0.0, 2.0, "deck_west"]]
 ## Slow motion: [phase, from, to, time scale].
 const SLOWMO := [["hop", 3.0, 5.2, 0.35], ["flash", 7.0, 8.6, 0.5]]
-## Played faster: [phase, from, to, every k-th frame kept]; left out: [phase, from, to].
+## Played faster: [phase, from, to, every k-th frame kept].
 const FAST := [["storm", 16.5, 30.0, 2]]
-const CUTS := [["flash", 13.5, 18.0], ["screen", 0.0, 0.5], ["screen", 7.5, 11.0], ["supply", 12.5, 14.0],
-		["smg", 5.5, 7.0], ["storm", 30.0, 32.0]]
+## Left out: [phase, from, to]. A cut to the end of its phase runs past it: the phase clock drifts a
+## hair from the run's, and a last frame left in would flash up between two cuts.
+const CUTS := [["flash", 13.5, 19.0], ["screen", 0.0, 0.5], ["screen", 7.5, 11.0], ["supply", 12.5, 15.0],
+		["smg", 5.5, 8.0], ["storm", 30.0, 33.0]]
 ## Work lights in the bay the raid goes through (video only).
 const WORK_LIGHTS := [Vector3(-4.0, 2.4, 73.0), Vector3(0.0, 4.6, 68.0), Vector3(4.5, 4.8, 66.0),
 		Vector3(0.0, 4.5, 58.0), Vector3(2.0, 9.5, 64.0)]
