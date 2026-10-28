@@ -192,7 +192,7 @@ const DATA := {
 		"role": "infantry", "anim": "rigged", "hotkey": KEY_H,
 		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 3.0,
 		# The radar dish on its back: a sonar ping round it (GiraffePing).
-		"ping_cooldown": 30.0, "ping_radius": 60.0, "ping_speed": 40.0, "ping_mark": 7.0,
+		"ping_cooldown": 45.0, "ping_radius": 60.0, "ping_speed": 40.0, "ping_mark": 7.0,
 		"ping_release": 0.8, "ping_time": 2.2,
 		"model": "res://assets/units/savanna_signal_scout/savanna_signal_scout_rigged.glb",
 	},
