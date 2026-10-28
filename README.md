@@ -255,6 +255,15 @@ godot --path game --headless --fixed-fps 30 res://scenes/dev/infiltrator_showcas
 godot --path game --fixed-fps 30 res://scenes/dev/infiltrator_showcase.tscn  # to watch it
 ```
 
+`game/scenes/dev/infiltrator_video.tscn` records the squad's video (`media/infiltrator_showcase.mp4`), from the defender's side (the squad's camera and HUD, driven like a player would) and the attacker's (the RTS view): arrows at a group of Bear Riflemen (in the RTS view no tracer, no flash, just their health going), adaptive camo (the defender's vignette; in the RTS view the troopers all but invisible, and a bison's shell still hurting them), a sabotage of the South Helipad (sped up) and the RTS view of it lost, the riflemen retaking it, and last a second squad's idle mode: sent on a sabotage operation, it walks round the riflemen standing on the straight way (its planned route drawn) to the helipad.
+
+```sh
+godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie infil.avi --fixed-fps 30 res://scenes/dev/infiltrator_video.tscn > infil.log
+python3 tools/video/cut_showcase.py infil.avi infil.log media/infiltrator_showcase.mp4
+```
+
+`-- --snap=t1,t2 --snap-out=/tmp/shot` saves just those frames (seconds into the run).
+
 ## Asset pipeline
 
 Meshy exports go in `assets_src/`, then get processed with Blender (headless):
