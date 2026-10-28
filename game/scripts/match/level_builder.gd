@@ -3,7 +3,9 @@ extends Node3D
 ## Builds the map: open field around the mountain stronghold (four bunker faces dug into
 ## one mountain, see tools/blender/build_stronghold.py), blast-door gates on three faces,
 ## the keep (reactor) in the core hall under the peak, defender posts on the gun decks and
-## roofs and the Gunner Squad's in the south spawn hall, forests and attacker spawn points.
+## roofs and the Gunner Squad's in the south spawn hall, forests, attacker spawn points and the
+## attackers' Forward Helipad Bases out by the lanes (AttackerBase: forward spawn points while they
+## hold them).
 ## Everything static lives under the navigation region so it gets baked into the navmesh.
 ##
 ## Only infiltrators (UnitTypes) get inside. The gate tunnels stay plugged on the navmesh
@@ -80,6 +82,12 @@ const ROOF_EXPOSED_HALF := 27.0
 ## Forest groves as [center x, center z, radius]: off the attack lanes, dense with trees.
 const FORESTS := [[42.0, 140.0, 16.0], [-44.0, 150.0, 18.0], [135.0, 125.0, 24.0], [-130.0, 120.0, 22.0],
 		[145.0, -50.0, 20.0], [-140.0, -55.0, 20.0], [110.0, -140.0, 24.0], [-120.0, -135.0, 22.0]]
+## The attackers' Forward Helipad Bases (AttackerBase), one by each attack lane: [side, centre x,
+## centre z]. Each lies along its lane, its middle 54 m off it, clear of the forests and of the AA
+## Squads' perimeter (AASquad.perimeter_spots); trees and rocks are kept off its lot (BASE_LOT_MARGIN
+## round the deck).
+const BASES := [["south", -54.0, 114.0], ["east", 118.0, 54.0], ["west", -118.0, 54.0]]
+const BASE_LOT_MARGIN := 4.0
 ## Ground per tree in a grove (m²), and the closest two grove trees stand.
 const FOREST_AREA_PER_TREE := 45.0
 const FOREST_TREE_SPACING := 4.5
@@ -97,6 +105,10 @@ var stations := []  # possessable defender stations, in hotkey order
 var aa_turrets := []  # autonomous, nobody takes them over
 var spawn_points: Array[Vector3] = []
 var spawn_names: Array[String] = []
+## Per spawn point: the AttackerBase it belongs to (a forward helipad: open only while the attackers
+## hold it), or null (the flags at the map's edge, always open).
+var spawn_bases: Array = []
+var bases: Array[AttackerBase] = []
 var _stronghold: Node3D
 
 var _baking := false
@@ -132,6 +144,7 @@ func build() -> void:
 	_seal_tunnels()
 	_build_climbs()
 	_build_keep()
+	_build_bases()
 	_build_scenery()
 	_build_spawns()
 	_build_mounts(_build_stations() + _build_aa_turrets())
@@ -455,10 +468,13 @@ func _build_scenery() -> void:
 		var p := Vector3(rng.randf_range(-MAP_HALF + 5, MAP_HALF - 5), 0, rng.randf_range(-MAP_HALF + 5, MAP_HALF - 5))
 		if _off_limits(p, lanes) or grove_at(p) >= 0:
 			continue
+		# A spot on a helipad's lot draws the same numbers but puts nothing down, so the rest of the
+		# scatter lands where it always has.
+		var lot := _on_base_lot(p)
 		if rng.randf() < 0.55:
-			_tree(p, rng)
+			_tree(p, rng, 0.0, Props.TREES, lot)
 		else:
-			_rock(p, rng)
+			_rock(p, rng, lot)
 		placed += 1
 	_build_ground_cover(rng)
 
@@ -491,13 +507,17 @@ func _build_forests(rng: RandomNumberGenerator, lanes: Array) -> void:
 			_tree(p, rng)
 
 
-## A tree that burns (ForestTree), `h` tall (random if 0), one of `models` (Props paths).
-func _tree(p: Vector3, rng: RandomNumberGenerator, h := 0.0, models: Array = Props.TREES) -> ForestTree:
+## A tree that burns (ForestTree), `h` tall (random if 0), one of `models` (Props paths). `skip`:
+## draw its numbers from `rng` but put nothing down (null).
+func _tree(p: Vector3, rng: RandomNumberGenerator, h := 0.0, models: Array = Props.TREES, skip := false) -> ForestTree:
 	if h <= 0.0:
 		h = rng.randf_range(6.0, 11.0)
 	var path: String = models[rng.randi() % models.size()]
+	var yaw := rng.randf() * TAU
+	if skip:
+		return null
 	var model := Props.instance(path, h)
-	model.rotation.y = rng.randf() * TAU
+	model.rotation.y = yaw
 	var fp := Props.footprint(path, h)
 	var tree := ForestTree.new()
 	tree.position = p
@@ -506,9 +526,13 @@ func _tree(p: Vector3, rng: RandomNumberGenerator, h := 0.0, models: Array = Pro
 	return tree
 
 
-func _rock(p: Vector3, rng: RandomNumberGenerator) -> void:
+## `skip`: draw its numbers from `rng` but put nothing down.
+func _rock(p: Vector3, rng: RandomNumberGenerator, skip := false) -> void:
 	var path: String = Props.ROCKS[rng.randi() % Props.ROCKS.size()]
 	var h := rng.randf_range(1.2, 3.0)
+	if skip:
+		rng.randf()
+		return
 	var model := Props.instance(path, h)
 	var fp := Props.footprint(path, h)
 	var r := minf(fp.x, fp.y) * 0.4
@@ -551,12 +575,43 @@ func _build_spawns() -> void:
 		var out: Vector3 = SIDES[side].dir
 		spawn_points.append(out * (MAP_HALF - 12.0))
 		spawn_names.append(side.capitalize())
+		spawn_bases.append(null)
 		# Flag marker so players can see where the attackers come from.
 		var pole := Mats.cylinder_mesh(0.12, 8.0, out * (MAP_HALF - 12.0) + Vector3(0, 4, 0) + out.cross(Vector3.UP) * 6.0, Mats.wood(), 6)
 		add_child(pole)
 		var flag := Mats.box_mesh(Vector3(2.0, 1.2, 0.05), pole.position + Vector3(1.0, 3.2, 0), Mats.flat(Color(0.75, 0.2, 0.15)))
 		flag.rotation.y = atan2(out.x, out.z)
 		add_child(flag)
+	# The helipads come after the flags: spawn points 0-2 stay the map's edge.
+	for b in bases:
+		spawn_points.append(b.spawn_point)
+		spawn_names.append(b.short_name)
+		spawn_bases.append(b)
+
+
+## The Forward Helipad Bases, each lying along its lane; its spawn point on the ground between it and
+## the lane.
+func _build_bases() -> void:
+	for entry in BASES:
+		var side: String = entry[0]
+		var out: Vector3 = SIDES[side].dir
+		var at := Vector3(float(entry[1]), 0.0, float(entry[2]))
+		var base := AttackerBase.new()
+		base.setup(side)
+		# Its length (local x) along the lane.
+		base.transform = Transform3D(Basis(Vector3.UP, atan2(-out.z, out.x)), at)
+		var to_lane := at - out * at.dot(out)
+		base.spawn_point = at - to_lane.normalized() * (AttackerBase.SIZE.y * 0.5 + AttackerBase.SPAWN_OUT)
+		nav_region.add_child(base)
+		bases.append(base)
+
+
+## True if `p` is on a helipad's lot (its deck and BASE_LOT_MARGIN round it).
+func _on_base_lot(p: Vector3) -> bool:
+	for b in bases:
+		if b.edge_distance(p) <= BASE_LOT_MARGIN:
+			return true
+	return false
 
 
 ## Builds the possessable stations on the bunker's mounts and gun decks; returns the mounts used.

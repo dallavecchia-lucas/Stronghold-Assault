@@ -32,6 +32,21 @@ static func is_valid_target(t) -> bool:
 	return t != null and is_instance_valid(t) and t.is_alive()
 
 
+## A live target that basic attacks can pick: not an infiltrator under adaptive camo
+## (InfiltratorTrooper.camouflaged). Area damage doesn't ask.
+static func targetable(t) -> bool:
+	return is_valid_target(t) and not t.get("camouflaged")
+
+
+## Low profile (InfiltratorTrooper): attackers never pick it out on their own, only when ordered to
+## attack it.
+static func low_profile(t) -> bool:
+	if t == null or not is_instance_valid(t):
+		return false
+	var v = t.get("low_profile")
+	return v is bool and v
+
+
 ## Point to aim at on a target (center mass for characters, center for buildings).
 static func aim_point(t: Node3D) -> Vector3:
 	if t.has_method("get_aim_point"):

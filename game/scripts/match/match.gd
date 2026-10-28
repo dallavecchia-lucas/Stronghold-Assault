@@ -32,6 +32,7 @@ func _ready() -> void:
 	commander.name = "AttackerCommander"
 	commander.units_root = units_root
 	commander.spawn_points = level.spawn_points
+	commander.spawn_bases = level.spawn_bases
 	add_child(commander)
 
 	ui = MatchUI.new()
@@ -126,12 +127,14 @@ func _autotest_step(delta: float) -> void:
 		_autotest_events = step
 		if player_controller is DefenderController:
 			var dc: DefenderController = player_controller
-			# Buy two AA Squads and a Flame Squad early, drive them now and then and swap their orders.
+			# Buy two AA Squads, a Flame Squad and an Infiltrator Squad early, drive them now and then and
+			# swap their orders (the infiltrators' next order sends them on a sabotage operation).
 			if step == 2:
-				armory.credits += DefenderArmory.AA_COST + DefenderArmory.FLAME_COST
+				armory.credits += DefenderArmory.AA_COST + DefenderArmory.FLAME_COST + DefenderArmory.INFILTRATOR_COST
 				dc.buy_squad()
 				dc.buy_squad()
 				dc.buy_squad("flame")
+				dc.buy_squad("infiltrator")
 			if step % 7 == 5:
 				for s in armory.squads:
 					s.cycle_order()
@@ -179,6 +182,17 @@ func _autotest_report() -> void:
 			_autotest_t, commander.units.size(), commander.supply, level.keep.hp, ", ".join(gates)])
 	if armory:
 		for s in armory.squads:
-			var extra := "mines_down=%d" % (s as AASquad).mines.size() if s is AASquad else "trees_burnt=%d" % (s as FlameSquad).burnt.size()
+			var extra := ""
+			if s is AASquad:
+				extra = "mines_down=%d" % (s as AASquad).mines.size()
+			elif s is FlameSquad:
+				extra = "trees_burnt=%d" % (s as FlameSquad).burnt.size()
+			elif s is InfiltratorSquad:
+				var arrows := 0
+				for t in s.troopers:
+					arrows += (t as InfiltratorTrooper).stats.arrows
+				extra = "kits=%d camo=%.0f arrows=%d" % [(s as InfiltratorSquad).kits, (s as InfiltratorSquad).camo_left, arrows]
 			print("AUTOTEST %s alive=%d order=%s plan=%s %s stats=%s" % [s.station_name, s.troopers.size(),
 					s.order_name(), s.get("plan"), extra, s.get("stats")])
+	for b in level.bases:
+		print("AUTOTEST %s controlled=%s capture=%.1f" % [b.display_name, b.controlled, b.capture])
