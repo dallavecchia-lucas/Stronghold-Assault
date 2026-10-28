@@ -11,7 +11,7 @@ extends SquadTrooper
 ## the attacking player orders an attack on her. Under the squad's adaptive camo (set_camo) she is
 ## untargetable by basic attacks: she leaves the defenders' physics layer (shots pass through her,
 ## clicks don't find her) and orders to attack her lapse (Combat.targetable); on the attacker's side
-## she is all but invisible (CAMO_TRANSPARENCY). Splash damage still finds her (Combat.damage_area).
+## she, her bow and her arrow don't show at all. Splash damage still finds her (Combat.damage_area).
 ##
 ## The rigged model's clips come from tools/rig/rig_infiltrator.py: an archer's stance, the bow held
 ## out on the aim and the string drawn to the right cheek. InfiltratorRig finds the bow's grip (`bow`)
@@ -32,11 +32,10 @@ const BOW_HALF := 0.66
 const BOW_DEPTH := 0.15
 const LIMB_WIDTH := Vector2(0.034, 0.014)
 const LIMB_THICK := Vector2(0.026, 0.012)
-## How see-through she is on the attacker's side under camo (1: not there at all).
-const CAMO_TRANSPARENCY := 0.99
-
 var low_profile := true
 var camouflaged := false
+## Not drawn: under camo, on the attacker's side.
+var hidden := false
 var trigger := false
 ## 0 just after an arrow leaves, 1 drawn and ready.
 var draw := 1.0
@@ -47,7 +46,6 @@ var _bow_node: MeshInstance3D
 var _string: ImmediateMesh
 var _string_mi: MeshInstance3D
 var _held: MeshInstance3D
-var _geometry: Array[GeometryInstance3D] = []
 
 static var _bow_mesh: ArrayMesh
 
@@ -90,11 +88,6 @@ func _build_weapon() -> void:
 	_held.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_held.visible = false
 	add_child(_held)
-	for g in _model.find_children("*", "GeometryInstance3D", true, false):
-		_geometry.append(g as GeometryInstance3D)
-	_geometry.append(_bow_node)
-	_geometry.append(_string_mi)
-	_geometry.append(_held)
 
 
 func _weapon_down() -> void:
@@ -103,15 +96,17 @@ func _weapon_down() -> void:
 
 
 ## The squad's adaptive camo: on, she can't be targeted by basic attacks (see the class notes);
-## `hidden`: she is all but invisible too (the attacker's view; the defender sees her as ever).
-func set_camo(on: bool, hidden: bool) -> void:
+## `unseen`: she isn't drawn at all, nor her shadow (the attacker's view; the defender sees her as ever).
+func set_camo(on: bool, unseen: bool) -> void:
 	camouflaged = on
+	hidden = on and unseen
 	if hp > 0.0:
 		collision_layer = 0 if on else GameConfig.LAYER_DEFENDERS
-	for g in _geometry:
-		g.transparency = CAMO_TRANSPARENCY if on and hidden else 0.0
-		g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if on and hidden or g == _string_mi or g == _held \
-				else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	_model.visible = not hidden
+	if hidden:
+		_bow_node.visible = false
+		_string_mi.visible = false
+		_held.visible = false
 
 
 ## The bow's grip in the world (Z toward the target), once the rig has posed it.
@@ -157,14 +152,16 @@ func _loose() -> void:
 ## Every frame once the rig has posed the hands: the bow on the grip, the string from tip to tip
 ## through the string fingers (as far back as the draw has come), the next arrow on it.
 func _string_bow() -> void:
-	if hp <= 0.0 and _model.position.y < -0.5:
+	if hidden or hp <= 0.0 and _model.position.y < -0.5:
 		_bow_node.visible = false
+		_held.visible = false
 		_string_mi.visible = false
 		return
 	var rig := _rig as InfiltratorRig
 	var xf := rig.bow()
 	_bow_node.global_transform = xf
 	_bow_node.visible = true
+	_string_mi.visible = true
 	var top := xf * Vector3(0.0, BOW_HALF, -BOW_DEPTH)
 	var bottom := xf * Vector3(0.0, -BOW_HALF, -BOW_DEPTH)
 	var rest := (top + bottom) * 0.5

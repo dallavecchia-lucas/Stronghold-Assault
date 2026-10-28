@@ -24,7 +24,6 @@ void fragment() {
 var squad: InfiltratorSquad
 
 var _vignette: ColorRect
-var _fade := 0.0
 
 
 func _ready() -> void:
@@ -43,21 +42,17 @@ func _ready() -> void:
 	add_child(_vignette)
 
 
-func _process(delta: float) -> void:
+func _process(_delta: float) -> void:
 	if not visible or squad == null:
 		return
-	# The vignette eases in as the camo goes on and out as it wears off.
-	_fade = move_toward(_fade, 1.0 if squad.camo_left > 0.0 else 0.0, delta * 3.0)
-	_vignette.visible = _fade > 0.0
-	if _vignette.visible:
-		var pulse := 0.92 + 0.08 * sin(Time.get_ticks_msec() * 0.003)
-		(_vignette.material as ShaderMaterial).set_shader_parameter("strength", _fade * pulse)
+	# A steady vignette for as long as the camo is on.
+	_vignette.visible = squad.camo_left > 0.0
 	queue_redraw()
 
 
 ## How strong the camo vignette is right now (0: none).
 func vignette() -> float:
-	return _fade if _vignette.visible else 0.0
+	return 1.0 if _vignette.visible else 0.0
 
 
 func _draw() -> void:

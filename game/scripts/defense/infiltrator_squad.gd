@@ -8,7 +8,7 @@ extends DefenderSquad
 ##   - Q, adaptive camo: CAMO_TIME of camouflage for the whole squad, ready again CAMO_COOLDOWN after
 ##     it went on. Basic attacks can't target the troopers (their shots pass through them, orders to
 ##     attack them lapse); area damage (bombs, shells, cluster bombs, rockets, strafing runs) still
-##     hurts and kills them. On the attacker's side they turn all but invisible; on the defender's
+##     hurts and kills them. On the attacker's side they vanish from sight; on the defender's
 ##     they look as ever and the squad's camera gets a vignette while it lasts (InfiltratorHud).
 ##   - F, sabotage: next to an attacker building the attackers hold (AttackerBase: the leader within
 ##     AttackerBase.SABOTAGE_REACH of its deck), the squad sabotages it, AttackerBase.SABOTAGE_TIME
@@ -258,7 +258,7 @@ func start_camo() -> bool:
 	return true
 
 
-## On the attacker's side the camo makes the troopers all but invisible; the defender sees them.
+## On the attacker's side the camo hides the troopers from sight; the defender sees them.
 static func _camo_hidden() -> bool:
 	return GameConfig.player_side == GameConfig.PlayerSide.ATTACKER
 
