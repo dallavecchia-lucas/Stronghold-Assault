@@ -25,6 +25,7 @@ extends Node
 ##   {"type": "missile", "units": [ids], "target": NodePath}   elephants fire missile salvos at
 ##               an enemy flyer, only as many as the kill takes (ElephantMissiles)
 ##   {"type": "ram", "units": [ids]}   breaching rams surge forward (AttackerUnit.start_ram)
+##   {"type": "ping", "units": [ids]}   giraffes ping from their dishes (AttackerUnit.start_ping)
 ##   {"type": "scout", "units": [ids]}   toggle scout formation: the rhinos in the selection
 ##                                       ring the rest of it so their anti-air covers the mass
 ##
@@ -120,6 +121,10 @@ func submit(cmd: Dictionary) -> int:
 		"ram":
 			for u in _resolve(cmd.units):
 				u.start_ram()
+		"ping":
+			for u in _resolve(cmd.units):
+				if not u.raiding:
+					u.start_ping()
 		"scout":
 			_toggle_scout(cmd.units)
 	return 0
@@ -162,8 +167,9 @@ func _move(ids: Array, pos: Vector3, attack: bool) -> void:
 
 func _attack(ids: Array, target_path: NodePath) -> void:
 	var target := get_node_or_null(target_path) as Node3D
-	# Under adaptive camo an infiltrator can't be picked out, even on orders.
-	if not Combat.targetable(target):
+	# Under adaptive camo an infiltrator can't be picked out, even on orders; nor anyone in the fog
+	# of war.
+	if not Combat.targetable(target) or not AttackerVision.sees_node(target):
 		return
 	var list := _resolve(_without_scouts(ids))
 	for u in list:

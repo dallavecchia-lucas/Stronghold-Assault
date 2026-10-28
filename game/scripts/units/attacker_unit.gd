@@ -15,6 +15,8 @@ signal strafe_impact(at: Vector3)
 signal bomb_dropped(bomb: TalonBomb, spot: Vector3)
 ## A kangaroo's flash grenade left its paw for `spot`.
 signal flash_thrown(grenade: FlashGrenade, spot: Vector3)
+## A giraffe's ping went out from its dish.
+signal pinged(ping: GiraffePing)
 
 const HEAL_COLOR := Color(0.35, 1.0, 0.45)
 const AA_COLOR := Color(1.0, 0.9, 0.4)
@@ -41,6 +43,9 @@ const RAID_FLASH_RISE := 3.5
 ## Seconds into the throw the grenade shows in the paw (it pulls it as it rears up).
 const FLASH_IN_PAW := 0.25
 const SUPPLY_COLOR := Color(0.85, 0.8, 0.35, 0.8)
+const PING_COLOR := Color(0.45, 1.0, 0.6, 0.7)
+## Sight of a unit type with none set (m).
+const SIGHT := 30.0
 
 static var _supply_tex: ImageTexture
 
@@ -73,6 +78,8 @@ var strafe_cd := 0.0
 var bomb_cd := 0.0
 ## Seconds until the flash grenade can be thrown again.
 var flash_cd := 0.0
+## Seconds until the giraffe can ping again.
+var ping_cd := 0.0
 ## Share a kangaroo nearby cuts off its skills' cooldowns (the kangaroo's passive, handed out by
 ## AttackerCommander): 0 when none does.
 var resupply := 0.0
@@ -95,6 +102,8 @@ var selected := false:
 			_aa_ring.visible = v
 		if _supply_ring:
 			_supply_ring.visible = v
+		if _ping_ring:
+			_ping_ring.visible = v
 		_update_hp_bar()
 
 var _agent: NavigationAgent3D
@@ -145,6 +154,10 @@ var _burst_target: Node3D
 var _next_muzzle := 0
 var _rig: KangarooRig  # set when the model carries the kangaroo's SMGs and throwing paw
 var _held: MeshInstance3D  # the flash grenade in the paw while it winds up
+## Ping under way: seconds into it (-1: none) and whether the pulse has gone out.
+var _ping_t := -1.0
+var _ping_sent := false
+var _ping_ring: MeshInstance3D
 ## Fighting what it has in range and sight this frame (it stands and faces it).
 var _engaged := false
 var _supply_ring: MeshInstance3D
@@ -305,10 +318,28 @@ func flash_spot() -> Vector3:
 	return _flash_aim if is_throwing() and not _flash_thrown else Vector3.INF
 
 
+func has_ping() -> bool:
+	return stats.has("ping_cooldown")
+
+
+func ping_ready() -> bool:
+	return has_ping() and ping_cd <= 0.0 and is_alive() and not is_pinging()
+
+
+## Standing with its neck up and its dish sweeping, sending a ping: it stands until it is done.
+func is_pinging() -> bool:
+	return _ping_t >= 0.0
+
+
+## How far it sees through the fog of war (AttackerVision).
+func sight() -> float:
+	return stats.get("sight", SIGHT)
+
+
 ## Any of its skills cooling down: what a kangaroo's resupply speeds up.
 func cooling_down() -> bool:
 	return cluster_cd > 0.0 or smoke_cd > 0.0 or missile_cd > 0.0 or ram_cd > 0.0 or bombard_cd > 0.0 \
-			or strafe_cd > 0.0 or bomb_cd > 0.0 or flash_cd > 0.0
+			or strafe_cd > 0.0 or bomb_cd > 0.0 or flash_cd > 0.0 or ping_cd > 0.0
 
 
 ## Kangaroo passive: carries supplies for others (AttackerCommander hands them out).
@@ -455,6 +486,7 @@ func _die() -> void:
 	_cluster_left = 0.0
 	_bombard_left = 0.0
 	_flash_t = -1.0
+	_ping_t = -1.0
 	_burst_left = 0
 	resupply = 0.0
 	if _held:
@@ -476,6 +508,8 @@ func _die() -> void:
 	_ring.visible = false
 	if _aa_ring:
 		_aa_ring.visible = false
+	if _ping_ring:
+		_ping_ring.visible = false
 	_hp_bar.visible = false
 	died.emit(self)
 	var tw := create_tween()
@@ -525,17 +559,19 @@ func _update_target() -> void:
 	if order.type == "move":
 		target = null
 		return
-	if Combat.targetable(target) and _in_range(target) and _can_see(target) and not Combat.low_profile(target):
+	if Combat.targetable(target) and _in_range(target) and _can_see(target) and not Combat.low_profile(target) \
+			and AttackerVision.sees_node(target):
 		return
 	target = _find_enemy()
 
 
 ## The nearest defender in range and sight (else a gate or the keep in range). Infiltrators keep a
-## low profile: a unit never picks one out on its own, only when ordered to attack it.
+## low profile: a unit never picks one out on its own, only when ordered to attack it (or once a ping
+## has revealed her). Defenders in the fog of war can't be picked out either (AttackerVision).
 func _find_enemy() -> Node3D:
 	var candidates := []
 	for d in get_tree().get_nodes_in_group("defender_targets"):
-		if d.is_alive() and _in_range(d) and not Combat.low_profile(d):
+		if d.is_alive() and _in_range(d) and not Combat.low_profile(d) and AttackerVision.sees_node(d):
 			candidates.append([global_position.distance_to(d.global_position), d])
 	candidates.sort_custom(func(a, b): return a[0] < b[0])
 	for c in candidates.slice(0, 3):
@@ -713,6 +749,38 @@ func _raid_flash() -> void:
 	if absf(to.y) < RAID_FLASH_RISE and to.length() <= minf(stats.flash_range, RAID_FLASH_REACH) \
 			and to.length() >= RAID_FLASH_MIN and _can_see(target):
 		start_flash(target.global_position)
+
+
+## Giraffe active: stand, stretch its neck up and sweep the dish, and send a ping (GiraffePing) out
+## from it. False while on cooldown.
+func start_ping() -> bool:
+	if not ping_ready():
+		return false
+	ping_cd = stats.ping_cooldown
+	_ping_t = 0.0
+	_ping_sent = false
+	_burst_left = 0
+	return true
+
+
+func _ping_tick(delta: float) -> void:
+	_ping_t += delta
+	if not _ping_sent and _ping_t >= stats.ping_release:
+		_ping_sent = true
+		_send_ping()
+	if _ping_t >= stats.ping_time:
+		_ping_t = -1.0
+
+
+func _send_ping() -> void:
+	var p := GiraffePing.new()
+	p.team = team
+	p.radius = stats.ping_radius
+	p.speed = stats.ping_speed
+	p.mark = stats.ping_mark
+	get_tree().current_scene.add_child(p)
+	p.global_position = global_position
+	pinged.emit(p)
 
 
 ## Medic: patch up the most hurt ally in range.
@@ -1154,6 +1222,10 @@ func _physics_process(delta: float) -> void:
 		flash_cd = maxf(flash_cd - cool, 0.0)
 		if is_throwing():
 			_flash_tick(delta)
+	if has_ping():
+		ping_cd = maxf(ping_cd - cool, 0.0)
+		if is_pinging():
+			_ping_tick(delta)
 	if _burst_left > 0:
 		_burst_tick(delta)
 	if stats.has("aa_dps") and _fire_cd <= 0.0:
@@ -1165,8 +1237,8 @@ func _physics_process(delta: float) -> void:
 	# A charging ram doesn't stop to shoot: it runs for its slot in front of the gate, or, raiding,
 	# into the soldier it hunts. A kangaroo throwing a grenade holds its fire.
 	var running_over := raiding and is_ramming() and _is_soldier(target)
-	var engaged := charge_gate == null and not running_over and not is_throwing() and Combat.targetable(target) \
-			and _in_range(target) and _sees_target
+	var engaged := charge_gate == null and not running_over and not is_throwing() and not is_pinging() \
+			and Combat.targetable(target) and _in_range(target) and _sees_target
 	_engaged = engaged
 	if stats.has("overheat_time"):
 		_heat_tick(delta, engaged and not is_overheated())
@@ -1174,6 +1246,8 @@ func _physics_process(delta: float) -> void:
 		_face(_bombard_aim, delta)  # stands still while it lays the gun and fires
 	elif is_throwing():
 		_face(_flash_aim, delta)  # stands up on the spot and throws
+	elif is_pinging():
+		pass  # stands on the spot while the dish sweeps
 	elif engaged:
 		_face(target.global_position, delta)
 		if _fire_cd <= 0.0 and not is_overheated():
@@ -1335,15 +1409,18 @@ func _process(delta: float) -> void:
 		_anim_t += delta * spd
 	if _anim:
 		# Rigged model: play its clips, matching the move cycle to ground speed (within anim_scale).
-		# A kangaroo throwing a flash grenade plays its throw.
+		# A kangaroo throwing a flash grenade plays its throw, a giraffe pinging its ping.
 		var clip: String = stats.anim_move if moving else stats.anim_idle
+		var skill := is_throwing() or is_pinging()
 		if is_throwing():
 			clip = "Throw"
+		elif is_pinging():
+			clip = "Ping"
 		if _anim.current_animation != clip:
-			_anim.play(clip, 0.15 if is_throwing() else 0.25)
+			_anim.play(clip, 0.15 if skill else 0.25)
 		var rate: Array = stats.get("anim_scale", [0.6, 2.0])
 		_anim.speed_scale = clampf(spd / stats.anim_ref_speed, rate[0], 3.0 if is_ramming() else rate[1]) \
-				if moving and not is_throwing() else 1.0
+				if moving and not skill else 1.0
 	if _rig:
 		_pose_rig(delta)
 	match stats.anim:
@@ -1479,6 +1556,18 @@ func _build_ring() -> void:
 		_supply_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_supply_ring.visible = false
 		add_child(_supply_ring)
+	if has_ping():
+		# Dashed circle showing how far the giraffe's ping reaches.
+		var im := ImmediateMesh.new()
+		im.surface_begin(Mesh.PRIMITIVE_LINES)
+		RhinoAim.dashed_circle(im, Vector3.UP * 0.15, stats.ping_radius, 96)
+		im.surface_end()
+		_ping_ring = MeshInstance3D.new()
+		_ping_ring.mesh = im
+		_ping_ring.material_override = Mats.unshaded(PING_COLOR)
+		_ping_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_ping_ring.visible = false
+		add_child(_ping_ring)
 
 
 func _build_hp_bar() -> void:

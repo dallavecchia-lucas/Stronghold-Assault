@@ -10,6 +10,9 @@ extends DefenderSquad
 ##     attack them lapse); area damage (bombs, shells, cluster bombs, rockets, strafing runs) still
 ##     hurts and kills them. On the attacker's side they vanish from sight; on the defender's
 ##     they look as ever and the squad's camera gets a vignette while it lasts (InfiltratorHud).
+##     They can shoot under it, but the first arrow loosed gives them away: the camo comes off
+##     (break_camo). Going under camo also hides troopers a giraffe's ping revealed
+##     (InfiltratorTrooper.revealed).
 ##   - F, sabotage: next to an attacker building the attackers hold (AttackerBase: the leader within
 ##     AttackerBase.SABOTAGE_REACH of its deck), the squad sabotages it, AttackerBase.SABOTAGE_TIME
 ##     (45 s) with the leader staying that close. Done, the attackers lose control of it until they
@@ -66,7 +69,7 @@ var camo_cd := 0.0
 var route := PackedVector3Array()
 var spot := Vector3.INF
 ## Totals (the autotest reports them).
-var stats := {"sabotaged": 0, "camo": 0, "plans": 0}
+var stats := {"sabotaged": 0, "camo": 0, "camo_broken": 0, "plans": 0}
 
 var _replan_cd := 0.0
 var _spot_cd := 0.0
@@ -256,6 +259,18 @@ func start_camo() -> bool:
 	for t in troopers:
 		(t as InfiltratorTrooper).set_camo(true, _camo_hidden())
 	return true
+
+
+## An arrow loosed under camo: it comes off the whole squad at once (the cooldown runs on as it was).
+func break_camo() -> void:
+	if camo_left <= 0.0:
+		return
+	camo_left = 0.0
+	for t in troopers:
+		(t as InfiltratorTrooper).set_camo(false, _camo_hidden())
+	stats.camo_broken += 1
+	if possessed:
+		notify("CAMO BROKEN: YOU FIRED")
 
 
 ## On the attacker's side the camo hides the troopers from sight; the defender sees them.
