@@ -9,6 +9,8 @@ var commander: AttackerCommander
 var ui: MatchUI
 var player_controller: Node
 var ai_attacker: AIAttacker
+## The attackers' fog of war.
+var vision: AttackerVision
 ## The defenders' credits and bought squads (the human defender's; the CPU defender buys none).
 var armory: DefenderArmory
 var time_left := 600.0
@@ -34,6 +36,11 @@ func _ready() -> void:
 	commander.spawn_points = level.spawn_points
 	commander.spawn_bases = level.spawn_bases
 	add_child(commander)
+	vision = AttackerVision.new()
+	vision.name = "AttackerVision"
+	vision.commander = commander
+	vision.hide_enemies = GameConfig.player_side == GameConfig.PlayerSide.ATTACKER
+	add_child(vision)
 
 	ui = MatchUI.new()
 	ui.level = level
@@ -151,9 +158,10 @@ func _autotest_step(delta: float) -> void:
 		elif player_controller is AttackerController:
 			var ac: AttackerController = player_controller
 			ac.set_spawn_point(step % 3)
-			for t in [UnitTypes.ORDER[step % UnitTypes.ORDER.size()], "rifleman", "kangaroo", "medic"]:
+			for t in [UnitTypes.ORDER[step % UnitTypes.ORDER.size()], "rifleman", "kangaroo", "medic", "giraffe"]:
 				ac.spawn(t)
 			var ids := commander.units.keys()
+			commander.submit({"type": "ping", "units": ids})
 			var gate: Structure = level.gates.values()[step % 3]
 			if gate.is_alive():
 				commander.submit({"type": "ram", "units": ids})

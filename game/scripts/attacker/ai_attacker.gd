@@ -4,7 +4,8 @@ extends Node
 ## Helipad while it holds it, else the map's edge), then sends them at the gate on that side; once a
 ## gate falls everyone pushes for the keep. A helipad the defenders sabotaged is retaken by the
 ## ground units nearest it (_retake_bases). It never goes after the defenders' infiltrators: it
-## doesn't know they are there (their low profile, Combat.low_profile).
+## doesn't know they are there (their low profile, Combat.low_profile), unless its giraffes' pings
+## reveal them (_giraffe_pings).
 ## Uses the same command interface as the human RTS player.
 
 var commander: AttackerCommander
@@ -24,6 +25,8 @@ const SPAWN_SIDES := ["south", "east", "west"]
 const FLASH_SPARE := 0.97
 ## Units sent to retake a sabotaged helipad: as many as RETAKERS of the nearest ground units.
 const RETAKERS := 3
+## Giraffes this close to the middle of the map (m, flat) are out on the field: they ping.
+const PING_FIELD := 150.0
 
 ## Helipad -> ids of the units sent to retake it.
 var _retakers := {}
@@ -61,6 +64,7 @@ func _think() -> void:
 	_ram_gates()
 	_talon_strikes()
 	_kangaroo_flashes()
+	_giraffe_pings()
 
 
 func _plan_wave() -> void:
@@ -77,6 +81,7 @@ func _plan_wave() -> void:
 		"kangaroo": mini(1 + _wave / 2, 5),
 		"talon": 0 if _wave < 2 else mini(_wave - 1, 4),
 		"chimp": 0 if _wave < 3 else mini(1 + _wave / 3, 4),
+		"giraffe": 1 if _wave >= 2 else 0,
 	}
 	# Interleave so a partly-spawned wave is still a sensible mix.
 	var remaining := true
@@ -214,13 +219,24 @@ func _kangaroo_flashes() -> void:
 		commander.submit({"type": "flash", "units": group.map(func(k): return k.unit_id), "pos": t.global_position})
 
 
+## Giraffes out on the field ping whenever they can: the CPU doesn't know where the defenders' squads
+## are any more than a player would, so it sweeps the ground in front of its army.
+func _giraffe_pings() -> void:
+	var ids := []
+	for u in commander.units.values():
+		if u.ping_ready() and not u.raiding and Vector2(u.global_position.x, u.global_position.z).length() < PING_FIELD:
+			ids.append(u.unit_id)
+	if not ids.is_empty():
+		commander.submit({"type": "ping", "units": ids})
+
+
 ## The nearest live defender `pick` takes (or gate) within `reach` of `u` (flat), with room to spare
-## (within `spare` of it).
+## (within `spare` of it). Only what the army sees: the CPU plays by the fog of war (AttackerVision).
 func _in_reach(u: AttackerUnit, reach: float, pick: Callable, spare := 0.85) -> Node3D:
 	var best: Node3D = null
 	var best_d := reach * spare
 	for d in level.get_tree().get_nodes_in_group("damageable"):
-		if d.team == u.team or not d.is_alive() or Combat.low_profile(d) or not pick.call(d):
+		if d.team == u.team or not d.is_alive() or Combat.low_profile(d) or not AttackerVision.sees_node(d) or not pick.call(d):
 			continue
 		var dist := Vector2(d.global_position.x - u.global_position.x, d.global_position.z - u.global_position.z).length()
 		if dist < best_d:

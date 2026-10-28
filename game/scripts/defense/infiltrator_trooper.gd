@@ -12,6 +12,12 @@ extends SquadTrooper
 ## untargetable by basic attacks: she leaves the defenders' physics layer (shots pass through her,
 ## clicks don't find her) and orders to attack her lapse (Combat.targetable); on the attacker's side
 ## she, her bow and her arrow don't show at all. Splash damage still finds her (Combat.damage_area).
+## Loosing an arrow gives her away: the squad's camo comes off (InfiltratorSquad.break_camo).
+##
+## A giraffe's ping (GiraffePing) that catches her out of camo reveals her (reveal): the attackers
+## know her, her low profile is gone and they go after her on their own like anyone, until she puts
+## the camo on or slips back into the fog of war (AttackerVision). While revealed a radar icon hangs
+## over her, on the defender's side only. Caught under camo she only leaves a blur on their radar.
 ##
 ## The rigged model's clips come from tools/rig/rig_infiltrator.py: an archer's stance, the bow held
 ## out on the aim and the string drawn to the right cheek. InfiltratorRig finds the bow's grip (`bow`)
@@ -32,7 +38,11 @@ const BOW_HALF := 0.66
 const BOW_DEPTH := 0.15
 const LIMB_WIDTH := Vector2(0.034, 0.014)
 const LIMB_THICK := Vector2(0.026, 0.012)
-var low_profile := true
+## Revealed by a ping (see the class notes): no low profile meanwhile.
+var revealed := false
+var low_profile: bool:
+	get:
+		return not revealed
 var camouflaged := false
 ## Not drawn: under camo, on the attacker's side.
 var hidden := false
@@ -46,8 +56,10 @@ var _bow_node: MeshInstance3D
 var _string: ImmediateMesh
 var _string_mi: MeshInstance3D
 var _held: MeshInstance3D
+var _radar: Sprite3D
 
 static var _bow_mesh: ArrayMesh
+static var _radar_tex: ImageTexture
 
 
 func _init() -> void:
@@ -88,11 +100,24 @@ func _build_weapon() -> void:
 	_held.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_held.visible = false
 	add_child(_held)
+	_radar = Sprite3D.new()
+	_radar.texture = _radar_texture()
+	_radar.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	_radar.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_radar.shaded = false
+	_radar.no_depth_test = true
+	_radar.fixed_size = true  # the same size on screen however far off she is
+	_radar.pixel_size = 0.0016
+	_radar.position.y = SquadTrooper.HEIGHT + 0.55
+	_radar.visible = false
+	add_child(_radar)
 
 
 func _weapon_down() -> void:
 	trigger = false
 	_held.visible = false
+	revealed = false
+	_radar.visible = false
 
 
 ## The squad's adaptive camo: on, she can't be targeted by basic attacks (see the class notes);
@@ -100,6 +125,8 @@ func _weapon_down() -> void:
 func set_camo(on: bool, unseen: bool) -> void:
 	camouflaged = on
 	hidden = on and unseen
+	if on:
+		_conceal()
 	if hp > 0.0:
 		collision_layer = 0 if on else GameConfig.LAYER_DEFENDERS
 	_model.visible = not hidden
@@ -109,12 +136,34 @@ func set_camo(on: bool, unseen: bool) -> void:
 		_held.visible = false
 
 
+## A ping caught her: out of camo she is revealed (true); under it, she isn't (false).
+func reveal() -> bool:
+	if camouflaged or hp <= 0.0:
+		return false
+	revealed = true
+	_radar.visible = show_radar()
+	return true
+
+
+## Known no more: under camo, or back in the fog of war.
+func _conceal() -> void:
+	revealed = false
+	_radar.visible = false
+
+
+## The radar icon is the defender's: it shows on the defender's side only.
+static func show_radar() -> bool:
+	return GameConfig.player_side == GameConfig.PlayerSide.DEFENDER
+
+
 ## The bow's grip in the world (Z toward the target), once the rig has posed it.
 func grip() -> Transform3D:
 	return (_rig as InfiltratorRig).bow()
 
 
 func _weapon_tick(delta: float) -> void:
+	if revealed and not AttackerVision.sees(global_position):
+		_conceal()
 	draw = minf(draw + delta / DRAW_TIME, 1.0)
 	if trigger and draw >= 1.0 and _on_aim():
 		_loose()
@@ -137,6 +186,8 @@ func _on_aim() -> bool:
 
 func _loose() -> void:
 	draw = 0.0
+	if camouflaged and squad:
+		squad.break_camo()  # the shot gives the squad away
 	var xf := grip()
 	var from := xf.origin + xf.basis.z.normalized() * 0.1
 	var arrow := Arrow.new()
@@ -221,3 +272,32 @@ static func _make_bow() -> ArrayMesh:
 	st.set_material(mat)
 	_bow_mesh = st.commit()
 	return _bow_mesh
+
+
+## The revealed infiltrators' icon: a radar scope, a dark disc ringed in red with a sweep line and a
+## contact blip.
+static func _radar_texture() -> ImageTexture:
+	if _radar_tex:
+		return _radar_tex
+	var n := 23
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var c := Vector2(11, 11)
+	var red := Color(1.0, 0.25, 0.18)
+	for y in n:
+		for x in n:
+			var p := Vector2(x, y) - c
+			var r := p.length()
+			if r <= 11.4:
+				img.set_pixel(x, y, Color(0.06, 0.07, 0.06, 0.85))
+			if r > 9.6 and r <= 11.4:
+				img.set_pixel(x, y, red)
+			elif absf(r - 5.5) < 0.6:
+				img.set_pixel(x, y, Color(red, 0.55))
+	# The sweep line out to the upper right, and the contact it found.
+	for k in 10:
+		var p := c + Vector2(1, -1).normalized() * k
+		img.set_pixel(int(round(p.x)), int(round(p.y)), Color(1.0, 0.55, 0.45))
+	img.fill_rect(Rect2i(14, 12, 3, 3), Color(1.0, 0.85, 0.3))
+	_radar_tex = ImageTexture.create_from_image(img)
+	return _radar_tex

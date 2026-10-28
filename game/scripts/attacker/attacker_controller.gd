@@ -16,6 +16,9 @@ extends CanvasLayer
 ##    with no hippo ready, the selected kangaroos' flash grenades (LMB fire, RMB/R cancel)
 ## O: aim the selected elephants' missiles: LMB an enemy aircraft (RMB/O cancel)
 ## Space: the selected breaching rams ram (then RMB a gate to charge it)
+## P: the selected giraffes ping
+## The fog of war (AttackerVision) dims the land the army doesn't see (FogOverlay); defenders in it
+## can't be ordered at.
 
 const DRAG_THRESHOLD := 6.0
 const CLUSTER_KEY := KEY_F
@@ -24,6 +27,7 @@ const SMOKE_KEY := KEY_R
 const BOMBARD_KEY := KEY_G
 const MISSILE_KEY := KEY_O
 const RAM_KEY := KEY_SPACE
+const PING_KEY := KEY_P
 const SMOKE_FILL := Color(0.2, 0.9, 0.6, 0.35)
 const SMOKE_LINE := Color(0.3, 1.0, 0.7)
 const MISSILE_LINE := Color(1.0, 0.35, 0.3)
@@ -65,6 +69,7 @@ var _smoke_mesh: ImmediateMesh
 var _missile_preview: MeshInstance3D
 var _missile_mesh: ImmediateMesh
 var _aim_label: Label
+var _fog: FogOverlay
 
 
 func _ready() -> void:
@@ -81,6 +86,10 @@ func _ready() -> void:
 	_build_smoke_preview()
 	_build_missile_preview()
 	_build_hud()
+	if AttackerVision.instance:
+		_fog = FogOverlay.new()
+		_fog.vision = AttackerVision.instance
+		camera_rig.camera.add_child(_fog)
 
 
 func restore_mouse() -> void:
@@ -177,6 +186,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			_alive_selection()
 			commander.submit({"type": "ram", "units": selected.map(func(u): return u.unit_id)})
 			return
+		if event.physical_keycode == PING_KEY:
+			_alive_selection()
+			commander.submit({"type": "ping", "units": selected.map(func(u): return u.unit_id)})
+			return
 		if event.physical_keycode == SCOUT_KEY:
 			_alive_selection()
 			commander.submit({"type": "scout", "units": selected.map(func(u): return u.unit_id)})
@@ -252,6 +265,8 @@ func _issue_order(pos: Vector2, force_move: bool) -> void:
 	if hit.is_empty():
 		return
 	var target = Combat.find_damageable(hit.collider)
+	if target and not AttackerVision.sees_node(target):
+		target = null  # hidden in the fog of war: an attack-move there
 	if target and target.team != GameConfig.TEAM_ATTACKER and target.is_alive() and not force_move:
 		commander.submit({"type": "attack", "units": ids, "target": target.get_path()})
 		_ping(target.global_position, UIKit.DANGER)
@@ -469,7 +484,7 @@ func _flash_target(screen_pos: Vector2):
 	if hit.is_empty():
 		return null
 	var d = Combat.find_damageable(hit.collider)
-	if d and d.team != GameConfig.TEAM_ATTACKER and not d.is_in_group("structures"):
+	if d and d.team != GameConfig.TEAM_ATTACKER and not d.is_in_group("structures") and AttackerVision.sees_node(d):
 		return d.global_position
 	return hit.position
 
@@ -663,11 +678,11 @@ func _build_hud() -> void:
 	row.add_child(sp)
 	set_spawn_point(0)
 
-	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nBisons: G bombardment (LMB fire, RMB cancel), onto the gun decks and roofs too\nTalons: F strafe run (press LMB on the target, drag the way to fly, let go) · G bomb strike (LMB fire) · RMB cancels\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nKangaroos: R flash grenade (LMB fire, RMB cancel) when no hippo's smoke is ready · they resupply units nearby\nChimps / Rams / Kangaroos: RMB next to a broken gate to send them in\nHelipads (S/E/W Pad): spawn there and +%.1f supply/s each while you hold them · sabotaged, stand ground units by one to retake it" % AttackerBase.INCOME,
+	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nBisons: G bombardment (LMB fire, RMB cancel), onto the gun decks and roofs too\nTalons: F strafe run (press LMB on the target, drag the way to fly, let go) · G bomb strike (LMB fire) · RMB cancels\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nGiraffes: see furthest through the fog · P ping: marks every defender it reaches, even under camo, and reveals infiltrators out of camo\nKangaroos: R flash grenade (LMB fire, RMB cancel) when no hippo's smoke is ready · they resupply units nearby\nChimps / Rams / Kangaroos: RMB next to a broken gate to send them in\nHelipads (S/E/W Pad): spawn there and +%.1f supply/s each while you hold them · sabotaged, stand ground units by one to retake it" % AttackerBase.INCOME,
 			13, Color(0.85, 0.85, 0.85, 0.75))
 	help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	help.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	help.position = Vector2(14, help.position.y - 222)
+	help.position = Vector2(14, help.position.y - 240)
 	root.add_child(help)
 
 	_aim_label = UIKit.label("", 15, MISSILE_LINE)
@@ -740,6 +755,14 @@ func _process(_delta: float) -> void:
 		if ready == 0:
 			var soonest: float = elephants.map(func(u): return u.missile_cd).min()
 			_selection_label.text += "  %ds" % ceili(soonest)
+	var giraffes := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_ping())
+	if not giraffes.is_empty():
+		var ready := giraffes.filter(func(u): return u.ping_ready()).size()
+		_selection_label.text += "\nPing %d/%d [P]" % [ready, giraffes.size()]
+		if ready == 0:
+			var soonest: float = giraffes.map(func(u): return u.ping_cd).min()
+			if soonest > 0.0:
+				_selection_label.text += "  %ds" % ceili(soonest)
 	var rams := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_ram())
 	if not rams.is_empty():
 		var ready := rams.filter(func(u): return u.ram_ready()).size()
