@@ -26,8 +26,8 @@ extends DefenderSquad
 ##          the helipad by a route that keeps as far from the attackers as it can while still heading
 ##          there (SneakRoute, replanned every REPLAN seconds as they move), up to the spot round the
 ##          deck where the fewest are, sabotages it, and comes home (restocking its kit) to HOLD in
-##          its hall. Out of kits it restocks first. It puts its camo on when an attacker comes within
-##          CAMO_ALARM.
+##          its hall. Out of kits it restocks first. It never puts its camo on by itself: that is the
+##          player's call.
 ## A bought squad is gone for good once all five troopers are down (lost ones are replaced from the
 ## hall it deployed in until then).
 
@@ -37,13 +37,11 @@ const ORDER_KEY := KEY_V
 const CAMO_TIME := 20.0
 const CAMO_COOLDOWN := 60.0
 ## Left alone: seconds between route plans and sabotage spot picks, how far ahead along the route the
-## leader makes for (m), how fast it walks (m/s), and how close an attacker has to come for it to put
-## its camo on (m).
+## leader makes for (m) and how fast it walks (m/s).
 const REPLAN := 1.0
 const SPOT_EVERY := 3.0
 const LOOKAHEAD := 12.0
 const AI_WALK := SquadTrooper.CLIP_FORWARD * 1.1
-const CAMO_ALARM := 18.0
 ## The spots it sabotages a helipad from: this far off its deck (well inside SABOTAGE_REACH).
 const SPOT_OUT := 2.2
 ## Out of the mountain through a gate: the leader makes for this far out in front of the door (m).
@@ -374,8 +372,6 @@ func _ai_control(delta: float) -> void:
 		op = null
 		plan = "home"
 		route.clear()
-	if plan != "hold" and camo_cd <= 0.0 and camo_left <= 0.0 and _attacker_within(CAMO_ALARM):
-		start_camo()
 	match plan:
 		"hold":
 			if hold_at == Vector3.INF:
@@ -527,13 +523,6 @@ func _gate_exit(p: Vector3) -> Vector3:
 		if best == Vector3.INF or _flat(at, p) < _flat(best, p):
 			best = at
 	return best if best != Vector3.INF else home.origin
-
-
-func _attacker_within(r: float) -> bool:
-	for u in get_tree().get_nodes_in_group("attacker_units"):
-		if u.is_alive() and _flat(u.global_position, leader.global_position) < r:
-			return true
-	return false
 
 
 ## Walking: the troopers look the way they go.
