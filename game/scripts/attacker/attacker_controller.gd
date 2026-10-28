@@ -5,7 +5,8 @@ extends CanvasLayer
 ##
 ## LMB click/drag: select · Shift adds · RMB: attack-move / attack target
 ## Ctrl+RMB: move without stopping to fight · Ctrl+1-5 assign group · 1-5 recall
-## Z X C V B N M H J K L Y U I: spawn units · Tab: cycle spawn point
+## Z X C V B N M H J K L Y U I: spawn units · Tab: cycle spawn point (the map's edge, and the
+##    Forward Helipads while the attackers hold them: AttackerBase)
 ## F: aim the selected rhinos' cluster bombing (LMB fire, RMB/F cancel) · T: scout formation
 ##    with no rhino ready, the selected talons' strafe run: press LMB on the middle of the line,
 ##    drag the way to fly it, let go to fire (a click flies it from the talons; RMB/F cancel)
@@ -558,6 +559,15 @@ func set_spawn_point(i: int) -> void:
 		_spawn_point_buttons[k].button_pressed = k == i
 
 
+## The spawn point after `i` that is open (a helipad only while the attackers hold it).
+func _next_open_spawn(i: int) -> int:
+	var n := commander.spawn_points.size()
+	for k in range(1, n + 1):
+		if commander.spawn_open((i + k) % n):
+			return (i + k) % n
+	return 0
+
+
 # ---------------------------------------------------------------- visuals / HUD
 
 func _build_marker() -> void:
@@ -645,17 +655,19 @@ func _build_hud() -> void:
 		b.focus_mode = Control.FOCUS_NONE
 		b.custom_minimum_size = Vector2(70, 34)
 		b.pressed.connect(set_spawn_point.bind(i))
+		if i < level.spawn_bases.size() and level.spawn_bases[i] != null:
+			b.tooltip_text = "%s: a forward spawn point while you hold it" % level.spawn_bases[i].display_name
 		sp_row.add_child(b)
 		_spawn_point_buttons.append(b)
 	sp.add_child(sp_row)
 	row.add_child(sp)
 	set_spawn_point(0)
 
-	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nBisons: G bombardment (LMB fire, RMB cancel), onto the gun decks and roofs too\nTalons: F strafe run (press LMB on the target, drag the way to fly, let go) · G bomb strike (LMB fire) · RMB cancels\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nKangaroos: R flash grenade (LMB fire, RMB cancel) when no hippo's smoke is ready · they resupply units nearby\nChimps / Rams / Kangaroos: RMB next to a broken gate to send them in",
+	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nBisons: G bombardment (LMB fire, RMB cancel), onto the gun decks and roofs too\nTalons: F strafe run (press LMB on the target, drag the way to fly, let go) · G bomb strike (LMB fire) · RMB cancels\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nKangaroos: R flash grenade (LMB fire, RMB cancel) when no hippo's smoke is ready · they resupply units nearby\nChimps / Rams / Kangaroos: RMB next to a broken gate to send them in\nHelipads (S/E/W Pad): spawn there and +%.1f supply/s each while you hold them · sabotaged, stand ground units by one to retake it" % AttackerBase.INCOME,
 			13, Color(0.85, 0.85, 0.85, 0.75))
 	help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	help.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	help.position = Vector2(14, help.position.y - 204)
+	help.position = Vector2(14, help.position.y - 222)
 	root.add_child(help)
 
 	_aim_label = UIKit.label("", 15, MISSILE_LINE)
@@ -668,7 +680,7 @@ func _process(_delta: float) -> void:
 	if selected.any(func(u): return is_instance_valid(u) and u.raiding):
 		_alive_selection()
 	_supply_label.text = "Supply %d" % int(commander.supply)
-	_count_label.text = "Army %d / %d   (+%.0f/s)" % [commander.units.size(), AttackerCommander.UNIT_CAP, commander.income]
+	_count_label.text = "Army %d / %d   (+%.0f/s)" % [commander.units.size(), AttackerCommander.UNIT_CAP, commander.income_rate()]
 	_selection_label.text = "Selected %d" % selected.size()
 	var rhinos := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_cluster_bomb())
 	if not rhinos.is_empty():
@@ -758,3 +770,8 @@ func _process(_delta: float) -> void:
 		_update_missile_preview()
 	for type_id in _spawn_buttons:
 		_spawn_buttons[type_id].disabled = not commander.can_afford(type_id)
+	# A sabotaged helipad spawns nothing until it is retaken.
+	for k in _spawn_point_buttons.size():
+		_spawn_point_buttons[k].disabled = not commander.spawn_open(k)
+	if not commander.spawn_open(spawn_index):
+		set_spawn_point(_next_open_spawn(spawn_index))

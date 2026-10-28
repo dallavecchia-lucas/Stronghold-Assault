@@ -1,7 +1,10 @@
 class_name AIAttacker
 extends Node
-## CPU commander for the attacking army. Builds up waves at a spawn point, then sends
-## them at the gate on that side; once a gate falls everyone pushes for the keep.
+## CPU commander for the attacking army. Builds up waves at a spawn point (the side's Forward
+## Helipad while it holds it, else the map's edge), then sends them at the gate on that side; once a
+## gate falls everyone pushes for the keep. A helipad the defenders sabotaged is retaken by the
+## ground units nearest it (_retake_bases). It never goes after the defenders' infiltrators: it
+## doesn't know they are there (their low profile, Combat.low_profile).
 ## Uses the same command interface as the human RTS player.
 
 var commander: AttackerCommander
@@ -19,6 +22,11 @@ const SPAWN_SIDES := ["south", "east", "west"]
 ## A flash grenade lands where it is thrown: kangaroos throw with little of their reach to spare (the
 ## infantry's stand in front of a gun deck is just inside it).
 const FLASH_SPARE := 0.97
+## Units sent to retake a sabotaged helipad: as many as RETAKERS of the nearest ground units.
+const RETAKERS := 3
+
+## Helipad -> ids of the units sent to retake it.
+var _retakers := {}
 
 
 func _process(delta: float) -> void:
@@ -35,17 +43,20 @@ func _think() -> void:
 		_plan_wave()
 
 	while not _pending.is_empty() and commander.can_afford(_pending[0]):
-		var id := commander.submit({"type": "spawn", "unit": _pending[0], "spawn": _wave_spawn})
+		var at := _spawn_for(_wave_spawn)
+		var id := commander.submit({"type": "spawn", "unit": _pending[0], "spawn": at})
 		if id == 0:
 			break
 		_pending.pop_front()
 		_staging.append(id)
-		var rally: Vector3 = commander.spawn_points[_wave_spawn] * 0.72
+		# Off the map's edge the wave gathers a way down its lane; at a helipad, right there.
+		var rally: Vector3 = commander.spawn_points[_wave_spawn] * 0.72 if at == _wave_spawn else commander.spawn_points[at]
 		commander.submit({"type": "move", "units": [id], "pos": rally, "attack": true})
 
 	if _pending.is_empty() and not _staging.is_empty():
 		_launch_wave()
 
+	_retake_bases()
 	_reassign_idle()
 	_ram_gates()
 	_talon_strikes()
@@ -209,7 +220,7 @@ func _in_reach(u: AttackerUnit, reach: float, pick: Callable, spare := 0.85) -> 
 	var best: Node3D = null
 	var best_d := reach * spare
 	for d in level.get_tree().get_nodes_in_group("damageable"):
-		if d.team == u.team or not d.is_alive() or not pick.call(d):
+		if d.team == u.team or not d.is_alive() or Combat.low_profile(d) or not pick.call(d):
 			continue
 		var dist := Vector2(d.global_position.x - u.global_position.x, d.global_position.z - u.global_position.z).length()
 		if dist < best_d:
@@ -218,12 +229,50 @@ func _in_reach(u: AttackerUnit, reach: float, pick: Callable, spare := 0.85) -> 
 	return best
 
 
+## Where a wave from spawn point `edge` (0-2, the map's edge) spawns: the helipad on its side while
+## the attackers hold it.
+func _spawn_for(edge: int) -> int:
+	var side: String = SPAWN_SIDES[edge]
+	for k in commander.spawn_bases.size():
+		var b = commander.spawn_bases[k]
+		if b != null and b.side == side and commander.spawn_open(k):
+			return k
+	return edge
+
+
+## Sabotaged helipads: the ground units nearest each (not raiding, not a wave about to set off) go
+## and stand by it until it is retaken.
+func _retake_bases() -> void:
+	for b in level.bases:
+		if b.controlled:
+			_retakers.erase(b)
+			continue
+		var sent: Array = _retakers.get(b, []).filter(func(id): return commander.units.has(id) and commander.units[id].is_controllable())
+		if sent.size() >= RETAKERS:
+			_retakers[b] = sent
+			continue
+		var cands := []
+		for id in commander.units:
+			var u: AttackerUnit = commander.units[id]
+			if id in sent or id in _staging or u.is_flying() or not u.is_controllable():
+				continue
+			cands.append([b.edge_distance(u.global_position), id])
+		cands.sort_custom(func(x, y): return x[0] < y[0])
+		var more: Array = cands.slice(0, RETAKERS - sent.size()).map(func(c): return c[1])
+		if not more.is_empty():
+			commander.submit({"type": "move", "units": more, "pos": b.spawn_point, "attack": true})
+		_retakers[b] = sent + more
+
+
 ## Units with nothing to do look for the next objective.
 func _reassign_idle() -> void:
 	var breached := level.gates.values().any(func(g): return not g.is_alive())
 	var idle := []
+	var retaking := []
+	for ids in _retakers.values():
+		retaking += ids
 	for id in commander.units:
-		if id in _staging:
+		if id in _staging or id in retaking:
 			continue
 		var u: AttackerUnit = commander.units[id]
 		if u.is_idle():

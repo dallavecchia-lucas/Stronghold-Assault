@@ -50,6 +50,12 @@ func _ready() -> void:
 		gate.damaged.connect(func(_g): _alert_once("gate_" + side, "%s Gate under attack!" % side.capitalize(), UIKit.WARN))
 		gate.destroyed.connect(func(_g): alert("%s Gate has been breached!" % side.capitalize(), UIKit.DANGER))
 	level.keep.damaged.connect(func(_k): _alert_once("keep", "The Keep is under attack!", UIKit.DANGER))
+	# The helipads: good news for one side is bad news for the other.
+	var defending := GameConfig.player_side == GameConfig.PlayerSide.DEFENDER
+	for b in level.bases:
+		b.sabotaged.connect(func(_b): alert("%s sabotaged!%s" % [b.display_name, "" if defending else " Retake it"],
+				UIKit.GOOD if defending else UIKit.DANGER))
+		b.retaken.connect(func(_b): alert("%s retaken by the attackers" % b.display_name, UIKit.WARN if defending else UIKit.GOOD))
 
 	_timer_label = UIKit.label("10:00", 26)
 	_timer_label.custom_minimum_size.x = 90

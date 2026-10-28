@@ -7,7 +7,7 @@ extends CanvasLayer
 ##
 ## The roster of bought squads (DefenderArmory) sits in a hotbar at the bottom (SquadHotbar):
 ## F1-F6 takes command of a squad, Ctrl+F1-F6 changes its auto order without leaving the post
-## the player is on, B buys another AA Squad and N a Flame Squad.
+## the player is on, B buys another AA Squad, N a Flame Squad and M an Infiltrator Squad.
 ##
 ## A kangaroo's flash grenade going off where the post the player is on sees it (FlashGrenade) turns
 ## the screen full white for as long as it blinds, then it clears.
@@ -20,6 +20,7 @@ const FLASH_FADE := 0.8
 const ROSTER_KEYS := [KEY_F1, KEY_F2, KEY_F3, KEY_F4, KEY_F5, KEY_F6]
 const BUY_KEY := KEY_B
 const BUY_FLAME_KEY := KEY_N
+const BUY_INFILTRATOR_KEY := KEY_M
 
 var level: LevelBuilder
 ## The defenders' credits and bought squads; null: no roster.
@@ -85,6 +86,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.physical_keycode == BUY_FLAME_KEY:
 			buy_squad("flame")
 			return
+		if event.physical_keycode == BUY_INFILTRATOR_KEY:
+			buy_squad("infiltrator")
+			return
 	for i in mini(stations.size(), 10):
 		if event.is_action_pressed("slot_%d" % (i + 1)):
 			select_station(i)
@@ -111,8 +115,8 @@ func select_squad(k: int, instant := false) -> void:
 	_switch_to(armory.squads[k], instant)
 
 
-## Ctrl+F<n>: the k-th squad's next auto order (MINES / GUARD, CLEAR / GUARD), wherever the
-## player is.
+## Ctrl+F<n>: the k-th squad's next auto order (MINES / GUARD, CLEAR / GUARD, HOLD / OP <helipad>),
+## wherever the player is.
 func cycle_squad_order(k: int) -> void:
 	if armory == null or k < 0 or k >= armory.squads.size():
 		return
@@ -121,8 +125,8 @@ func cycle_squad_order(k: int) -> void:
 	_flash_prompt("%s: %s" % [s.station_name, s.order_name()])
 
 
-## B: buys an AA Squad (N: a Flame Squad, `kind` "flame") if there are the credits and room on the
-## roster.
+## B: buys an AA Squad (N: a Flame Squad, `kind` "flame"; M: an Infiltrator Squad, "infiltrator") if
+## there are the credits and room on the roster.
 func buy_squad(kind := "aa") -> DefenderSquad:
 	if armory == null:
 		return null
@@ -387,5 +391,5 @@ func _process(delta: float) -> void:
 	else:
 		_weapon_label.text = "No post"
 		_status_label.text = "—"
-		_hint_label.text = "Number keys or Tab to take over a post" + (" · F1-F6 a squad · B buy an AA Squad · N a Flame Squad" if armory else "")
+		_hint_label.text = "Number keys or Tab to take over a post" + (" · F1-F6 a squad · B buy an AA Squad · N a Flame Squad · M Infiltrators" if armory else "")
 		_heat_bar.visible = false

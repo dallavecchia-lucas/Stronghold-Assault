@@ -6,7 +6,8 @@ extends Node
 ## plain Dictionary. Keeping commands serializable means online play can later just
 ## send these over the network to whoever runs the match.
 ##
-##   {"type": "spawn", "unit": "rifleman", "spawn": 0}
+##   {"type": "spawn", "unit": "rifleman", "spawn": 0}   a forward helipad's spawn point only while
+##               the attackers hold it (spawn_open)
 ##   {"type": "move", "units": [ids], "pos": Vector3, "attack": bool}
 ##   {"type": "attack", "units": [ids], "target": NodePath}   rams ramming at a ground gate charge
 ##               it, as many as fit in front of its doorway; the rest call their ram off (RamCharge)
@@ -30,6 +31,9 @@ extends Node
 ## It also hands out the kangaroos' supplies (their passive): each kangaroo resupplies the units
 ## nearest it whose skills are cooling down, up to resupply_units of them, and no unit takes
 ## supplies from two kangaroos (_update_resupply).
+##
+## Every Forward Helipad Base the attackers hold (AttackerBase) adds AttackerBase.INCOME to the
+## supply coming in (income_rate).
 
 signal unit_spawned(unit: AttackerUnit)
 signal unit_died(unit: AttackerUnit)
@@ -45,6 +49,9 @@ var supply := 250.0
 var income := BASE_INCOME
 var units := {}  # id -> AttackerUnit
 var spawn_points: Array[Vector3] = []
+## Per spawn point: the AttackerBase it belongs to, or null (always open). LevelBuilder.spawn_bases;
+## left empty, every spawn point is open.
+var spawn_bases: Array = []
 var units_root: Node3D
 
 var _next_id := 1
@@ -56,7 +63,7 @@ var _resupply_cd := 0.0
 
 
 func _process(delta: float) -> void:
-	supply += income * delta
+	supply += income_rate() * delta
 	_scout_cd -= delta
 	if _scout_cd <= 0.0:
 		_scout_cd = 0.5
@@ -65,6 +72,22 @@ func _process(delta: float) -> void:
 	if _resupply_cd <= 0.0:
 		_resupply_cd = RESUPPLY_EVERY
 		_update_resupply()
+
+
+## Supply a second: the commander's own income and every helipad the attackers hold.
+func income_rate() -> float:
+	var rate := income
+	for b in spawn_bases:
+		if b != null and b.controlled:
+			rate += AttackerBase.INCOME
+	return rate
+
+
+## False for a forward helipad's spawn point while the attackers don't hold it.
+func spawn_open(idx: int) -> bool:
+	if idx < 0 or idx >= spawn_bases.size() or spawn_bases[idx] == null:
+		return true
+	return spawn_bases[idx].controlled
 
 
 func can_afford(type_id: String) -> bool:
@@ -103,14 +126,15 @@ func submit(cmd: Dictionary) -> int:
 
 
 func _spawn(type_id: String, spawn_idx: int) -> int:
-	if not UnitTypes.DATA.has(type_id) or not can_afford(type_id):
+	spawn_idx = clampi(spawn_idx, 0, spawn_points.size() - 1)
+	if not UnitTypes.DATA.has(type_id) or not can_afford(type_id) or not spawn_open(spawn_idx):
 		return 0
 	supply -= UnitTypes.DATA[type_id].cost
 	var id := _next_id
 	_next_id += 1
 	var u := AttackerUnit.new()
 	u.setup(type_id, id)
-	var base: Vector3 = spawn_points[clampi(spawn_idx, 0, spawn_points.size() - 1)]
+	var base: Vector3 = spawn_points[spawn_idx]
 	u.position = base + Vector3(randf_range(-6, 6), 0.2, randf_range(-6, 6))
 	# Face the stronghold.
 	u.rotation.y = atan2(base.x, base.z)
@@ -138,7 +162,8 @@ func _move(ids: Array, pos: Vector3, attack: bool) -> void:
 
 func _attack(ids: Array, target_path: NodePath) -> void:
 	var target := get_node_or_null(target_path) as Node3D
-	if not Combat.is_valid_target(target):
+	# Under adaptive camo an infiltrator can't be picked out, even on orders.
+	if not Combat.targetable(target):
 		return
 	var list := _resolve(_without_scouts(ids))
 	for u in list:

@@ -3,14 +3,14 @@ extends Control
 ## The defender's roster of bought squads (DefenderArmory), bottom centre: a slot per squad with
 ## its key (F1-F6 takes command of it, Ctrl+F<n> changes its auto order), its troopers' health, its
 ## auto order and what it is doing, the one the player drives outlined; then the buy slots (B: an
-## AA Squad, N: a Flame Squad) with the credits.
+## AA Squad, N: a Flame Squad, M: an Infiltrator Squad) with the credits.
 
 const SLOT := Vector2(112, 58)
 const GAP := 4.0
 const BOTTOM := 40.0
 const DIM := Color(0.6, 0.64, 0.7)
 ## The buy slots: [key, label, kind (DefenderArmory.COSTS)].
-const BUYS := [["B", "BUY AA", "aa"], ["N", "BUY FLAME", "flame"]]
+const BUYS := [["B", "BUY AA", "aa"], ["N", "BUY FLAME", "flame"], ["M", "BUY INFIL", "infiltrator"]]
 
 var armory: DefenderArmory
 ## The station the player drives (to outline its slot).

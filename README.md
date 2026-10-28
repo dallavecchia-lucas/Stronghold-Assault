@@ -21,10 +21,10 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
 
 - **Attacker wins** by destroying the Keep. **Defender wins** by holding for 10 minutes.
 
-**The map.** The stronghold is a mountain with a bunker dug into each of its four faces (`game/assets/stronghold/stronghold.glb`). The Keep is the reactor in the core hall under the peak. Attackers come from the south, east and west. Each of those faces has a blast-door gate on its middle ground tunnel; every other tunnel is welded shut. Once a gate is down, only Chimps, Breaching Rams and Kangaroo Commandos can get inside; everyone else fights from outside. Inside, they can also climb the stair shafts to the gun decks and the ladders to the roofs. Forest groves stand off to the sides of the attack lanes; they burn (the Flame Squads), and a burnt forest never grows back. The defenders hold the gun decks and roofs: a machine gun over each gate, riflemen along the decks, the mortar on the south roof and two AA turrets on every roof. The guns can't fire into the doorway right below them; the mortar covers it.
+**The map.** The stronghold is a mountain with a bunker dug into each of its four faces (`game/assets/stronghold/stronghold.glb`). The Keep is the reactor in the core hall under the peak. Attackers come from the south, east and west. Each of those faces has a blast-door gate on its middle ground tunnel; every other tunnel is welded shut. Once a gate is down, only Chimps, Breaching Rams and Kangaroo Commandos can get inside; everyone else fights from outside. Inside, they can also climb the stair shafts to the gun decks and the ladders to the roofs. Forest groves stand off to the sides of the attack lanes; they burn (the Flame Squads), and a burnt forest never grows back. Out by each lane stands one of the attackers' Forward Helipad Bases (south, east and west: see the Attacker section), the Infiltrator Squads' targets. The defenders hold the gun decks and roofs: a machine gun over each gate, riflemen along the decks, the mortar on the south roof and two AA turrets on every roof. The guns can't fire into the doorway right below them; the mortar covers it.
 
 **Defender (first person)**
-- `1`–`9`: take over a post (machine guns, mortar, riflemen) · `G`: the Gunner Squad · `Tab`: jump to the post with the most enemies nearby · `B`: buy an AA Squad · `N`: buy a Flame Squad · `F1`–`F6`: take command of a bought squad
+- `1`–`9`: take over a post (machine guns, mortar, riflemen) · `G`: the Gunner Squad · `Tab`: jump to the post with the most enemies nearby · `B`: buy an AA Squad · `N`: buy a Flame Squad · `M`: buy an Infiltrator Squad · `F1`–`F6`: take command of a bought squad
 - Rifleman: `WASD` move, `Shift` sprint, `Space` jump, `LMB` fire, `RMB` aim, `R` reload
 - Machine gun: mouse aim, `LMB` fire, `RMB` zoom; it overheats if you hold the trigger too long
 - Mortar: `WASD` move the spotter view, `Q`/`E` rotate, wheel zoom, `LMB` fire on the ring
@@ -52,6 +52,13 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
     - CLEAR (a bought squad's first order): it clears the forests round the base, closest to the base first and working its way outwards. It walks in formation to the standing forest tree nearest the base (one a little further out but much nearer the squad goes first, so it finishes a stand of trees before walking on). There the troopers spread out, each to a tree of its own nearest the base, and hold the flame on its trunk until it catches, then take the next. With none left in reach the squad forms up and walks on; with the whole forest done, on to the next forest. Lone trees out in the field are left standing. With nothing left to burn it goes back to its hall.
     - GUARD: it stays where it is.
     - Either way, attackers on the ground within 16 m come first: it forms up, walks at the nearest (on GUARD, no more than 6 m off its spot) and burns it, then goes back to its order.
+- Infiltrator Squads (third person): five Infiltrators, the Harpy Vanguard in her training kit with a recurve bow, a deep infiltration squad for ambushes and sabotage. They move, follow and file through tunnels like the Gunner Squad (same keys, formation and camera).
+  - Buying: `M` buys a squad for 280 credits; like the other bought squads it deploys in a gate spawn hall, joins the roster (`F1`–`F6`, `Ctrl+F1`–`F6`) and is gone for good once all five are down.
+  - Passive, low profile: attackers never pick an infiltrator out on their own. Every other attacker with a basic attack shoots the defenders in its reach, never an infiltrator; only an attack the attacking player orders on one (`RMB` on it) goes after her. The CPU attacker never goes after them.
+  - `LMB`: every trooper looses an arrow at the aim (34 damage, then 1.3 s to draw the next). The bow is silent: no tracer, no flash where it lands, so the attacking player has to notice their units' health running down and react to the ambush.
+  - `Q` adaptive camo: 20 s of camouflage for the whole squad, ready again a minute after it went on. Basic attacks can't target the troopers: shots pass through them and orders to attack them lapse (or are refused). Area damage still hurts and kills them: bombs, shells, cluster bombs, rockets and strafing runs aimed at the right spot. On the attacker's side they turn 99% transparent; on the defender's they look as ever and the squad's camera gets a vignette while it lasts.
+  - `F` sabotage: next to a Forward Helipad the attackers hold (within 4 m of its deck), the squad sabotages it. It takes 45 s with the leader staying that close (`F` again calls it off; walking away loses the work); then the attackers lose control of the helipad until they retake it. Each squad carries one sabotage kit: used, it has to go back into the fortress (in through a gate) to restock it. The panel above the weapon panel shows the bows' draw, the camo, the kit and the work under way.
+  - Auto order (`V` while driving the squad, or `Ctrl+F<n>`): HOLD, or a sabotage operation against one of the helipads the attackers hold (`OP S`, `OP E`, `OP W`). Left to itself on HOLD it stays where it was left and does nothing. On an operation (its idle mode) it heads out through the gate nearest the helipad and makes for it by a route that keeps as far from the attackers as it can while still heading there, planned again every second as they move, up to the side of the deck where the fewest are; it sabotages it and comes home to its hall, restocking its kit (out of kits, it restocks first). It never shoots on its own, and puts its camo on when an attacker comes within 18 m.
 - Posts you aren't controlling keep fighting on their own; dead posts come back after a short delay
 - Flash grenades (the Kangaroo Commandos'): a post or trooper within 10 m of the bang that has it in sight is blinded for 2 s, and left to itself it can't fight (the guns, the mortar and the riflemen hold their fire, a squad's troopers too, and an AA Squad drops its lock). If it catches the post you are on, your screen goes full white for 2 s, then clears.
 - AA turrets: two on every roof, on their own (nobody takes them over). Each turns to the nearest enemy aircraft it can see within 45 m, locks on (1.2 s) and fires a homing missile at it every 3 s (18 damage), Sky Talons on their attack runs included. 150 HP: a bison's shell or a talon's bomb takes one out; it is rebuilt after 75 s.
@@ -98,7 +105,8 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
   - Passive, supplies: each kangaroo resupplies up to 3 units within 9 m whose skills are cooling down (other kangaroos included, itself not): their skills come back 15% sooner. A small ammo box floats over every unit it resupplies. It doesn't stack: a unit next to several kangaroos still gets 15%, and the kangaroos share out the units round them, each taking its nearest, so two kangaroos look after six.
   - Infiltration: once a gate is down, `RMB` next to it sends selected kangaroos in. Like the Chimps and Rams, inside you lose control of them: they hunt the defenders (up the stairs to the gun decks and the roofs too), shooting them with their SMGs and flashing them whenever a grenade is ready.
 - Models in, roles still to be designed (placeholder stats): `H` Savanna Signal Scout · `Y` Armored Lioness · `U` Serpent Sniper
-- `Tab` cycles spawn point · `Ctrl+1`–`5` save a group, `1`–`5` recall it
+- Forward Helipad Bases (`S Pad`, `E Pad`, `W Pad`): a deck on stilts with a helipad and the camp round it, one out by each attack lane. While you hold one it is a forward spawn point (its button on the spawn row) and brings in +1.5 supply/s. It can't be shot down, but the defenders' Infiltrator Squads sabotage it: then you lose control of it (no spawning there, no supply; it smokes and a dashed ring marks where to stand) until you retake it: ground units within 10 m of its deck for 15 s (sooner the more there are, up to four), with no defender that close (CONTESTED). The CPU attacker spawns its waves at the side's helipad while it holds it and sends the nearest units to retake a sabotaged one.
+- `Tab` cycles spawn point (a sabotaged helipad is skipped) · `Ctrl+1`–`5` save a group, `1`–`5` recall it
 - Camera: `WASD`/arrows/screen edge to pan, `Q`/`E` or middle mouse to rotate, wheel to zoom
 - `Esc` pauses (both sides)
 
@@ -238,6 +246,15 @@ python3 tools/video/cut_showcase.py kangaroo.avi kangaroo.log media/kangaroo_sho
 
 `-- --video` cuts in the cameras (beside the hopper, in slow motion as it bounds past, close by a kangaroo rearing up to throw, along the deck as the grenades go off, through the rifleman's eyes as the flash whites out the screen, and inside the base for the storm), plays the climb to the deck and the fight there 2× faster and cuts the waits.
 
+### Infiltrator showcase
+
+`game/scenes/dev/infiltrator_showcase.tscn` checks the Infiltrator Squad and the Forward Helipads on the real map, in the south field. A lone infiltrator and a Flame Trooper (a decoy) stand in reach of three Bear Riflemen: the riflemen shoot the decoy and leave the infiltrator alone (low profile); ordered to attack her, they do; under adaptive camo the order lapses, shots pass through her and a fresh order is refused, while a blast still hurts her. She looses arrows at the riflemen. Then a squad is bought and sent on a sabotage operation against the South Helipad past four riflemen standing on the straight way there: it walks round them, sabotages the helipad (the attackers can no longer spawn there and lose its supply), and comes home to restock its kit. The player takes command and puts the camo on (the vignette; the troopers as ever on the defender's side, all but invisible on the attacker's), and last three riflemen retake the helipad. The garrison's posts and the AA turrets hold fire.
+
+```sh
+godot --path game --headless --fixed-fps 30 res://scenes/dev/infiltrator_showcase.tscn -- --test  # prints and checks: INFILTRATOR SHOWCASE PASS / FAIL
+godot --path game --fixed-fps 30 res://scenes/dev/infiltrator_showcase.tscn  # to watch it
+```
+
 ## Asset pipeline
 
 Meshy exports go in `assets_src/`, then get processed with Blender (headless):
@@ -323,6 +340,14 @@ python tools/blender/rig_kangaroo.py -- \
     --output game/assets/units/kangaroo_commando/kangaroo_commando_rigged.glb
 ```
 
+The Infiltrator (the Infiltrator Squad's trooper) is the Harpy Vanguard, rigged and animated without Blender: `tools/gltf/rig_infiltrator.py` runs on numpy alone, on the glTF itself. It takes the garrison's processed Harpy Vanguard (1.7 m, Meshy's Mixamo-style auto-rig in a T-pose), keeps its mesh and skin weights, renames the bones to the squad troopers' names (`pelvis`, `spine_1`, … `toe_R`; the fingers `index_1_L` and so on) and adds two marker bones with no weights: `bow` in the left hand (the grip; its Y axis up the bow, Z toward the target) and `nock` in the right (where the arrow's nock sits on the drawn string). The game builds the bow, its string and the arrows on them (`InfiltratorTrooper`). Every clip holds an archer's stance: side-on, the chest turned 78° to the right of where she faces, the head turned back to look down the arrow, the bow arm out on the aim and the string drawn to the right of her chin, the arms solved by IK every frame onto targets that ride the chest; the rest pose is this stance too. It bakes `Idle` and eight `Walk_<dir>` clips at the squad troopers' clip speeds (the same gait as `rig_heavy_gunner.py`: feet planted by IK, the hips riding as high as the planted legs allow), each cycle 20 frames. `--preview DIR` renders the rest pose and frames of each clip with a plain numpy rasterizer:
+
+```sh
+python3 tools/gltf/rig_infiltrator.py \
+    --input game/assets/defenders/harpy_vanguard/harpy_vanguard.glb \
+    --output game/assets/defenders/harpy_vanguard/infiltrator_rigged.glb
+```
+
 Static props (scenery, turrets) skip Blender: they go through [glTF-Transform](https://gltf-transform.dev) to put the pivot at the bottom center and shrink textures to 1024 px, and `game/scripts/match/props.gd` scales them to height at load time:
 
 ```sh
@@ -341,6 +366,14 @@ npx @gltf-transform/cli weld t3.glb game/assets/environment/majestic_oak/majesti
 | orbital_sentry_gun | east/west gate machine guns; unmanned gun-deck mounts |
 | arctic_sentinel_cannon | mortar on the south roof |
 | sentinel_spire | roof (AA) mounts |
+| forward_helipad_base | the attackers' Forward Helipad Bases (`AttackerBase`, 9.8 m to the mast tips) |
+
+Without Node.js at hand, `tools/gltf/process_prop.py` does the same (pivot at the bottom centre, textures fitted to 1024 px and re-encoded as JPEG at 85) on numpy and Pillow; it is how the helipad was processed:
+
+```sh
+python3 tools/gltf/process_prop.py --input assets_src/structures/forward_helipad_base/forward_helipad_base_meshy.glb \
+    --output game/assets/structures/forward_helipad_base/forward_helipad_base.glb
+```
 
 The stronghold itself is generated by `tools/blender/build_stronghold.py`. Rebuild it with Blender 5.2, or the `bpy` 5.2 pip package (Python 3.13):
 
@@ -356,3 +389,4 @@ The game strips the placeholder weapons (`PH_*`) from its mounts and puts the tu
 - `game/assets/` — processed, game-ready versions (Blender cleanup, rigging, texture resizing)
 - `game/scripts/` — `match/` (level, rules), `attacker/` (RTS commander, CPU attacker), `defense/` (stations, defender controller), `units/`, `combat/`, `ui/`
 - `tools/blender/` — asset processing scripts
+- `tools/gltf/` — asset scripts that need no Blender (numpy on the glTF): static props, the Infiltrator's rig

@@ -517,22 +517,25 @@ func _update_target() -> void:
 		target = _raid_target()
 		return
 	if order.type == "attack":
-		if Combat.is_valid_target(order.target):
+		# An infiltrator gone under adaptive camo is lost: the order lapses.
+		if Combat.targetable(order.target):
 			target = order.target
 			return
 		order = {"type": "idle"}
 	if order.type == "move":
 		target = null
 		return
-	if Combat.is_valid_target(target) and _in_range(target) and _can_see(target):
+	if Combat.targetable(target) and _in_range(target) and _can_see(target) and not Combat.low_profile(target):
 		return
 	target = _find_enemy()
 
 
+## The nearest defender in range and sight (else a gate or the keep in range). Infiltrators keep a
+## low profile: a unit never picks one out on its own, only when ordered to attack it.
 func _find_enemy() -> Node3D:
 	var candidates := []
 	for d in get_tree().get_nodes_in_group("defender_targets"):
-		if d.is_alive() and _in_range(d):
+		if d.is_alive() and _in_range(d) and not Combat.low_profile(d):
 			candidates.append([global_position.distance_to(d.global_position), d])
 	candidates.sort_custom(func(a, b): return a[0] < b[0])
 	for c in candidates.slice(0, 3):
@@ -557,7 +560,7 @@ func _raid_target() -> Node3D:
 	var soldiers := []
 	var machines := []
 	for d in get_tree().get_nodes_in_group("defender_targets"):
-		if not d.is_alive():
+		if not d.is_alive() or Combat.low_profile(d):
 			continue
 		match d.get("station_kind"):
 			"soldier": soldiers.append(d)
@@ -635,7 +638,7 @@ func _burst_tick(delta: float) -> void:
 	while _burst_left > 0 and _burst_cd <= 0.0:
 		_burst_cd += stats.burst_interval
 		_burst_left -= 1
-		if not Combat.is_valid_target(_burst_target):
+		if not Combat.targetable(_burst_target):
 			_burst_left = 0
 			return
 		_smg_round(_burst_target)
@@ -1162,7 +1165,7 @@ func _physics_process(delta: float) -> void:
 	# A charging ram doesn't stop to shoot: it runs for its slot in front of the gate, or, raiding,
 	# into the soldier it hunts. A kangaroo throwing a grenade holds its fire.
 	var running_over := raiding and is_ramming() and _is_soldier(target)
-	var engaged := charge_gate == null and not running_over and not is_throwing() and Combat.is_valid_target(target) \
+	var engaged := charge_gate == null and not running_over and not is_throwing() and Combat.targetable(target) \
 			and _in_range(target) and _sees_target
 	_engaged = engaged
 	if stats.has("overheat_time"):
