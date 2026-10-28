@@ -212,7 +212,7 @@ func _arm_troopers(_delta: float) -> void:
 			ft.trigger = firing
 			ft.damage_scale = 1.0
 			continue
-		ft.trigger = _fires.get(t, false)
+		ft.trigger = _fires.get(t, false) and not FlashGrenade.is_blind(t)  # flashed: holds its fire
 		ft.damage_scale = AI_DAMAGE_SCALE
 		var at: Vector3 = _aims.get(t, Vector3.INF)
 		if at != Vector3.INF:

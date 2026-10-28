@@ -175,7 +175,7 @@ func _physics_process(delta: float) -> void:
 	_reload -= delta
 	if possessed:
 		_player_update(delta)
-	elif _reload <= 0.0:
+	elif _reload <= 0.0 and not FlashGrenade.is_blind(self):
 		_ai_fire()
 
 

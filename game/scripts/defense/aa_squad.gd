@@ -599,6 +599,9 @@ func _ai_control(delta: float) -> void:
 ## Locks on to the nearest enemy aircraft in range and sight (taking LOCK_TIME, like the player),
 ## then fires at it. True while it has one.
 func _ai_air(delta: float) -> bool:
+	if FlashGrenade.is_blind(leader):
+		_drop_lock()  # flashed: it can't keep its eye on the sky
+		return false
 	var eye := leader.global_position + Vector3.UP * 1.8
 	_search_cd -= delta
 	if not (Combat.is_valid_target(lock_target) and _flat(eye, lock_target.global_position) <= AI_AA_RANGE

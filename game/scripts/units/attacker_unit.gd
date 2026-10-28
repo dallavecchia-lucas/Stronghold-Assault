@@ -13,6 +13,10 @@ signal died(unit: AttackerUnit)
 ## A Sky Talon's strafe round landed / it dropped its bomb (for showcases and the HUD).
 signal strafe_impact(at: Vector3)
 signal bomb_dropped(bomb: TalonBomb, spot: Vector3)
+## A kangaroo's flash grenade left its paw for `spot`.
+signal flash_thrown(grenade: FlashGrenade, spot: Vector3)
+## A giraffe's ping went out from its dish.
+signal pinged(ping: GiraffePing)
 
 const HEAL_COLOR := Color(0.35, 1.0, 0.45)
 const AA_COLOR := Color(1.0, 0.9, 0.4)
@@ -30,6 +34,20 @@ const TRAMPLE_REPEAT := 1.0
 const RAID_RAM_REACH := 16.0
 ## raid_keep raiders turn aside for defenders this close (m); the others don't hold them up.
 const RAID_DETOUR := 18.0
+## A raiding kangaroo throws a flash grenade at the defender it hunts once it is this close (m), no
+## closer than RAID_FLASH_MIN and no more than RAID_FLASH_RISE above or below it (up a ramp, not a
+## floor up), if it is ready and in sight.
+const RAID_FLASH_REACH := 16.0
+const RAID_FLASH_MIN := 4.0
+const RAID_FLASH_RISE := 3.5
+## Seconds into the throw the grenade shows in the paw (it pulls it as it rears up).
+const FLASH_IN_PAW := 0.25
+const SUPPLY_COLOR := Color(0.85, 0.8, 0.35, 0.8)
+const PING_COLOR := Color(0.45, 1.0, 0.6, 0.7)
+## Sight of a unit type with none set (m).
+const SIGHT := 30.0
+
+static var _supply_tex: ImageTexture
 
 static var _scenes := {}
 
@@ -58,6 +76,13 @@ var bombard_cd := 0.0
 ## Seconds until the strafe run and the bomb strike can be flown again.
 var strafe_cd := 0.0
 var bomb_cd := 0.0
+## Seconds until the flash grenade can be thrown again.
+var flash_cd := 0.0
+## Seconds until the giraffe can ping again.
+var ping_cd := 0.0
+## Share a kangaroo nearby cuts off its skills' cooldowns (the kangaroo's passive, handed out by
+## AttackerCommander): 0 when none does.
+var resupply := 0.0
 ## Gate this ram is charging (RamCharge), and its slot across the doorway.
 var charge_gate: Structure = null:
 	set(g):
@@ -75,6 +100,10 @@ var selected := false:
 			_ring.visible = v
 		if _aa_ring:
 			_aa_ring.visible = v
+		if _supply_ring:
+			_supply_ring.visible = v
+		if _ping_ring:
+			_ping_ring.visible = v
 		_update_hp_bar()
 
 var _agent: NavigationAgent3D
@@ -113,11 +142,32 @@ var _dust_cd := 0.0
 var _butt := 0.0
 var _wisp_cd := 0.0
 var _strafe_shots := 0
+## Flash grenade being thrown: where to, seconds into the throw (-1: none) and whether it has left
+## the paw.
+var _flash_aim := Vector3.ZERO
+var _flash_t := -1.0
+var _flash_thrown := false
+## SMG burst under way: rounds still to fire, at what, and which gun fires next.
+var _burst_left := 0
+var _burst_cd := 0.0
+var _burst_target: Node3D
+var _next_muzzle := 0
+var _rig: KangarooRig  # set when the model carries the kangaroo's SMGs and throwing paw
+var _held: MeshInstance3D  # the flash grenade in the paw while it winds up
+## Ping under way: seconds into it (-1: none) and whether the pulse has gone out.
+var _ping_t := -1.0
+var _ping_sent := false
+var _ping_ring: MeshInstance3D
+## Fighting what it has in range and sight this frame (it stands and faces it).
+var _engaged := false
+var _supply_ring: MeshInstance3D
+var _supply_icon: Sprite3D
 var _hp_bar: Node3D
 var _hp_fill: MeshInstance3D
 var _fire_cd := 0.0
 var _retarget_cd := 0.0
-## False while the target is a buried structure out of sight: keep closing in instead of firing.
+## False while the target is a buried structure out of sight, or (raiding) anything out of sight: keep
+## closing in instead of firing.
 var _sees_target := true
 var _anim_t := 0.0
 ## Navigation link being crossed (LevelBuilder): points still to climb or walk through.
@@ -248,6 +298,53 @@ func ram_left() -> float:
 ## How far the ram still carries it: a charge at a gate further than this can't make it in time.
 func ram_reach() -> float:
 	return _ram_left * stats.speed * stats.ram_speed
+
+
+func has_flash() -> bool:
+	return stats.has("flash_cooldown")
+
+
+func flash_ready() -> bool:
+	return has_flash() and flash_cd <= 0.0 and is_alive() and not is_throwing()
+
+
+## Up on its hind feet throwing a flash grenade: it stands until it is done.
+func is_throwing() -> bool:
+	return _flash_t >= 0.0
+
+
+## Where the grenade in its paw is about to go (INF: none).
+func flash_spot() -> Vector3:
+	return _flash_aim if is_throwing() and not _flash_thrown else Vector3.INF
+
+
+func has_ping() -> bool:
+	return stats.has("ping_cooldown")
+
+
+func ping_ready() -> bool:
+	return has_ping() and ping_cd <= 0.0 and is_alive() and not is_pinging()
+
+
+## Standing with its neck up and its dish sweeping, sending a ping: it stands until it is done.
+func is_pinging() -> bool:
+	return _ping_t >= 0.0
+
+
+## How far it sees through the fog of war (AttackerVision).
+func sight() -> float:
+	return stats.get("sight", SIGHT)
+
+
+## Any of its skills cooling down: what a kangaroo's resupply speeds up.
+func cooling_down() -> bool:
+	return cluster_cd > 0.0 or smoke_cd > 0.0 or missile_cd > 0.0 or ram_cd > 0.0 or bombard_cd > 0.0 \
+			or strafe_cd > 0.0 or bomb_cd > 0.0 or flash_cd > 0.0 or ping_cd > 0.0
+
+
+## Kangaroo passive: carries supplies for others (AttackerCommander hands them out).
+func resupplies() -> bool:
+	return stats.has("resupply_range")
 
 
 func _ready() -> void:
@@ -388,6 +485,16 @@ func _die() -> void:
 	remove_from_group("air_units")
 	_cluster_left = 0.0
 	_bombard_left = 0.0
+	_flash_t = -1.0
+	_ping_t = -1.0
+	_burst_left = 0
+	resupply = 0.0
+	if _held:
+		_held.visible = false
+	if _supply_icon:
+		_supply_icon.visible = false
+	if _supply_ring:
+		_supply_ring.visible = false
 	end_ram()
 	_route.clear()
 	_end_salvo()
@@ -401,6 +508,8 @@ func _die() -> void:
 	_ring.visible = false
 	if _aa_ring:
 		_aa_ring.visible = false
+	if _ping_ring:
+		_ping_ring.visible = false
 	_hp_bar.visible = false
 	died.emit(self)
 	var tw := create_tween()
@@ -442,22 +551,27 @@ func _update_target() -> void:
 		target = _raid_target()
 		return
 	if order.type == "attack":
-		if Combat.is_valid_target(order.target):
+		# An infiltrator gone under adaptive camo is lost: the order lapses.
+		if Combat.targetable(order.target):
 			target = order.target
 			return
 		order = {"type": "idle"}
 	if order.type == "move":
 		target = null
 		return
-	if Combat.is_valid_target(target) and _in_range(target) and _can_see(target):
+	if Combat.targetable(target) and _in_range(target) and _can_see(target) and not Combat.low_profile(target) \
+			and AttackerVision.sees_node(target):
 		return
 	target = _find_enemy()
 
 
+## The nearest defender in range and sight (else a gate or the keep in range). Infiltrators keep a
+## low profile: a unit never picks one out on its own, only when ordered to attack it (or once a ping
+## has revealed her). Defenders in the fog of war can't be picked out either (AttackerVision).
 func _find_enemy() -> Node3D:
 	var candidates := []
 	for d in get_tree().get_nodes_in_group("defender_targets"):
-		if d.is_alive() and _in_range(d):
+		if d.is_alive() and _in_range(d) and not Combat.low_profile(d) and AttackerVision.sees_node(d):
 			candidates.append([global_position.distance_to(d.global_position), d])
 	candidates.sort_custom(func(a, b): return a[0] < b[0])
 	for c in candidates.slice(0, 3):
@@ -482,7 +596,7 @@ func _raid_target() -> Node3D:
 	var soldiers := []
 	var machines := []
 	for d in get_tree().get_nodes_in_group("defender_targets"):
-		if not d.is_alive():
+		if not d.is_alive() or Combat.low_profile(d):
 			continue
 		match d.get("station_kind"):
 			"soldier": soldiers.append(d)
@@ -537,6 +651,12 @@ func _fire_at(t: Node3D) -> void:
 			shell.launch(muzzle, aim)
 			Combat.spawn_explosion(self, muzzle, 0.8)
 		_:
+			if stats.has("burst"):
+				# Side-mounted SMGs: a burst, the guns taking turns (_burst_tick).
+				_burst_left = stats.burst
+				_burst_cd = 0.0
+				_burst_target = t
+				return
 			var aim := Combat.aim_point(t)
 			if stats.has("suppress_radius"):
 				# Spray: aim somewhere around the target, so neighbours catch rounds too.
@@ -547,6 +667,120 @@ func _fire_at(t: Node3D) -> void:
 			for _pellet in stats.get("pellets", 1):
 				Combat.fire_hitscan(self, _eye(), aim, stats.spread, stats.damage, team,
 						stats.structure_mult, [get_rid()])
+
+
+func _burst_tick(delta: float) -> void:
+	_burst_cd -= delta
+	while _burst_left > 0 and _burst_cd <= 0.0:
+		_burst_cd += stats.burst_interval
+		_burst_left -= 1
+		if not Combat.targetable(_burst_target):
+			_burst_left = 0
+			return
+		_smg_round(_burst_target)
+
+
+## One round from the SMG whose turn it is: the shot goes from the eyes, the tracer from the muzzle.
+func _smg_round(t: Node3D) -> void:
+	var muzzle := smg_muzzle(_next_muzzle)
+	_next_muzzle = 1 - _next_muzzle
+	Combat.fire_hitscan(self, _eye(), Combat.aim_point(t), stats.spread, stats.damage, team,
+			stats.structure_mult, [get_rid()], muzzle)
+	Combat.spawn_impact(self, muzzle, false)  # muzzle flash
+
+
+## Muzzle of SMG k (0 the left, 1 the right): the model's muzzle bone, or a guess beside the chest.
+func smg_muzzle(k: int) -> Vector3:
+	if _rig and _rig.posed():
+		return _rig.muzzle(k).origin
+	return global_position + Vector3.UP * stats.height * 0.6 + global_basis.x * (0.45 if k == 1 else -0.45) - global_basis.z * 1.0
+
+
+## Kangaroo active: stand up and throw a flash grenade at `aim` (KangarooFlash.spots keeps it within
+## flash_range). False while on cooldown.
+func start_flash(aim: Vector3) -> bool:
+	if not flash_ready():
+		return false
+	flash_cd = stats.flash_cooldown
+	_flash_aim = aim
+	_flash_t = 0.0
+	_flash_thrown = false
+	_burst_left = 0
+	return true
+
+
+func _flash_tick(delta: float) -> void:
+	_flash_t += delta
+	if not _flash_thrown and _flash_t >= stats.flash_release:
+		_flash_thrown = true
+		_throw_flash()
+	if _flash_t >= stats.flash_time:
+		_flash_t = -1.0
+
+
+func _throw_flash() -> void:
+	var from := grenade_position()
+	var g := FlashGrenade.new()
+	g.team = team
+	g.radius = stats.flash_radius
+	g.blind = stats.flash_blind
+	get_tree().current_scene.add_child(g)
+	# Inside the stronghold it skims along under the ceiling instead of lobbing high.
+	var dist := from.distance_to(_flash_aim)
+	g.launch(from, _flash_aim, 0.4 + dist * 0.05 if raiding else clampf(dist * 0.28, 1.5, 7.0))
+	flash_thrown.emit(g, _flash_aim)
+
+
+## The grenade in the throwing paw: the model's grenade bone, or a guess over the head.
+func grenade_position() -> Vector3:
+	if _rig and _rig.posed():
+		return _rig.grenade()
+	return global_position + Vector3.UP * stats.height * 1.2 - global_basis.z * 0.4
+
+
+## Raiding kangaroo: throws a flash grenade at the defender it hunts, once in reach and in sight,
+## unless it is blinded already or another kangaroo's grenade is on its way to it.
+func _raid_flash() -> void:
+	if not flash_ready() or not Combat.is_valid_target(target) or FlashGrenade.is_blind(target):
+		return
+	if FlashGrenade.coming(self, target.global_position, stats.flash_radius * 0.6):
+		return
+	var to := target.global_position - global_position
+	if absf(to.y) < RAID_FLASH_RISE and to.length() <= minf(stats.flash_range, RAID_FLASH_REACH) \
+			and to.length() >= RAID_FLASH_MIN and _can_see(target):
+		start_flash(target.global_position)
+
+
+## Giraffe active: stand, stretch its neck up and sweep the dish, and send a ping (GiraffePing) out
+## from it. False while on cooldown.
+func start_ping() -> bool:
+	if not ping_ready():
+		return false
+	ping_cd = stats.ping_cooldown
+	_ping_t = 0.0
+	_ping_sent = false
+	_burst_left = 0
+	return true
+
+
+func _ping_tick(delta: float) -> void:
+	_ping_t += delta
+	if not _ping_sent and _ping_t >= stats.ping_release:
+		_ping_sent = true
+		_send_ping()
+	if _ping_t >= stats.ping_time:
+		_ping_t = -1.0
+
+
+func _send_ping() -> void:
+	var p := GiraffePing.new()
+	p.team = team
+	p.radius = stats.ping_radius
+	p.speed = stats.ping_speed
+	p.mark = stats.ping_mark
+	get_tree().current_scene.add_child(p)
+	p.global_position = global_position
+	pinged.emit(p)
 
 
 ## Medic: patch up the most hurt ally in range.
@@ -946,7 +1180,9 @@ func _physics_process(delta: float) -> void:
 	if _retarget_cd <= 0.0:
 		_retarget_cd = 0.3
 		_update_target()
-		_sees_target = not (Combat.is_valid_target(target) and target.get("buried")) or _can_see(target)
+		# Inside, a raider's quarry is often round a corner or a floor up: it goes after it rather than
+		# shooting the wall in between.
+		_sees_target = not (Combat.is_valid_target(target) and (raiding or target.get("buried"))) or _can_see(target)
 		if stats.has("forest_speed"):
 			_in_forest = LevelBuilder.in_forest(global_position)
 			_agent.max_speed = _speed()
@@ -955,43 +1191,63 @@ func _physics_process(delta: float) -> void:
 		return
 
 	var move_to = null
+	# Skills cool down faster while a kangaroo resupplies the unit.
+	var cool := delta / (1.0 - resupply)
 	if role == "healer":
 		if _fire_cd <= 0.0:
 			_heal_tick()
 	if has_cluster_bomb():
-		cluster_cd = maxf(cluster_cd - delta, 0.0)
+		cluster_cd = maxf(cluster_cd - cool, 0.0)
 		if _cluster_left > 0.0:
 			_cluster_tick(delta)
 	if has_smoke():
-		smoke_cd = maxf(smoke_cd - delta, 0.0)
+		smoke_cd = maxf(smoke_cd - cool, 0.0)
 	if has_missiles():
-		missile_cd = maxf(missile_cd - delta, 0.0)
+		missile_cd = maxf(missile_cd - cool, 0.0)
 		if not _salvo.is_empty():
 			_salvo_tick(delta)
 	if has_ram():
-		ram_cd = maxf(ram_cd - delta, 0.0)
+		ram_cd = maxf(ram_cd - cool, 0.0)
 		if _ram_left > 0.0:
 			_ram_tick(delta)
 	if has_strafe():
-		strafe_cd = maxf(strafe_cd - delta, 0.0)
+		strafe_cd = maxf(strafe_cd - cool, 0.0)
 	if has_bomb():
-		bomb_cd = maxf(bomb_cd - delta, 0.0)
+		bomb_cd = maxf(bomb_cd - cool, 0.0)
 	if has_bombard():
-		bombard_cd = maxf(bombard_cd - delta, 0.0)
+		bombard_cd = maxf(bombard_cd - cool, 0.0)
 		if _bombard_left > 0.0:
 			_bombard_tick(delta)
+	if has_flash():
+		flash_cd = maxf(flash_cd - cool, 0.0)
+		if is_throwing():
+			_flash_tick(delta)
+	if has_ping():
+		ping_cd = maxf(ping_cd - cool, 0.0)
+		if is_pinging():
+			_ping_tick(delta)
+	if _burst_left > 0:
+		_burst_tick(delta)
 	if stats.has("aa_dps") and _fire_cd <= 0.0:
 		_aa_tick()
 	if raiding and has_ram():
 		_raid_ram()
+	if raiding and has_flash():
+		_raid_flash()
 	# A charging ram doesn't stop to shoot: it runs for its slot in front of the gate, or, raiding,
-	# into the soldier it hunts.
+	# into the soldier it hunts. A kangaroo throwing a grenade holds its fire.
 	var running_over := raiding and is_ramming() and _is_soldier(target)
-	var engaged := charge_gate == null and not running_over and Combat.is_valid_target(target) and _in_range(target) and _sees_target
+	var engaged := charge_gate == null and not running_over and not is_throwing() and not is_pinging() \
+			and Combat.targetable(target) and _in_range(target) and _sees_target
+	_engaged = engaged
 	if stats.has("overheat_time"):
 		_heat_tick(delta, engaged and not is_overheated())
 	if is_bombarding():
 		_face(_bombard_aim, delta)  # stands still while it lays the gun and fires
+	elif is_throwing():
+		_face(_flash_aim, delta)  # stands up on the spot and throws
+	elif is_pinging():
+		pass  # stands on the spot while the dish sweeps
 	elif engaged:
 		_face(target.global_position, delta)
 		if _fire_cd <= 0.0 and not is_overheated():
@@ -1152,17 +1408,22 @@ func _process(delta: float) -> void:
 	if moving:
 		_anim_t += delta * spd
 	if _anim:
-		# Rigged model: play its clips, matching the move cycle to ground speed.
+		# Rigged model: play its clips, matching the move cycle to ground speed (within anim_scale).
+		# A kangaroo throwing a flash grenade plays its throw, a giraffe pinging its ping.
 		var clip: String = stats.anim_move if moving else stats.anim_idle
+		var skill := is_throwing() or is_pinging()
+		if is_throwing():
+			clip = "Throw"
+		elif is_pinging():
+			clip = "Ping"
 		if _anim.current_animation != clip:
-			_anim.play(clip, 0.25)
-		_anim.speed_scale = clampf(spd / stats.anim_ref_speed, 0.6, 3.0 if is_ramming() else 2.0) if moving else 1.0
+			_anim.play(clip, 0.15 if skill else 0.25)
+		var rate: Array = stats.get("anim_scale", [0.6, 2.0])
+		_anim.speed_scale = clampf(spd / stats.anim_ref_speed, rate[0], 3.0 if is_ramming() else rate[1]) \
+				if moving and not skill else 1.0
+	if _rig:
+		_pose_rig(delta)
 	match stats.anim:
-		"hop":
-			var hop := absf(sin(_anim_t * 1.2)) if moving else 0.0
-			# Weights capped at 1: a long frame (e.g. a navmesh rebake) would overshoot and blow up.
-			_model.position.y = lerpf(_model.position.y, hop * 0.45, minf(delta * 15.0, 1.0))
-			_model.rotation.x = lerpf(_model.rotation.x, -hop * 0.15, minf(delta * 10.0, 1.0))
 		"stomp":
 			_model.position.y = absf(sin(_anim_t * 1.6)) * 0.06 if moving else lerpf(_model.position.y, 0.0, delta * 5.0)
 			_model.rotation.z = sin(_anim_t * 1.6) * 0.025 if moving else lerpf(_model.rotation.z, 0.0, delta * 5.0)
@@ -1180,13 +1441,30 @@ func _process(delta: float) -> void:
 		_:
 			_model.position.y = absf(sin(_anim_t * 2.2)) * 0.08 if moving else lerpf(_model.position.y, 0.0, delta * 8.0)
 			_model.rotation.z = sin(_anim_t * 2.2) * 0.06 if moving else lerpf(_model.rotation.z, 0.0, delta * 8.0)
-	if stats.anim not in ["hop", "flight", "rigged"]:
+	if stats.anim not in ["flight", "rigged"]:
 		_model.rotation.x = _recoil * (0.08 if stats.radius < 1.0 else 0.015)
 	if _hp_bar.visible:
 		_hp_bar.global_position = global_position + Vector3.UP * (stats.height + 0.5)
 		var cam := get_viewport().get_camera_3d()
 		if cam:
 			_hp_bar.global_basis = cam.global_basis
+	# Resupplied by a kangaroo: an ammo box floats over it.
+	_supply_icon.visible = resupply > 0.0
+	if _supply_icon.visible:
+		_supply_icon.global_position = global_position + Vector3.UP * (stats.height + 1.0 + 0.08 * sin(Time.get_ticks_msec() * 0.004))
+
+
+## Kangaroo: rears its chest up onto what it shoots at, so the SMGs strapped to its sides point at it,
+## and holds the grenade in its paw while it winds up to throw.
+func _pose_rig(delta: float) -> void:
+	var want := 0.0
+	if _engaged and Combat.is_valid_target(target):
+		var d := Combat.aim_point(target) - _eye()
+		want = clampf(atan2(d.y, Vector2(d.x, d.z).length()) + KangarooRig.GUN_DROOP, 0.0, KangarooRig.MAX_PITCH)
+	_rig.pitch = lerpf(_rig.pitch, want, minf(delta * 6.0, 1.0))
+	_held.visible = is_throwing() and not _flash_thrown and _flash_t > FLASH_IN_PAW
+	if _held.visible:
+		_held.global_position = grenade_position()
 
 
 # ---------------------------------------------------------------- visuals
@@ -1224,6 +1502,16 @@ func _build_model() -> void:
 		if not skeletons.is_empty():
 			_turrets = ElephantTurrets.new()
 			skeletons[0].add_child(_turrets)
+	if has_flash():
+		var skeletons := m.find_children("*", "Skeleton3D", true, false)
+		if not skeletons.is_empty():
+			_rig = KangarooRig.new()
+			skeletons[0].add_child(_rig)
+			# The flash grenade it pulls and holds up to throw.
+			_held = Mats.cylinder_mesh(0.065, 0.18, Vector3.ZERO, Mats.flat(Color(0.25, 0.3, 0.2), 0.3, 0.6), 10)
+			_held.top_level = true
+			_held.visible = false
+			add_child(_held)
 	if stats.get("carry_gun", false):
 		# Carried weapon placeholder until weapons get modeled.
 		_model.add_child(Mats.box_mesh(Vector3(0.12, 0.16, 0.9), Vector3(0.35, 1.15, -0.45),
@@ -1256,6 +1544,30 @@ func _build_ring() -> void:
 		_aa_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_aa_ring.visible = false
 		add_child(_aa_ring)
+	if resupplies():
+		# Dashed circle showing how far the kangaroo's supplies reach.
+		var im := ImmediateMesh.new()
+		im.surface_begin(Mesh.PRIMITIVE_LINES)
+		RhinoAim.dashed_circle(im, Vector3.UP * 0.15, stats.resupply_range, 40)
+		im.surface_end()
+		_supply_ring = MeshInstance3D.new()
+		_supply_ring.mesh = im
+		_supply_ring.material_override = Mats.unshaded(SUPPLY_COLOR)
+		_supply_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_supply_ring.visible = false
+		add_child(_supply_ring)
+	if has_ping():
+		# Dashed circle showing how far the giraffe's ping reaches.
+		var im := ImmediateMesh.new()
+		im.surface_begin(Mesh.PRIMITIVE_LINES)
+		RhinoAim.dashed_circle(im, Vector3.UP * 0.15, stats.ping_radius, 96)
+		im.surface_end()
+		_ping_ring = MeshInstance3D.new()
+		_ping_ring.mesh = im
+		_ping_ring.material_override = Mats.unshaded(PING_COLOR)
+		_ping_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_ping_ring.visible = false
+		add_child(_ping_ring)
 
 
 func _build_hp_bar() -> void:
@@ -1278,6 +1590,38 @@ func _build_hp_bar() -> void:
 	_hp_fill.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_hp_bar.add_child(_hp_fill)
 	_hp_bar.visible = false
+	_supply_icon = Sprite3D.new()
+	_supply_icon.texture = _supply_texture()
+	_supply_icon.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	_supply_icon.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_supply_icon.shaded = false
+	_supply_icon.no_depth_test = true
+	_supply_icon.fixed_size = true  # the same size on screen however far out the camera is
+	_supply_icon.pixel_size = 0.0017
+	_supply_icon.top_level = true
+	_supply_icon.visible = false
+	add_child(_supply_icon)
+
+
+## The resupplied units' icon: a little ammo box, olive drab with a lid, a latch and a yellow
+## stencil band, three brass rounds standing in it.
+static func _supply_texture() -> ImageTexture:
+	if _supply_tex:
+		return _supply_tex
+	var img := Image.create(24, 21, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var ink := Color(0.07, 0.08, 0.05)
+	for x in [6, 10, 14]:
+		img.fill_rect(Rect2i(x, 0, 4, 9), ink)
+		img.fill_rect(Rect2i(x + 1, 3, 2, 6), Color(0.96, 0.76, 0.27))
+		img.fill_rect(Rect2i(x + 1, 1, 2, 2), Color(0.8, 0.48, 0.22))
+	img.fill_rect(Rect2i(1, 7, 22, 14), ink)
+	img.fill_rect(Rect2i(2, 8, 20, 12), Color(0.44, 0.5, 0.23))
+	img.fill_rect(Rect2i(2, 8, 20, 3), Color(0.31, 0.36, 0.15))
+	img.fill_rect(Rect2i(10, 10, 4, 3), Color(0.82, 0.82, 0.76))
+	img.fill_rect(Rect2i(4, 15, 16, 2), Color(0.98, 0.86, 0.3))
+	_supply_tex = ImageTexture.create_from_image(img)
+	return _supply_tex
 
 
 func _update_hp_bar() -> void:

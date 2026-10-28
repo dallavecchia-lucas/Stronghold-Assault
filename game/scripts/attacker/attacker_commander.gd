@@ -6,7 +6,8 @@ extends Node
 ## plain Dictionary. Keeping commands serializable means online play can later just
 ## send these over the network to whoever runs the match.
 ##
-##   {"type": "spawn", "unit": "rifleman", "spawn": 0}
+##   {"type": "spawn", "unit": "rifleman", "spawn": 0}   a forward helipad's spawn point only while
+##               the attackers hold it (spawn_open)
 ##   {"type": "move", "units": [ids], "pos": Vector3, "attack": bool}
 ##   {"type": "attack", "units": [ids], "target": NodePath}   rams ramming at a ground gate charge
 ##               it, as many as fit in front of its doorway; the rest call their ram off (RamCharge)
@@ -19,11 +20,21 @@ extends Node
 ##               (TalonAim.bombs)
 ##   {"type": "smoke", "units": [ids], "pos": Vector3}   the ready hippo closest to pos lays a
 ##                                                     smoke screen toward it (HippoSmoke)
+##   {"type": "flash", "units": [ids], "pos": Vector3}   kangaroos each throw a flash grenade round
+##               pos, up on the gun decks and roofs too (KangarooFlash.spots)
 ##   {"type": "missile", "units": [ids], "target": NodePath}   elephants fire missile salvos at
 ##               an enemy flyer, only as many as the kill takes (ElephantMissiles)
 ##   {"type": "ram", "units": [ids]}   breaching rams surge forward (AttackerUnit.start_ram)
+##   {"type": "ping", "units": [ids]}   giraffes ping from their dishes (AttackerUnit.start_ping)
 ##   {"type": "scout", "units": [ids]}   toggle scout formation: the rhinos in the selection
 ##                                       ring the rest of it so their anti-air covers the mass
+##
+## It also hands out the kangaroos' supplies (their passive): each kangaroo resupplies the units
+## nearest it whose skills are cooling down, up to resupply_units of them, and no unit takes
+## supplies from two kangaroos (_update_resupply).
+##
+## Every Forward Helipad Base the attackers hold (AttackerBase) adds AttackerBase.INCOME to the
+## supply coming in (income_rate).
 
 signal unit_spawned(unit: AttackerUnit)
 signal unit_died(unit: AttackerUnit)
@@ -32,11 +43,16 @@ const UNIT_CAP := 60
 const BASE_INCOME := 12.0
 ## How far outside the edge of the mass scouting rhinos keep.
 const SCOUT_MARGIN := 5.0
+## Seconds between handing out the kangaroos' supplies.
+const RESUPPLY_EVERY := 0.25
 
 var supply := 250.0
 var income := BASE_INCOME
 var units := {}  # id -> AttackerUnit
 var spawn_points: Array[Vector3] = []
+## Per spawn point: the AttackerBase it belongs to, or null (always open). LevelBuilder.spawn_bases;
+## left empty, every spawn point is open.
+var spawn_bases: Array = []
 var units_root: Node3D
 
 var _next_id := 1
@@ -44,14 +60,35 @@ var _next_formation := 1
 ## Scout formations: [{"rhinos": [ids], "escorts": [ids]}]
 var scout_groups: Array = []
 var _scout_cd := 0.0
+var _resupply_cd := 0.0
 
 
 func _process(delta: float) -> void:
-	supply += income * delta
+	supply += income_rate() * delta
 	_scout_cd -= delta
 	if _scout_cd <= 0.0:
 		_scout_cd = 0.5
 		_update_scouts()
+	_resupply_cd -= delta
+	if _resupply_cd <= 0.0:
+		_resupply_cd = RESUPPLY_EVERY
+		_update_resupply()
+
+
+## Supply a second: the commander's own income and every helipad the attackers hold.
+func income_rate() -> float:
+	var rate := income
+	for b in spawn_bases:
+		if b != null and b.controlled:
+			rate += AttackerBase.INCOME
+	return rate
+
+
+## False for a forward helipad's spawn point while the attackers don't hold it.
+func spawn_open(idx: int) -> bool:
+	if idx < 0 or idx >= spawn_bases.size() or spawn_bases[idx] == null:
+		return true
+	return spawn_bases[idx].controlled
 
 
 func can_afford(type_id: String) -> bool:
@@ -77,25 +114,32 @@ func submit(cmd: Dictionary) -> int:
 			_bomb(cmd.units, cmd.pos)
 		"smoke":
 			_smoke(cmd.units, cmd.pos)
+		"flash":
+			_flash(cmd.units, cmd.pos)
 		"missile":
 			_missiles(cmd.units, cmd.target)
 		"ram":
 			for u in _resolve(cmd.units):
 				u.start_ram()
+		"ping":
+			for u in _resolve(cmd.units):
+				if not u.raiding:
+					u.start_ping()
 		"scout":
 			_toggle_scout(cmd.units)
 	return 0
 
 
 func _spawn(type_id: String, spawn_idx: int) -> int:
-	if not UnitTypes.DATA.has(type_id) or not can_afford(type_id):
+	spawn_idx = clampi(spawn_idx, 0, spawn_points.size() - 1)
+	if not UnitTypes.DATA.has(type_id) or not can_afford(type_id) or not spawn_open(spawn_idx):
 		return 0
 	supply -= UnitTypes.DATA[type_id].cost
 	var id := _next_id
 	_next_id += 1
 	var u := AttackerUnit.new()
 	u.setup(type_id, id)
-	var base: Vector3 = spawn_points[clampi(spawn_idx, 0, spawn_points.size() - 1)]
+	var base: Vector3 = spawn_points[spawn_idx]
 	u.position = base + Vector3(randf_range(-6, 6), 0.2, randf_range(-6, 6))
 	# Face the stronghold.
 	u.rotation.y = atan2(base.x, base.z)
@@ -123,7 +167,9 @@ func _move(ids: Array, pos: Vector3, attack: bool) -> void:
 
 func _attack(ids: Array, target_path: NodePath) -> void:
 	var target := get_node_or_null(target_path) as Node3D
-	if not Combat.is_valid_target(target):
+	# Under adaptive camo an infiltrator can't be picked out, even on orders; nor anyone in the fog
+	# of war.
+	if not Combat.targetable(target) or not AttackerVision.sees_node(target):
 		return
 	var list := _resolve(_without_scouts(ids))
 	for u in list:
@@ -177,6 +223,42 @@ func _missiles(ids: Array, target_path: NodePath) -> void:
 		return
 	for e in ElephantMissiles.allocate(_resolve(ids).filter(func(u): return u.has_missiles()), target):
 		e.start_missiles(target)
+
+
+func _flash(ids: Array, pos: Vector3) -> void:
+	var kangaroos := _resolve(ids).filter(func(u): return u.flash_ready() and not u.raiding)
+	var spots := KangarooFlash.spots(kangaroos, pos)
+	for i in kangaroos.size():
+		kangaroos[i].start_flash(spots[i])
+
+
+# ---------------------------------------------------------------- kangaroo supplies
+
+## Each kangaroo resupplies the units nearest it whose skills are cooling down (itself aside), up to
+## resupply_units of them; the closest pairs go first, and a unit one kangaroo already supplies is
+## left to it, so the cut never stacks and the others' supplies go further.
+func _update_resupply() -> void:
+	var pairs := []
+	for k in units.values():
+		if not k.is_alive() or not k.resupplies():
+			continue
+		for u in units.values():
+			if u == k or not u.is_alive() or not u.cooling_down():
+				continue
+			var d: float = k.global_position.distance_to(u.global_position)
+			if d <= k.stats.resupply_range:
+				pairs.append([d, k, u])
+	pairs.sort_custom(func(a, b): return a[0] < b[0])
+	var load := {}
+	var cut := {}
+	for p in pairs:
+		var k: AttackerUnit = p[1]
+		if cut.has(p[2]) or load.get(k, 0) >= k.stats.resupply_units:
+			continue
+		cut[p[2]] = k.stats.resupply_cdr
+		load[k] = load.get(k, 0) + 1
+	for u in units.values():
+		u.resupply = cut.get(u, 0.0)
 
 
 # ---------------------------------------------------------------- scout formation

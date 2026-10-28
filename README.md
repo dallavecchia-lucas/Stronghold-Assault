@@ -21,10 +21,10 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
 
 - **Attacker wins** by destroying the Keep. **Defender wins** by holding for 10 minutes.
 
-**The map.** The stronghold is a mountain with a bunker dug into each of its four faces (`game/assets/stronghold/stronghold.glb`). The Keep is the reactor in the core hall under the peak. Attackers come from the south, east and west. Each of those faces has a blast-door gate on its middle ground tunnel; every other tunnel is welded shut. Once a gate is down, only Chimps and Breaching Rams can get inside; everyone else fights from outside. Inside, they can also climb the stair shafts to the gun decks and the ladders to the roofs. Forest groves stand off to the sides of the attack lanes; they burn (the Flame Squads), and a burnt forest never grows back. The defenders hold the gun decks and roofs: a machine gun over each gate, riflemen along the decks, the mortar on the south roof and two AA turrets on every roof. The guns can't fire into the doorway right below them; the mortar covers it.
+**The map.** The stronghold is a mountain with a bunker dug into each of its four faces (`game/assets/stronghold/stronghold.glb`). The Keep is the reactor in the core hall under the peak. Attackers come from the south, east and west. Each of those faces has a blast-door gate on its middle ground tunnel; every other tunnel is welded shut. Once a gate is down, only Chimps, Breaching Rams and Kangaroo Commandos can get inside; everyone else fights from outside. Inside, they can also climb the stair shafts to the gun decks and the ladders to the roofs. Forest groves stand off to the sides of the attack lanes; they burn (the Flame Squads), and a burnt forest never grows back. Out by each lane stands one of the attackers' Forward Helipad Bases (south, east and west: see the Attacker section), the Infiltrator Squads' targets. The defenders hold the gun decks and roofs: a machine gun over each gate, riflemen along the decks, the mortar on the south roof and two AA turrets on every roof. The guns can't fire into the doorway right below them; the mortar covers it.
 
 **Defender (first person)**
-- `1`–`9`: take over a post (machine guns, mortar, riflemen) · `G`: the Gunner Squad · `Tab`: jump to the post with the most enemies nearby · `B`: buy an AA Squad · `N`: buy a Flame Squad · `F1`–`F6`: take command of a bought squad
+- `1`–`9`: take over a post (machine guns, mortar, riflemen) · `G`: the Gunner Squad · `Tab`: jump to the post with the most enemies nearby · `B`: buy an AA Squad · `N`: buy a Flame Squad · `M`: buy an Infiltrator Squad · `F1`–`F6`: take command of a bought squad
 - Rifleman: `WASD` move, `Shift` sprint, `Space` jump, `LMB` fire, `RMB` aim, `R` reload
 - Machine gun: mouse aim, `LMB` fire, `RMB` zoom; it overheats if you hold the trigger too long
 - Mortar: `WASD` move the spotter view, `Q`/`E` rotate, wheel zoom, `LMB` fire on the ring
@@ -52,12 +52,22 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
     - CLEAR (a bought squad's first order): it clears the forests round the base, closest to the base first and working its way outwards. It walks in formation to the standing forest tree nearest the base (one a little further out but much nearer the squad goes first, so it finishes a stand of trees before walking on). There the troopers spread out, each to a tree of its own nearest the base, and hold the flame on its trunk until it catches, then take the next. With none left in reach the squad forms up and walks on; with the whole forest done, on to the next forest. Lone trees out in the field are left standing. With nothing left to burn it goes back to its hall.
     - GUARD: it stays where it is.
     - Either way, attackers on the ground within 16 m come first: it forms up, walks at the nearest (on GUARD, no more than 6 m off its spot) and burns it, then goes back to its order.
+- Infiltrator Squads (third person): five Infiltrators, the Harpy Vanguard in her training kit with a recurve bow, a deep infiltration squad for ambushes and sabotage. They move, follow and file through tunnels like the Gunner Squad (same keys, formation and camera).
+  - Buying: `M` buys a squad for 280 credits; like the other bought squads it deploys in a gate spawn hall, joins the roster (`F1`–`F6`, `Ctrl+F1`–`F6`) and is gone for good once all five are down.
+  - Passive, low profile: attackers never pick an infiltrator out on their own. Every other attacker with a basic attack shoots the defenders in its reach, never an infiltrator; only an attack the attacking player orders on one (`RMB` on it) goes after her. The CPU attacker never goes after them.
+  - A Giraffe's ping (see the Attacker section) that catches an infiltrator out of camo reveals her: her low profile is gone and every attacker in reach goes after her on its own, the CPU's too. A radar icon hangs over her while it lasts (on your screen only, never the attacker's). It ends the moment the squad puts its camo on, or once she is back in the attackers' fog of war (out of sight of all their units). Caught under camo, she only leaves a blur on their radar.
+  - `LMB`: every trooper looses an arrow at the aim (34 damage, then 1.3 s to draw the next). The bow is silent: no tracer, no flash where it lands, so the attacking player has to notice their units' health running down and react to the ambush.
+  - `Q` adaptive camo: 20 s of camouflage for the whole squad, ready again a minute after it went on. Basic attacks can't target the troopers: shots pass through them and orders to attack them lapse (or are refused). They can still shoot, but the first arrow loosed gives them away: the camo comes off the whole squad (CAMO BROKEN), and the cooldown runs on as it was. Area damage still hurts and kills them: bombs, shells, cluster bombs, rockets and strafing runs aimed at the right spot. On the attacker's side they vanish (not drawn at all, no shadow); on the defender's they look as ever and the squad's camera gets a steady vignette while it lasts.
+  - `F` sabotage: next to a Forward Helipad the attackers hold (within 4 m of its deck), the squad sabotages it. It takes 45 s with the leader staying that close (`F` again calls it off; walking away loses the work); then the attackers lose control of the helipad until they retake it. Each squad carries one sabotage kit: used, it has to go back into the fortress (in through a gate) to restock it. The panel above the weapon panel shows the bows' draw, the camo, the kit and the work under way.
+  - Auto order (`V` while driving the squad, or `Ctrl+F<n>`): HOLD, or a sabotage operation against one of the helipads the attackers hold (`OP S`, `OP E`, `OP W`). Left to itself on HOLD it stays where it was left and does nothing. On an operation (its idle mode) it heads out through the gate nearest the helipad and makes for it by a route that keeps as far from the attackers as it can while still heading there, planned again every second as they move, up to the side of the deck where the fewest are; it sabotages it and comes home to its hall, restocking its kit (out of kits, it restocks first). It never shoots or puts its camo on by itself.
 - Posts you aren't controlling keep fighting on their own; dead posts come back after a short delay
+- Flash grenades (the Kangaroo Commandos'): a post or trooper within 10 m of the bang that has it in sight is blinded for 2 s, and left to itself it can't fight (the guns, the mortar and the riflemen hold their fire, a squad's troopers too, and an AA Squad drops its lock). If it catches the post you are on, your screen goes full white for 2 s, then clears.
 - AA turrets: two on every roof, on their own (nobody takes them over). Each turns to the nearest enemy aircraft it can see within 45 m, locks on (1.2 s) and fires a homing missile at it every 3 s (18 damage), Sky Talons on their attack runs included. 150 HP: a bison's shell or a talon's bomb takes one out; it is rebuilt after 75 s.
 
 **Attacker (RTS)**
+- Fog of war: your army only sees what is round it (each unit as far as its sight, 26–50 m; the Giraffe 75 m; a helipad you hold 26 m round its deck). The stronghold and the land are known, but outside sight they are dimmed, and the defenders' soldiers and squads there aren't shown at all. Nobody picks out a defender in the fog, and you can't order an attack on one, even one in range (so long-range units need a spotter); the gate guns, the mortar and the AA turrets stay on the map. Raiders inside the stronghold hunt as ever. The CPU attacker plays by the same fog.
 - `LMB` click/drag to select, `Shift` to add · `RMB` attack-move, or attack a gate/defender you click on · `Ctrl+RMB` move without stopping
-- Spawn: `Z` Bear Rifleman · `X` Kangaroo Commando (fast) · `C` Wolf Medic (heals) · `N` Mule Artillery (long-range shells)
+- Spawn: `Z` Bear Rifleman · `C` Wolf Medic (heals) · `N` Mule Artillery (long-range shells)
 - `V` Sky Talon (the hawk): flies over the mountain, and flies like a hawk.
   - It glides most of the time and beats its wings only now and then, a few strokes every few seconds (gliding it sinks a little, less while it circles and soars, and the strokes lift it back up), and all the way up on take-off or climbing over the mountain. It banks into its turns.
   - It never hovers: wherever it has nowhere left to go, it circles. Sent somewhere (or at a target), it circles the spot counterclockwise, the centre off its left wing, like a gunship flying a pylon turn.
@@ -81,17 +91,28 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
 - `K` Hippo Heavy Gunner: heavy, slow, sprays suppressive fire from mounted machine guns.
   - The guns are inaccurate: rounds land around the target and can hit whatever stands next to it. They fire for 8 s in total (resting cools them at the same rate), then overheat and go silent for 2 s.
   - `R` smoke screen: aim, then `LMB` to fire (`RMB` or `R` cancels). The cone shows where the curtain will stand (the green band at its tip). The hippo fires three grenades at once. Each one bursts high up, then drops and bursts twice more on the way down, leaving a tall pillar. Together the pillars make a curtain that blocks line of sight for both sides for 30 s. Cooldown is 90 s. With several hippos selected, the one closest to the cursor fires.
-- `M` Breaching Ram (big horn sheep): breaks gates, and with the Chimp the only unit that can get inside the stronghold.
+- `M` Breaching Ram (big horn sheep): breaks gates, and with the Chimp and the Kangaroo Commando the only units that can get inside the stronghold.
   - Basic attack: shotgun. Each blast throws 7 pellets into a small cone in front of it (range 7 m).
   - `Space` ram: a surge of speed (2.2×) for 6 s. Cooldown is 60 s. Enemy soldiers it runs over lose health and are tossed out of its way.
   - Gate charge: `RMB` a ground gate while ramming, and the rams line up across its doorway and slam into it once each for a heavy hit (350). Only 3 fit in front of a doorway at a time: the nearest ones that can still get there before their ram runs out take the places (rams already charging it keep theirs). The rest call their ram off and go at the gate with their shotguns.
   - Infiltration: once a gate is down, `RMB` next to it sends selected rams in. Like the Chimps, inside you lose control of them. They make for the Keep on their own and fight every defender they run into on the way (within about 18 m, up the stairs to the gun decks too), ramming soldiers whenever the ram is ready and finishing them with the shotgun.
-- `J` Night Ops Chimp: fast melee fighter, and with the Breaching Ram the only unit that can get inside the stronghold.
+- `J` Night Ops Chimp: fast melee fighter, and with the Breaching Ram and the Kangaroo Commando the only units that can get inside the stronghold.
   - Basic attack: melee, it strikes whatever is within arm's reach.
   - Passive: moves 60% faster inside forests.
   - Infiltration: once a gate is down, `RMB` next to it sends selected Chimps in. Inside, you lose control of them. They hunt the defenders anywhere in the stronghold, climbing to the gun decks and up the ladders to the roofs. When no defender is left standing, they wreck the machines: the gate machine guns and the mortar. Respawned defenders draw them back.
-- Models in, roles still to be designed (placeholder stats): `H` Savanna Signal Scout · `Y` Armored Lioness · `U` Serpent Sniper
-- `Tab` cycles spawn point · `Ctrl+1`–`5` save a group, `1`–`5` recall it
+- `X` Kangaroo Commando: fast, and with the Breaching Ram and the Chimp the only units that can get inside the stronghold.
+  - It moves like a real kangaroo: it hops on both hind feet together, its tail swinging against the legs and its forepaws tucked in at the chest. Like a real one it hops at about the same rate whatever its speed, taking longer bounds instead.
+  - Basic attack: the two SMGs mounted on either side of its chest fire short bursts (4 rounds), the guns taking turns. At a target above it (up on a gun deck) it rears its chest up to bring them onto it.
+  - `R` flash grenade: aim, then `LMB` to throw (`RMB` or `R` cancels); with a selected hippo's smoke screen ready, `R` aims that first. Each kangaroo stops, stands up tall like a boxer (propped on its tail) and lobs a grenade up to 26 m. It goes off on landing in a white flash: every defender within 10 m that has it in sight is blinded for 2 s, and the defending player's screen goes full white if the post they are on is caught. Cooldown is 30 s. With several kangaroos selected, the grenades cluster round the cursor 15 m apart like the bisons' shells, instead of piling onto one spot, up on the gun decks and roofs too; the cursor on a defender up on a deck puts them at its feet. The preview shows each kangaroo's throw and where its flash will reach.
+  - Passive, supplies: each kangaroo resupplies up to 3 units within 9 m whose skills are cooling down (other kangaroos included, itself not): their skills come back 15% sooner. A small ammo box floats over every unit it resupplies. It doesn't stack: a unit next to several kangaroos still gets 15%, and the kangaroos share out the units round them, each taking its nearest, so two kangaroos look after six.
+  - Infiltration: once a gate is down, `RMB` next to it sends selected kangaroos in. Like the Chimps and Rams, inside you lose control of them: they hunt the defenders (up the stairs to the gun decks and the roofs too), shooting them with their SMGs and flashing them whenever a grenade is ready.
+- `H` Savanna Signal Scout (the Giraffe): a scout with a radar dish and antennas on its back. It walks like a giraffe, nearly pacing (each fore leg swinging just after the hind leg on its side), the body rolling over the side that is down, the neck pumping with every step.
+  - Passive: none, but it sees furthest of any unit (75 m), deep into the fog of war: walk it ahead of the army to spot for it.
+  - Basic attack: light fire out to 30 m.
+  - `P` ping: it stands, stretches its neck up and sweeps its dish, and sends out a sonar pulse that spreads to 60 m round it (40 m/s). Every defender soldier and squad trooper the pulse reaches is marked by a red blur on the spot where it stood the moment the pulse got there, like a contact on a sonar screen: the blur stays put and fades over 7 s, it doesn't follow them. It finds infiltrators under adaptive camo too (a blur, no more). An infiltrator caught out of camo is revealed: she loses her low profile and your units go after her on their own like any defender, until she goes under camo or slips back into the fog of war. Cooldown is 45 s; a selected giraffe shows how far its ping reaches. The CPU's giraffes ping whenever they are out on the field.
+- Models in, roles still to be designed (placeholder stats): `Y` Armored Lioness · `U` Serpent Sniper
+- Forward Helipad Bases (`S Pad`, `E Pad`, `W Pad`): a deck on stilts with a helipad and the camp round it, one out by each attack lane. While you hold one it is a forward spawn point (its button on the spawn row) and brings in +1.5 supply/s. It can't be shot down, but the defenders' Infiltrator Squads sabotage it: then you lose control of it (no spawning there, no supply; it smokes and a dashed ring marks where to stand) until you retake it: ground units within 10 m of its deck for 15 s (sooner the more there are, up to four), with no defender that close (CONTESTED). The CPU attacker spawns its waves at the side's helipad while it holds it and sends the nearest units to retake a sabotaged one.
+- `Tab` cycles spawn point (a sabotaged helipad is skipped) · `Ctrl+1`–`5` save a group, `1`–`5` recall it
 - Camera: `WASD`/arrows/screen edge to pan, `Q`/`E` or middle mouse to rotate, wheel to zoom
 - `Esc` pauses (both sides)
 
@@ -119,6 +140,22 @@ Plays a scripted match at 4× speed with no window and prints a report (useful a
 ```sh
 godot --path game --headless -- --autotest=defender --duration=120
 godot --path game --headless -- --autotest=attacker --duration=120
+```
+
+### Giraffe showcase
+
+`game/scenes/dev/giraffe_showcase.tscn` checks the Giraffe, the fog of war and the ping on the real map, in the south field, from the attacker's side. A giraffe walks up from the west; a Flame Trooper stands in the fog 25 m from a Bear Rifleman whose sight is cut to 15 m: it isn't drawn, the rifleman leaves it alone though it is in range, and an order to attack it is refused. The giraffe comes within 75 m: the trooper shows and the rifleman shoots it. Three riflemen leave an infiltrator out of camo alone (low profile); the giraffe pings: the pulse marks her and an infiltrator under camo with red blurs (not a trooper beyond its reach), the blurs stay put when the one under camo walks off, she is revealed and the riflemen go after her on their own. Under camo she is lost again; pinged once more, she slips into the fog and her low profile is back. The radar icon over her shows on the defender's side only, and an Infiltrator Squad under camo that looses an arrow loses its camo. The garrison's posts and the AA turrets hold fire.
+
+```sh
+godot --path game --headless --fixed-fps 30 res://scenes/dev/giraffe_showcase.tscn -- --test  # prints and checks: GIRAFFE SHOWCASE PASS / FAIL
+godot --path game --fixed-fps 30 res://scenes/dev/giraffe_showcase.tscn  # to watch it
+```
+
+`-- --snap=6,21 --snap-out=/tmp/giraffe` saves just those frames (seconds in). `-- --video` frames the field closer and prints the frames to keep (the squad check inside the mountain is cut), for the video (`media/giraffe_showcase.mp4`):
+
+```sh
+godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie giraffe.avi --fixed-fps 30 res://scenes/dev/giraffe_showcase.tscn -- --video > giraffe.log
+python3 tools/video/cut_showcase.py giraffe.avi giraffe.log media/giraffe_showcase.mp4
 ```
 
 ### Elephant showcase
@@ -218,6 +255,37 @@ python3 tools/video/cut_showcase.py strike.avi strike.log media/talon_strike_sho
 
 The test also checks that no talon on a run ever goes into the ground or the stronghold. `-- --video` plays the waits and the flying into position at triple speed and cuts the time between strikes.
 
+### Kangaroo showcase
+
+`game/scenes/dev/kangaroo_showcase.tscn` runs the Kangaroo Commando through its paces on the real map, against the south face, the way a player uses it in the RTS view (`media/kangaroo_showcase.mp4`). A lone kangaroo hops down the south attack lane. Three are box-selected, `R`, the cursor on the gate machine gun, `LMB`: they rear up and throw, their grenades spread along the gun deck, and the bangs blind the gunner and both riflemen there. Then the defender's side: the player on a deck rifleman, a kangaroo flashes the post and the screen goes white. A kangaroo hops up to five units whose skills are cooling down: ammo boxes over the three nearest, their cooldowns running faster; a second kangaroo takes the other two (the cut never stacks). The three gun down a rifleman in front of the face with their SMGs, and last the south gate falls and they storm the base, hunting the guards inside and the riflemen on the deck on their own and flashing them. The garrison's posts hold fire until the storm, the AA turrets throughout.
+
+```sh
+godot --path game --headless --fixed-fps 30 res://scenes/dev/kangaroo_showcase.tscn -- --test  # prints and checks: KANGAROO SHOWCASE PASS / FAIL
+godot --path game --rendering-driver opengl3 --resolution 1280x720 --fixed-fps 30 res://scenes/dev/kangaroo_showcase.tscn -- --video --snap=18.5,66.8 --snap-out=/tmp/kangaroo  # just those frames
+godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie kangaroo.avi --fixed-fps 30 res://scenes/dev/kangaroo_showcase.tscn -- --video > kangaroo.log
+python3 tools/video/cut_showcase.py kangaroo.avi kangaroo.log media/kangaroo_showcase.mp4
+```
+
+`-- --video` cuts in the cameras (beside the hopper, in slow motion as it bounds past, close by a kangaroo rearing up to throw, along the deck as the grenades go off, through the rifleman's eyes as the flash whites out the screen, and inside the base for the storm), plays the climb to the deck and the fight there 2× faster and cuts the waits.
+
+### Infiltrator showcase
+
+`game/scenes/dev/infiltrator_showcase.tscn` checks the Infiltrator Squad and the Forward Helipads on the real map, in the south field. A lone infiltrator and a Flame Trooper (a decoy) stand in reach of three Bear Riflemen: the riflemen shoot the decoy and leave the infiltrator alone (low profile); ordered to attack her, they do; under adaptive camo the order lapses, shots pass through her and a fresh order is refused, while a blast still hurts her. She looses arrows at the riflemen. Then a squad is bought and sent on a sabotage operation against the South Helipad past four riflemen standing on the straight way there: it walks round them, sabotages the helipad (the attackers can no longer spawn there and lose its supply), and comes home to restock its kit. The player takes command and puts the camo on (the vignette; the troopers as ever on the defender's side, not shown at all on the attacker's), and last three riflemen retake the helipad. The garrison's posts and the AA turrets hold fire.
+
+```sh
+godot --path game --headless --fixed-fps 30 res://scenes/dev/infiltrator_showcase.tscn -- --test  # prints and checks: INFILTRATOR SHOWCASE PASS / FAIL
+godot --path game --fixed-fps 30 res://scenes/dev/infiltrator_showcase.tscn  # to watch it
+```
+
+`game/scenes/dev/infiltrator_video.tscn` records the squad's video (`media/infiltrator_showcase.mp4`), from the defender's side (the squad's camera and HUD, driven like a player would) and the attacker's (the RTS view): arrows at a group of Bear Riflemen (in the RTS view no tracer, no flash, just their health going), adaptive camo (the defender's vignette; in the RTS view the troopers gone from sight, and a bison's shell still hurting them), a sabotage of the South Helipad (sped up) and the RTS view of it lost, the riflemen retaking it, and last a second squad's idle mode: sent on a sabotage operation, it walks round the riflemen standing on the straight way (its planned route drawn) to the helipad.
+
+```sh
+godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie infil.avi --fixed-fps 30 res://scenes/dev/infiltrator_video.tscn > infil.log
+python3 tools/video/cut_showcase.py infil.avi infil.log media/infiltrator_showcase.mp4
+```
+
+`-- --snap=t1,t2 --snap-out=/tmp/shot` saves just those frames (seconds into the run).
+
 ## Asset pipeline
 
 Meshy exports go in `assets_src/`, then get processed with Blender (headless):
@@ -295,6 +363,30 @@ python tools/blender/rig_talon.py -- \
     --output game/assets/units/sky_talon_battalion/sky_talon_battalion_rigged.glb
 ```
 
+The Kangaroo Commando comes with Meshy's auto-rig and no clips, crouched the way a kangaroo stands before a hop. `tools/blender/rig_kangaroo.py` rebuilds the auto-rig's bones with clean names (keeping the weights of the body, head, tail and hind legs), replaces its arm chains, which sit in the side-mounted SMGs, with forelimb chains re-skinned along the real forelimbs, and binds the gear rigidly: the SMGs on the chest, the gun on its back on the spine, the supply pack on the hips, the goggles on the head. `muzzle_L` / `muzzle_R` mark the SMGs' muzzles and `grenade` the right paw's grip (the game fires and throws from there; `KangarooRig` rears the chest up onto the aim). It scales the model to 2 m with its origin between the hind feet and bakes three clips: `Idle` (crouched, breathing, the head looking round, the tail resting on the ground), `Hop` (one bound at 7.2 m/s: both feet land together ahead of the hips and sweep back planted by IK, push off from the toes and swing forward through a long flight, the tail swinging against the legs and the forepaws tucked in) and `Throw` (it rears up like a boxer, propped on its tail with its paws up in a guard, winds up with the right paw cocked by its ear, throws, follows through and drops back into its crouch). Same Blender/`bpy` 5.2 as above; `--preview DIR` renders the clips:
+
+```sh
+python tools/blender/rig_kangaroo.py -- \
+    --input assets_src/units/kangaroo_commando/kangaroo_commando_rigged_meshy.glb \
+    --output game/assets/units/kangaroo_commando/kangaroo_commando_rigged.glb
+```
+
+The Savanna Signal Scout (the Giraffe) comes with Meshy's auto-rig, but its bones are no good for walking (the antennas on its back got bone chains, the neck has gaps), so `tools/blender/rig_giraffe.py` builds a new skeleton along the giraffe, like the War Elephant's: the four legs (upper, lower and a cannon bone from the knee or hock down through the hoof), the neck in three bones, the head, the tail and the torso in three, skinned by region. The gear stays on: the helmet and goggles ride the head, the plates along the neck bend with it, everything on the back rides the torso where it sits, and the radar dish (disc, feed arm and strut) rides a `dish` bone that turns it about its mast. It scales the model to 4.5 m (to the tallest antenna) with its origin in the middle of the four hooves and bakes three clips: `Walk` (at 3 m/s, the UnitTypes `anim_ref_speed`: a lateral sequence close to a pace, hooves planted by IK and rolling over the toe, the cannons folding back through the swing, the body riding as high as the planted legs allow and rolling over the side that is down, the neck pumping with every step and the head level), `Idle` (breathing, weight shifts, the neck and head looking round the field) and `Ping` (not looped: the neck stretches up, the dish sweeps right round its mast and back, the pulse goes out 0.8 s in). Same Blender/`bpy` 5.2 as above; `--preview DIR` renders the clips:
+
+```sh
+python tools/blender/rig_giraffe.py -- \
+    --input assets_src/units/savanna_signal_scout/savanna_signal_scout_rigged_meshy.glb \
+    --output game/assets/units/savanna_signal_scout/savanna_signal_scout_rigged.glb
+```
+
+The Infiltrator (the Infiltrator Squad's trooper) is the Harpy Vanguard, rigged and animated without Blender: `tools/gltf/rig_infiltrator.py` runs on numpy alone, on the glTF itself. It takes the garrison's processed Harpy Vanguard (1.7 m, Meshy's Mixamo-style auto-rig in a T-pose), keeps its mesh and skin weights, renames the bones to the squad troopers' names (`pelvis`, `spine_1`, … `toe_R`; the fingers `index_1_L` and so on) and adds two marker bones with no weights: `bow` in the left hand (the grip; its Y axis up the bow, Z toward the target) and `nock` in the right (where the arrow's nock sits on the drawn string). The game builds the bow, its string and the arrows on them (`InfiltratorTrooper`). Every clip holds an archer's stance: side-on, the chest turned 78° to the right of where she faces, the head turned back to look down the arrow, the bow arm out on the aim and the string drawn to the right of her chin, the arms solved by IK every frame onto targets that ride the chest; the rest pose is this stance too. It bakes `Idle` and eight `Walk_<dir>` clips at the squad troopers' clip speeds (the same gait as `rig_heavy_gunner.py`: feet planted by IK, the hips riding as high as the planted legs allow), each cycle 20 frames. `--preview DIR` renders the rest pose and frames of each clip with a plain numpy rasterizer:
+
+```sh
+python3 tools/gltf/rig_infiltrator.py \
+    --input game/assets/defenders/harpy_vanguard/harpy_vanguard.glb \
+    --output game/assets/defenders/harpy_vanguard/infiltrator_rigged.glb
+```
+
 Static props (scenery, turrets) skip Blender: they go through [glTF-Transform](https://gltf-transform.dev) to put the pivot at the bottom center and shrink textures to 1024 px, and `game/scripts/match/props.gd` scales them to height at load time:
 
 ```sh
@@ -313,6 +405,14 @@ npx @gltf-transform/cli weld t3.glb game/assets/environment/majestic_oak/majesti
 | orbital_sentry_gun | east/west gate machine guns; unmanned gun-deck mounts |
 | arctic_sentinel_cannon | mortar on the south roof |
 | sentinel_spire | roof (AA) mounts |
+| forward_helipad_base | the attackers' Forward Helipad Bases (`AttackerBase`, 9.8 m to the mast tips) |
+
+Without Node.js at hand, `tools/gltf/process_prop.py` does the same (pivot at the bottom centre, textures fitted to 1024 px and re-encoded as JPEG at 85) on numpy and Pillow; it is how the helipad was processed:
+
+```sh
+python3 tools/gltf/process_prop.py --input assets_src/structures/forward_helipad_base/forward_helipad_base_meshy.glb \
+    --output game/assets/structures/forward_helipad_base/forward_helipad_base.glb
+```
 
 The stronghold itself is generated by `tools/blender/build_stronghold.py`. Rebuild it with Blender 5.2, or the `bpy` 5.2 pip package (Python 3.13):
 
@@ -328,3 +428,4 @@ The game strips the placeholder weapons (`PH_*`) from its mounts and puts the tu
 - `game/assets/` — processed, game-ready versions (Blender cleanup, rigging, texture resizing)
 - `game/scripts/` — `match/` (level, rules), `attacker/` (RTS commander, CPU attacker), `defense/` (stations, defender controller), `units/`, `combat/`, `ui/`
 - `tools/blender/` — asset processing scripts
+- `tools/gltf/` — asset scripts that need no Blender (numpy on the glTF): static props, the Infiltrator's rig

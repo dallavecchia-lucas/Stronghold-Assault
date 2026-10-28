@@ -41,7 +41,8 @@ func get_hud_info() -> Dictionary:
 func _arm_troopers(_delta: float) -> void:
 	for t in troopers:
 		var gun := t as HeavyGunner
-		gun.trigger = firing
+		# Left to the AI, a trooper blinded by a flash grenade holds its fire.
+		gun.trigger = firing and (possessed or not FlashGrenade.is_blind(t))
 		gun.damage_scale = 1.0 if possessed else AI_DAMAGE_SCALE
 
 

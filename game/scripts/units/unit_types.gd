@@ -45,6 +45,18 @@ extends RefCounted
 ##   bomb_damage within bomb_splash (times bomb_structure_mult against gates). Several talons' bombs
 ##   cluster round the aim like the bisons' shells. Reused after bomb_cooldown.
 ## pellets: shotgun. Each shot is this many pellets, spread over a cone of `spread` radians.
+## burst: side-mounted SMGs (Kangaroo). Each shot is a burst of this many rounds, burst_interval
+##   apart, the two guns taking turns (from the model's muzzle_L / muzzle_R bones); fire_interval is
+##   from one burst to the next.
+## flash_*: flash grenade (Kangaroo). It stops, rears up like a boxer and throws a grenade at a spot
+##   within flash_range (the Throw clip: the grenade leaves the paw flash_release seconds in, the
+##   clip is done at flash_time). It bursts on landing: every defender within flash_radius that sees
+##   it is blinded for flash_blind seconds (the defending player's screen goes white). Several
+##   kangaroos' grenades cluster round the aim like the bisons' shells (KangarooFlash). Reused after
+##   flash_cooldown.
+## resupply_*: passive (Kangaroo). Each kangaroo resupplies up to resupply_units allies within
+##   resupply_range whose skills are cooling down: their cooldowns run resupply_cdr shorter. It
+##   doesn't stack: no unit takes more than one kangaroo's (AttackerCommander hands them out).
 ## ram_*: ram ability (Breaching Ram). A surge to ram_speed times its speed for ram_duration
 ##   seconds, reused after ram_cooldown. Enemy soldiers it runs over lose ram_trample_damage and are
 ##   tossed away at ram_toss m/s. Ordered at a ground gate while ramming, up to ram_gate_slots rams
@@ -57,13 +69,22 @@ extends RefCounted
 ##   A raider with a ram rams the soldiers it hunts whenever it is ready (AttackerUnit.RAID_RAM_REACH).
 ## raid_keep: a raider that goes for the keep instead, fighting only the defenders it runs into on
 ##   the way (AttackerUnit.RAID_DETOUR).
+## sight: how far it sees through the fog of war (m, flat; AttackerVision). The giraffe sees furthest.
+## ping_*: sonar ping (Giraffe). It stands, stretches its neck up and sweeps its dish (the Ping clip:
+##   the pulse goes out ping_release seconds in, the clip is done at ping_time), and the pulse spreads
+##   at ping_speed out to ping_radius. Every defender soldier and trooper it reaches is marked where it
+##   stood then by a red blur, for ping_mark seconds, that doesn't follow it (GiraffePing). Even under
+##   adaptive camo; an infiltrator caught out of camo is revealed (InfiltratorTrooper.revealed).
+##   Reused after ping_cooldown.
 ## forest_speed: movement speed multiplier inside a forest (LevelBuilder.FORESTS).
 ## climb_speed: m/s up and down stairs and ladders.
 ## structure_mult: damage multiplier against gates / the keep.
-## anim: procedural animation style until models are rigged (walk, hop, stomp, roll), "flight"
+## anim: procedural animation style until models are rigged (walk, stomp, roll), "flight"
 ##   for the Sky Talon's glide and wing beats (TalonFlight), or "rigged" to play the model's own
 ##   clips: anim_move / anim_idle, with the move clip
-##   sped up or slowed to match ground speed relative to anim_ref_speed (m/s).
+##   sped up or slowed to match ground speed relative to anim_ref_speed (m/s), within anim_scale
+##   ([slowest, fastest], default [0.6, 2.0]: a kangaroo hops at about the same rate whatever its
+##   speed, lengthening its bounds instead).
 ## steer: only move where the model faces, turning at turn_rate (rad/s), no strafing.
 ## model: path to a processed GLB (front facing +Z, feet at origin).
 
@@ -74,6 +95,7 @@ const FLY_HEIGHT := 16.0
 const DATA := {
 	"rifleman": {
 		"name": "Bear Rifleman", "cost": 50, "hp": 100.0, "speed": 4.6,
+		"sight": 34.0,
 		"range": 30.0, "damage": 8.0, "fire_interval": 0.55, "spread": 0.035,
 		"structure_mult": 0.5, "radius": 0.5, "height": 1.9,
 		"role": "infantry", "anim": "rigged", "hotkey": KEY_Z,
@@ -82,13 +104,23 @@ const DATA := {
 	},
 	"kangaroo": {
 		"name": "Kangaroo Commando", "cost": 75, "hp": 90.0, "speed": 7.2,
-		"range": 20.0, "damage": 13.0, "fire_interval": 0.6, "spread": 0.05,
+		"sight": 32.0,
+		"range": 20.0, "damage": 4.5, "fire_interval": 0.85, "spread": 0.06,
 		"structure_mult": 0.4, "radius": 0.55, "height": 2.0,
-		"role": "infantry", "anim": "hop", "hotkey": KEY_X,
+		"role": "infantry", "anim": "rigged", "hotkey": KEY_X,
+		"anim_move": "Hop", "anim_idle": "Idle", "anim_ref_speed": 7.2, "anim_scale": [0.8, 1.3],
+		"infiltrator": true, "raider": true, "climb_speed": 3.5,
+		# Side-mounted SMGs: short bursts, the two guns taking turns.
+		"burst": 4, "burst_interval": 0.07,
+		"flash_cooldown": 30.0, "flash_range": 26.0, "flash_radius": 10.0, "flash_blind": 2.0,
+		"flash_release": 0.95, "flash_time": 1.62,
+		# Carries the supplies: nearby units get their skills back sooner.
+		"resupply_range": 9.0, "resupply_units": 3, "resupply_cdr": 0.15,
 		"model": "res://assets/units/kangaroo_commando/kangaroo_commando_rigged.glb",
 	},
 	"medic": {
 		"name": "Wolf Medic", "cost": 90, "hp": 110.0, "speed": 5.5,
+		"sight": 28.0,
 		"range": 10.0, "heal_rate": 14.0, "damage": 0.0, "fire_interval": 0.5, "spread": 0.0,
 		"structure_mult": 0.0, "radius": 0.55, "height": 1.4,
 		"role": "healer", "anim": "rigged", "hotkey": KEY_C,
@@ -97,6 +129,7 @@ const DATA := {
 	},
 	"talon": {
 		"name": "Sky Talon", "cost": 120, "hp": 110.0, "speed": 8.0,
+		"sight": 42.0,
 		"range": 0.0, "damage": 0.0, "fire_interval": 1.0, "spread": 0.0,
 		"structure_mult": 0.3, "radius": 0.8, "height": 2.1,
 		"role": "flying", "anim": "flight", "hotkey": KEY_V,
@@ -108,6 +141,7 @@ const DATA := {
 	},
 	"elephant": {
 		"name": "War Elephant", "cost": 320, "hp": 1400.0, "speed": 3.0,
+		"sight": 36.0,
 		"range": 0.0, "damage": 0.0, "fire_interval": 0.2, "spread": 0.0,
 		"structure_mult": 1.5, "radius": 1.6, "height": 3.8,
 		"role": "anti_air", "anim": "rigged", "hotkey": KEY_B,
@@ -120,6 +154,7 @@ const DATA := {
 	},
 	"mule": {
 		"name": "Mule Artillery", "cost": 280, "hp": 450.0, "speed": 2.6,
+		"sight": 28.0,
 		"range": 80.0, "min_range": 20.0, "damage": 110.0, "fire_interval": 5.0, "spread": 0.06,
 		"splash": 5.0, "structure_mult": 2.5, "radius": 1.6, "height": 2.2,
 		"role": "artillery", "anim": "roll", "hotkey": KEY_N,
@@ -127,6 +162,7 @@ const DATA := {
 	},
 	"breacher": {
 		"name": "Breaching Ram", "cost": 150, "hp": 420.0, "speed": 5.0,
+		"sight": 26.0,
 		"range": 7.0, "damage": 7.0, "fire_interval": 1.1, "spread": 0.14,
 		"structure_mult": 1.0, "radius": 0.6, "height": 1.6,
 		"role": "infantry", "anim": "rigged", "hotkey": KEY_M, "infiltrator": true,
@@ -140,6 +176,7 @@ const DATA := {
 	},
 	"chimp": {
 		"name": "Night Ops Chimp", "cost": 80, "hp": 160.0, "speed": 5.5,
+		"sight": 28.0,
 		"range": 1.8, "damage": 30.0, "fire_interval": 0.7, "spread": 0.0,
 		"structure_mult": 0.3, "radius": 0.5, "height": 1.7,
 		"role": "melee", "anim": "rigged", "hotkey": KEY_J,
@@ -147,16 +184,21 @@ const DATA := {
 		"infiltrator": true, "raider": true, "forest_speed": 1.6, "climb_speed": 4.0,
 		"model": "res://assets/units/night_ops_chimpanzee/night_ops_chimpanzee_rigged.glb",
 	},
-	# ---- Placeholder stats: models are in, roles still to be designed.
 	"giraffe": {
-		"name": "Savanna Signal Scout", "cost": 100, "hp": 160.0, "speed": 5.0,
+		"name": "Savanna Signal Scout", "cost": 100, "hp": 160.0, "speed": 4.2,
+		"sight": 75.0,
 		"range": 30.0, "damage": 6.0, "fire_interval": 0.6, "spread": 0.04,
 		"structure_mult": 0.3, "radius": 0.8, "height": 4.5,
-		"role": "infantry", "anim": "stomp", "hotkey": KEY_H,
+		"role": "infantry", "anim": "rigged", "hotkey": KEY_H,
+		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 3.0,
+		# The radar dish on its back: a sonar ping round it (GiraffePing).
+		"ping_cooldown": 45.0, "ping_radius": 60.0, "ping_speed": 40.0, "ping_mark": 7.0,
+		"ping_release": 0.8, "ping_time": 2.2,
 		"model": "res://assets/units/savanna_signal_scout/savanna_signal_scout_rigged.glb",
 	},
 	"bison_gun": {
 		"name": "Bison Field Gun", "cost": 260, "hp": 600.0, "speed": 3.0,
+		"sight": 30.0,
 		"range": 0.0, "damage": 0.0, "fire_interval": 1.0, "spread": 0.0,
 		"structure_mult": 1.5, "radius": 1.6, "height": 2.4,
 		"role": "siege", "anim": "rigged", "hotkey": KEY_L,
@@ -166,8 +208,10 @@ const DATA := {
 		"bombard_splash": 6.0, "bombard_spread": 0.008, "bombard_aim_time": 1.5, "bombard_hold": 1.0,
 		"model": "res://assets/units/semi_futuristic_pair/semi_futuristic_pair_rigged.glb",
 	},
+	# ---- Placeholder stats: models are in, roles still to be designed.
 	"lioness": {
 		"name": "Armored Lioness", "cost": 90, "hp": 160.0, "speed": 6.5,
+		"sight": 32.0,
 		"range": 22.0, "damage": 10.0, "fire_interval": 0.5, "spread": 0.04,
 		"structure_mult": 0.5, "radius": 0.6, "height": 1.6,
 		"role": "infantry", "anim": "rigged", "hotkey": KEY_Y,
@@ -176,6 +220,7 @@ const DATA := {
 	},
 	"serpent": {
 		"name": "Serpent Sniper", "cost": 110, "hp": 80.0, "speed": 3.5,
+		"sight": 50.0,
 		"range": 45.0, "damage": 35.0, "fire_interval": 2.5, "spread": 0.01,
 		"structure_mult": 0.3, "radius": 0.6, "height": 0.9,
 		"role": "infantry", "anim": "rigged", "hotkey": KEY_U,
@@ -185,6 +230,7 @@ const DATA := {
 	},
 	"rhino": {
 		"name": "Combat Rhino", "cost": 280, "hp": 1500.0, "speed": 3.0,
+		"sight": 32.0,
 		"range": 0.0, "damage": 0.0, "fire_interval": 0.25, "spread": 0.0,
 		"structure_mult": 1.2, "radius": 1.3, "height": 2.4,
 		"role": "anti_air", "anim": "rigged", "hotkey": KEY_I,
@@ -197,6 +243,7 @@ const DATA := {
 	},
 	"hippo": {
 		"name": "Hippo Heavy Gunner", "cost": 260, "hp": 1000.0, "speed": 3.2,
+		"sight": 32.0,
 		"range": 26.0, "damage": 8.0, "fire_interval": 0.12, "spread": 0.02,
 		"structure_mult": 1.0, "radius": 1.4, "height": 2.6,
 		"role": "infantry", "anim": "rigged", "hotkey": KEY_K,

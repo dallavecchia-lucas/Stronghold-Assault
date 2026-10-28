@@ -7,13 +7,20 @@ extends CanvasLayer
 ##
 ## The roster of bought squads (DefenderArmory) sits in a hotbar at the bottom (SquadHotbar):
 ## F1-F6 takes command of a squad, Ctrl+F1-F6 changes its auto order without leaving the post
-## the player is on, B buys another AA Squad and N a Flame Squad.
+## the player is on, B buys another AA Squad, N a Flame Squad and M an Infiltrator Squad.
+##
+## A kangaroo's flash grenade going off where the post the player is on sees it (FlashGrenade) turns
+## the screen full white for as long as it blinds, then it clears.
 
 const THREAT_RADIUS := 45.0
 const SWITCH_FADE := 0.18
+## Eyes over a post's spot (m), and how long the white takes to clear once the blindness wears off.
+const EYE_HEIGHT := 1.65
+const FLASH_FADE := 0.8
 const ROSTER_KEYS := [KEY_F1, KEY_F2, KEY_F3, KEY_F4, KEY_F5, KEY_F6]
 const BUY_KEY := KEY_B
 const BUY_FLAME_KEY := KEY_N
+const BUY_INFILTRATOR_KEY := KEY_M
 
 var level: LevelBuilder
 ## The defenders' credits and bought squads; null: no roster.
@@ -36,10 +43,13 @@ var _threat := {}
 var _threat_cd := 0.0
 var _switching := false
 var _hotbar: SquadHotbar
+var _whiteout: ColorRect
+var _whiteout_tw: Tween
 
 
 func _ready() -> void:
 	layer = 2
+	add_to_group("flash_watchers")
 	stations = level.stations
 	for s in stations:
 		s.became_unavailable.connect(_on_station_unavailable)
@@ -76,6 +86,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.physical_keycode == BUY_FLAME_KEY:
 			buy_squad("flame")
 			return
+		if event.physical_keycode == BUY_INFILTRATOR_KEY:
+			buy_squad("infiltrator")
+			return
 	for i in mini(stations.size(), 10):
 		if event.is_action_pressed("slot_%d" % (i + 1)):
 			select_station(i)
@@ -102,8 +115,8 @@ func select_squad(k: int, instant := false) -> void:
 	_switch_to(armory.squads[k], instant)
 
 
-## Ctrl+F<n>: the k-th squad's next auto order (MINES / GUARD, CLEAR / GUARD), wherever the
-## player is.
+## Ctrl+F<n>: the k-th squad's next auto order (MINES / GUARD, CLEAR / GUARD, HOLD / OP <helipad>),
+## wherever the player is.
 func cycle_squad_order(k: int) -> void:
 	if armory == null or k < 0 or k >= armory.squads.size():
 		return
@@ -112,8 +125,8 @@ func cycle_squad_order(k: int) -> void:
 	_flash_prompt("%s: %s" % [s.station_name, s.order_name()])
 
 
-## B: buys an AA Squad (N: a Flame Squad, `kind` "flame") if there are the credits and room on the
-## roster.
+## B: buys an AA Squad (N: a Flame Squad, `kind` "flame"; M: an Infiltrator Squad, "infiltrator") if
+## there are the credits and room on the roster.
 func buy_squad(kind := "aa") -> DefenderSquad:
 	if armory == null:
 		return null
@@ -202,6 +215,30 @@ func _on_station_unavailable(s) -> void:
 	_crosshair.visible = false
 	_prompt.text = "%s is down!  Pick another post (1-%d) or press Tab" % [s.station_name, mini(stations.size(), 10)]
 	_prompt.visible = true
+
+
+## A flash grenade went off at `at` (FlashGrenade): if the post the player is on has it in sight within
+## `radius`, the player is blinded: the screen goes white for `seconds`.
+func on_flash(at: Vector3, radius: float, seconds: float) -> void:
+	if current == null:
+		return
+	if FlashGrenade.sees(level, at, current.get_station_position() + Vector3.UP * EYE_HEIGHT, radius):
+		flash_screen(seconds)
+
+
+## Full white for `seconds` (a flash on top of a flash starts it over), then it clears.
+func flash_screen(seconds: float) -> void:
+	if _whiteout_tw:
+		_whiteout_tw.kill()
+	_whiteout.color.a = 1.0
+	_whiteout_tw = create_tween()
+	_whiteout_tw.tween_interval(seconds)
+	_whiteout_tw.tween_property(_whiteout, "color:a", 0.0, FLASH_FADE).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+
+
+## How white the screen is (1: blinded by a flash).
+func whiteout() -> float:
+	return _whiteout.color.a
 
 
 func _flash_prompt(text: String) -> void:
@@ -304,6 +341,15 @@ func _build_hud() -> void:
 	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(_fade)
 
+	# A flash grenade's white, over every HUD (the squad panel's layer too), under the pause menu.
+	var flash_layer := CanvasLayer.new()
+	flash_layer.layer = 4
+	add_child(flash_layer)
+	_whiteout = UIKit.full_rect(ColorRect.new()) as ColorRect
+	_whiteout.color = Color(1, 1, 1, 0)
+	_whiteout.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	flash_layer.add_child(_whiteout)
+
 
 func _refresh_threat() -> void:
 	_threat.clear()
@@ -345,5 +391,5 @@ func _process(delta: float) -> void:
 	else:
 		_weapon_label.text = "No post"
 		_status_label.text = "—"
-		_hint_label.text = "Number keys or Tab to take over a post" + (" · F1-F6 a squad · B buy an AA Squad · N a Flame Squad" if armory else "")
+		_hint_label.text = "Number keys or Tab to take over a post" + (" · F1-F6 a squad · B buy an AA Squad · N a Flame Squad · M Infiltrators" if armory else "")
 		_heat_bar.visible = false

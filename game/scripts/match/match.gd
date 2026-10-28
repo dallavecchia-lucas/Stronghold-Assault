@@ -9,6 +9,8 @@ var commander: AttackerCommander
 var ui: MatchUI
 var player_controller: Node
 var ai_attacker: AIAttacker
+## The attackers' fog of war.
+var vision: AttackerVision
 ## The defenders' credits and bought squads (the human defender's; the CPU defender buys none).
 var armory: DefenderArmory
 var time_left := 600.0
@@ -32,7 +34,13 @@ func _ready() -> void:
 	commander.name = "AttackerCommander"
 	commander.units_root = units_root
 	commander.spawn_points = level.spawn_points
+	commander.spawn_bases = level.spawn_bases
 	add_child(commander)
+	vision = AttackerVision.new()
+	vision.name = "AttackerVision"
+	vision.commander = commander
+	vision.hide_enemies = GameConfig.player_side == GameConfig.PlayerSide.ATTACKER
+	add_child(vision)
 
 	ui = MatchUI.new()
 	ui.level = level
@@ -126,12 +134,14 @@ func _autotest_step(delta: float) -> void:
 		_autotest_events = step
 		if player_controller is DefenderController:
 			var dc: DefenderController = player_controller
-			# Buy two AA Squads and a Flame Squad early, drive them now and then and swap their orders.
+			# Buy two AA Squads, a Flame Squad and an Infiltrator Squad early, drive them now and then and
+			# swap their orders (the infiltrators' next order sends them on a sabotage operation).
 			if step == 2:
-				armory.credits += DefenderArmory.AA_COST + DefenderArmory.FLAME_COST
+				armory.credits += DefenderArmory.AA_COST + DefenderArmory.FLAME_COST + DefenderArmory.INFILTRATOR_COST
 				dc.buy_squad()
 				dc.buy_squad()
 				dc.buy_squad("flame")
+				dc.buy_squad("infiltrator")
 			if step % 7 == 5:
 				for s in armory.squads:
 					s.cycle_order()
@@ -148,9 +158,10 @@ func _autotest_step(delta: float) -> void:
 		elif player_controller is AttackerController:
 			var ac: AttackerController = player_controller
 			ac.set_spawn_point(step % 3)
-			for t in [UnitTypes.ORDER[step % UnitTypes.ORDER.size()], "rifleman", "kangaroo", "medic"]:
+			for t in [UnitTypes.ORDER[step % UnitTypes.ORDER.size()], "rifleman", "kangaroo", "medic", "giraffe"]:
 				ac.spawn(t)
 			var ids := commander.units.keys()
+			commander.submit({"type": "ping", "units": ids})
 			var gate: Structure = level.gates.values()[step % 3]
 			if gate.is_alive():
 				commander.submit({"type": "ram", "units": ids})
@@ -158,6 +169,8 @@ func _autotest_step(delta: float) -> void:
 			else:
 				commander.submit({"type": "attack", "units": ids, "target": level.keep.get_path()})
 			commander.submit({"type": "smoke", "units": ids, "pos": gate.global_position})
+			# Flash grenades onto the gate's machine gun (the first three posts are the gate guns).
+			commander.submit({"type": "flash", "units": ids, "pos": level.stations[step % 3].global_position})
 	if GameConfig.screenshot_path != "" and not _autotest_shot and _autotest_t > GameConfig.autotest_duration * 0.8:
 		_autotest_shot = true
 		await RenderingServer.frame_post_draw
@@ -177,6 +190,17 @@ func _autotest_report() -> void:
 			_autotest_t, commander.units.size(), commander.supply, level.keep.hp, ", ".join(gates)])
 	if armory:
 		for s in armory.squads:
-			var extra := "mines_down=%d" % (s as AASquad).mines.size() if s is AASquad else "trees_burnt=%d" % (s as FlameSquad).burnt.size()
+			var extra := ""
+			if s is AASquad:
+				extra = "mines_down=%d" % (s as AASquad).mines.size()
+			elif s is FlameSquad:
+				extra = "trees_burnt=%d" % (s as FlameSquad).burnt.size()
+			elif s is InfiltratorSquad:
+				var arrows := 0
+				for t in s.troopers:
+					arrows += (t as InfiltratorTrooper).stats.arrows
+				extra = "kits=%d camo=%.0f arrows=%d" % [(s as InfiltratorSquad).kits, (s as InfiltratorSquad).camo_left, arrows]
 			print("AUTOTEST %s alive=%d order=%s plan=%s %s stats=%s" % [s.station_name, s.troopers.size(),
 					s.order_name(), s.get("plan"), extra, s.get("stats")])
+	for b in level.bases:
+		print("AUTOTEST %s controlled=%s capture=%.1f" % [b.display_name, b.controlled, b.capture])
