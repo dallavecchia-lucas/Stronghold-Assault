@@ -13,7 +13,7 @@ extends Node3D
 ##             sabotages the helipad (45 s; the attackers can't spawn there any more and lose its
 ##             supply) and comes home, restocking its kit in the fortress
 ##   view      the player takes command of it and puts the camo on: the camera's vignette, the
-##             troopers as ever on the defender's side, all but invisible on the attacker's
+##             troopers as ever on the defender's side, not shown at all on the attacker's
 ##   retake    three riflemen stand by the helipad and retake it
 ##
 ##   godot --path game --headless --fixed-fps 30 res://scenes/dev/infiltrator_showcase.tscn -- --test
@@ -203,10 +203,10 @@ func _leave(p: String) -> void:
 		"view":
 			_check(squad._infil_hud.vignette() > 0.3, "the camera has the camo vignette (%.2f)" % squad._infil_hud.vignette())
 			var leader := squad.leader as InfiltratorTrooper
-			_check(leader.camouflaged and leader._geometry.all(func(g): return g.transparency == 0.0), "on the defender's side the troopers look as ever")
+			_check(leader.camouflaged and leader._model.visible and leader._bow_node.visible, "on the defender's side the troopers look as ever")
 			GameConfig.player_side = GameConfig.PlayerSide.ATTACKER
 			leader.set_camo(true, InfiltratorSquad._camo_hidden())
-			_check(leader._geometry.all(func(g): return g.transparency > 0.98), "on the attacker's side they are all but invisible")
+			_check(not leader._model.visible and not leader._bow_node.visible and not leader._string_mi.visible, "on the attacker's side they don't show at all")
 			GameConfig.player_side = GameConfig.PlayerSide.DEFENDER
 			leader.set_camo(true, false)
 		"retake":

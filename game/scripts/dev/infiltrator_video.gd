@@ -298,7 +298,7 @@ func _camo_step() -> void:
 			_say("Q · Adaptive camo", "20 s: basic attacks can't target them · the defender's view gets a vignette"))
 	if _phase_t > 5.5:
 		_once("rts", func():
-			_say("RTS view · Camouflaged", "All but invisible, and shots pass through them")
+			_say("RTS view · Camouflaged", "Gone from sight, and shots pass through them")
 			_shoot("rts")
 			_rts_view(hero.leader.global_position + Vector3(4.0, 0.0, 6.0), 26.0))
 	if _phase_t > 7.0:
