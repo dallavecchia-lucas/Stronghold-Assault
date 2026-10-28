@@ -151,7 +151,12 @@ godot --path game --headless --fixed-fps 30 res://scenes/dev/giraffe_showcase.ts
 godot --path game --fixed-fps 30 res://scenes/dev/giraffe_showcase.tscn  # to watch it
 ```
 
-`-- --snap=6,21 --snap-out=/tmp/giraffe` saves just those frames (seconds in).
+`-- --snap=6,21 --snap-out=/tmp/giraffe` saves just those frames (seconds in). `-- --video` frames the field closer and prints the frames to keep (the squad check inside the mountain is cut), for the video (`media/giraffe_showcase.mp4`):
+
+```sh
+godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie giraffe.avi --fixed-fps 30 res://scenes/dev/giraffe_showcase.tscn -- --video > giraffe.log
+python3 tools/video/cut_showcase.py giraffe.avi giraffe.log media/giraffe_showcase.mp4
+```
 
 ### Elephant showcase
 
