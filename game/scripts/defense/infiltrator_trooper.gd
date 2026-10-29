@@ -18,6 +18,8 @@ extends SquadTrooper
 ## know her, her low profile is gone and they go after her on their own like anyone, until she puts
 ## the camo on or slips back into the fog of war (AttackerVision). While revealed a radar icon hangs
 ## over her, on the defender's side only. Caught under camo she only leaves a blur on their radar.
+## An attack order on her (out of camo) from units with a basic attack reveals her the same way
+## (AttackerCommander._attack).
 ##
 ## The rigged model's clips come from tools/rig/rig_infiltrator.py: an archer's stance, the bow held
 ## out on the aim and the string drawn to the right cheek. InfiltratorRig finds the bow's grip (`bow`)
