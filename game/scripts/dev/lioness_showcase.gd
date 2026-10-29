@@ -503,7 +503,7 @@ func _defender_step() -> void:
 		eyes.rotation.y = atan2(-to.x, -to.z) + 0.12
 		eyes.get_camera().get_parent().rotation.x = deg_to_rad(-5.0)
 		controller.visible = false
-		_say("The defender's side", "Sneaking, she is 70% see-through to the defender: no shadow, no health bar. On the left, one not sneaking")
+		_say("The defender's side", "Sneaking, she is 70% see-through to the defender: no shadow, no health bar. On the right, one not sneaking")
 	if _phase_at(0.3, "look"):
 		_check(ghosts.all(func(u): return u.ghosted() and not u.get("_bush").visible), "defender: sneaking lionesses are see-through on the defender's side, no bush")
 		var mats := []
