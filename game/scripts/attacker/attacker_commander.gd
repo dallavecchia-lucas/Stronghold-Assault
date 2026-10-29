@@ -26,8 +26,17 @@ extends Node
 ##               an enemy flyer, only as many as the kill takes (ElephantMissiles)
 ##   {"type": "ram", "units": [ids]}   breaching rams surge forward (AttackerUnit.start_ram)
 ##   {"type": "ping", "units": [ids]}   giraffes ping from their dishes (AttackerUnit.start_ping)
+##   {"type": "sneak", "units": [ids]}   lionesses sneak (AttackerUnit.start_sneak); an attack order
+##               while it lasts makes them pounce
+##   {"type": "blast", "units": [ids]}   lionesses light their fire blast (AttackerUnit.start_blast)
+##   {"type": "line", "on": bool}   lionesses moved together form up in firing lines, or don't
+##               (line_formation)
 ##   {"type": "scout", "units": [ids]}   toggle scout formation: the rhinos in the selection
 ##                                       ring the rest of it so their anti-air covers the mass
+##
+## Lionesses moved together (two or more) form up in firing lines as they go (LionessLine), up to 8
+## abreast and more ranks behind, while line_formation is on; the other units moved with them gather
+## behind the lines.
 ##
 ## It also hands out the kangaroos' supplies (their passive): each kangaroo resupplies the units
 ## nearest it whose skills are cooling down, up to resupply_units of them, and no unit takes
@@ -59,8 +68,16 @@ var _next_id := 1
 var _next_formation := 1
 ## Scout formations: [{"rhinos": [ids], "escorts": [ids]}]
 var scout_groups: Array = []
+## Lionesses moved together form up in firing lines (the attacking player's toggle), and the lines
+## marching now.
+var line_formation := true
+var lines: Array[LionessLine] = []
 var _scout_cd := 0.0
 var _resupply_cd := 0.0
+
+
+func _physics_process(delta: float) -> void:
+	lines = lines.filter(func(l): return l.update(delta))
 
 
 func _process(delta: float) -> void:
@@ -125,6 +142,14 @@ func submit(cmd: Dictionary) -> int:
 			for u in _resolve(cmd.units):
 				if not u.raiding:
 					u.start_ping()
+		"sneak":
+			for u in _resolve(cmd.units):
+				u.start_sneak()
+		"blast":
+			for u in _resolve(cmd.units):
+				u.start_blast()
+		"line":
+			line_formation = cmd.get("on", not line_formation)
 		"scout":
 			_toggle_scout(cmd.units)
 	return 0
@@ -157,12 +182,24 @@ func _on_unit_died(u: AttackerUnit) -> void:
 
 func _move(ids: Array, pos: Vector3, attack: bool) -> void:
 	var list := _resolve(_without_scouts(ids))
-	var offsets := formation_offsets(list.size(), 2.2)
+	var kind := "attack_move" if attack else "move"
 	var fid := _next_formation
 	_next_formation += 1
+	# Two or more lionesses form up in firing lines; the rest gather behind them.
+	var lionesses := list.filter(func(u): return u.stats.get("line", false)) if line_formation else []
+	var at := pos
+	if lionesses.size() >= 2:
+		var line := LionessLine.make(lionesses, pos)
+		lines.append(line)
+		for u in lionesses:
+			u.formation_id = fid
+			u.set_order({"type": kind, "pos": line.final_spot(u), "line": line})
+		list = list.filter(func(u): return not u in lionesses)
+		at = pos - line.dir * (line.depth() + LionessLine.RANK_GAP + 2.0)
+	var offsets := formation_offsets(list.size(), 2.2)
 	for i in list.size():
 		list[i].formation_id = fid
-		list[i].set_order({"type": "attack_move" if attack else "move", "pos": pos + offsets[i]})
+		list[i].set_order({"type": kind, "pos": at + offsets[i]})
 
 
 func _attack(ids: Array, target_path: NodePath) -> void:

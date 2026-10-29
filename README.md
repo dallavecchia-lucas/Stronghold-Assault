@@ -110,7 +110,13 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
   - Passive: none, but it sees furthest of any unit (75 m), deep into the fog of war: walk it ahead of the army to spot for it.
   - Basic attack: light fire out to 30 m.
   - `P` ping: it stands, stretches its neck up and sweeps its dish, and sends out a sonar pulse that spreads to 60 m round it (40 m/s). Every defender soldier and squad trooper the pulse reaches is marked by a red blur on the spot where it stood the moment the pulse got there, like a contact on a sonar screen: the blur stays put and fades over 7 s, it doesn't follow them. It finds infiltrators under adaptive camo too (a blur, no more). An infiltrator caught out of camo is revealed: she loses her low profile and your units go after her on their own like any defender, until she goes under camo or slips back into the fog of war. Cooldown is 45 s; a selected giraffe shows how far its ping reaches. The CPU's giraffes ping whenever they are out on the field.
-- Models in, roles still to be designed (placeholder stats): `Y` Armored Lioness · `U` Serpent Sniper
+- `Y` Armored Lioness: a lioness in armour with two flamethrowers mounted on her back. She walks like a cat (each fore paw lifting just after the hind paw on its side lands, the shoulders and hips rolling over the side that is down) Sent somewhere (any move order), she walks for 4 s, then breaks into a gallop (up to 6 m/s); every new move order starts the walk over.
+  - Basic attack: melee, claws and teeth. She rears up and swipes down at whatever is within her reach (2.6 m), biting as she comes down (28 a blow).
+  - `F` sneak (when the selection has no rhino or talon skill ready, which come first): 10 s of stalking, belly low, eyes on the prey, no faster than 2.6 m/s. On the defender's side she is 70% see-through, with no shadow and no health bar; on yours she looks as ever, with a bush icon over her. While it lasts she picks no fights on her own. `RMB` a defender on the ground: she stalks up to within 12 m of it and pounces, sinking onto her haunches, springing and landing on it (70 damage), then mauls it with her claws. The sneak ends the moment she springs (or strikes, or lights her flamethrowers): she shows again. Cooldown is 50 s.
+  - `G` fire blast (when no bison or talon skill is ready): the flamethrowers on her back burn a cone in front of her for 3 s, 8 m out: 60 damage a second to every defender in it, and they burn on for 2 s. She can move while they burn, the cone always pointing where her face looks. It ends a sneak. Cooldown is 45 s. Her flames never set trees or any other vegetation alight.
+  - Firing lines: two or more lionesses moved together (`RMB` or `Ctrl+RMB` on the ground) converge into line as they go, like the line infantry of the American Revolution and Napoleon's wars: up to 8 abreast, and more lines of up to 8 one behind another (18 make lines of 8, 8 and 2), each centred and facing the way they go. The line advances at 85% of its slowest lioness's speed (slower while they sneak); the ones behind run to catch up, the ones ahead hold back, and they come into line on the way without stopping to form up. At the end they stand on their spots facing the way they went. Other units moved with them gather behind the lines. `T` (with no rhino selected) or the `Firing lines` button (it shows while lionesses are selected) turns lines off and on: off, they go as a pack like any other units.
+  - The CPU brings lionesses from its second wave on: they hunt the defenders on the ground the army sees within 32 m, sneaking up to pounce whenever the sneak is ready, and light the fire blast up close.
+- Model in, role still to be designed (placeholder stats): `U` Serpent Sniper
 - Forward Helipad Bases (`S Pad`, `E Pad`, `W Pad`): a deck on stilts with a helipad and the camp round it, one out by each attack lane. While you hold one it is a forward spawn point (its button on the spawn row) and brings in +1.5 supply/s. It can't be shot down, but the defenders' Infiltrator Squads sabotage it: then you lose control of it (no spawning there, no supply; it smokes and a dashed ring marks where to stand) until you retake it: ground units within 10 m of its deck for 15 s (sooner the more there are, up to four), with no defender that close (CONTESTED). The CPU attacker spawns its waves at the side's helipad while it holds it and sends the nearest units to retake a sabotaged one.
 - `Tab` cycles spawn point (a sabotaged helipad is skipped) · `Ctrl+1`–`5` save a group, `1`–`5` recall it
 - Camera: `WASD`/arrows/screen edge to pan, `Q`/`E` or middle mouse to rotate, wheel to zoom
@@ -140,6 +146,22 @@ Plays a scripted match at 4× speed with no window and prints a report (useful a
 ```sh
 godot --path game --headless -- --autotest=defender --duration=120
 godot --path game --headless -- --autotest=attacker --duration=120
+```
+
+### Lioness showcase
+
+`game/scenes/dev/lioness_showcase.tscn` runs the Armored Lioness through her skills on the real map, in the south field, the way a player uses them in the RTS view, with a look through a defender's eyes (`media/lioness_showcase.mp4`). A lioness stands (her idle), walks and breaks into her gallop. Eighteen are box-selected and sent up the field: they converge into firing lines as they go, 8 abreast with a second line of 8 behind and the last 2 behind that, and stand facing the way they went; `T` turns lines off (sent on, they go as a pack) and back on. Three, `F`: a bush over each, they stalk past a Flame Trooper in their reach and leave it alone; `RMB` on a trooper up the field: they stalk up, pounce (the sneak ends as they spring) and maul it. Then the defender's side: through a rifleman's eyes two sneaking lionesses come up 70% see-through, without shadows or health bars, beside one that isn't sneaking; they pounce on the rifleman next to him and show again. Two lionesses, `G`: the flamethrowers burn a cone in front of them and, sent off to the side, they turn and go with the cone turning with them, burning the troopers in it. A sneaking lioness lights hers: the sneak is over. Last, one burns the edge of the forest east of the lane: no tree catches fire. The garrison's posts and the AA turrets hold fire; the troopers and riflemen in the field don't fight back.
+
+```sh
+godot --path game --headless --fixed-fps 30 res://scenes/dev/lioness_showcase.tscn -- --test  # prints and checks: LIONESS SHOWCASE PASS / FAIL
+godot --path game --rendering-driver opengl3 --resolution 1280x720 --fixed-fps 30 res://scenes/dev/lioness_showcase.tscn -- --video --snap=22,47 --snap-out=/tmp/lioness  # just those frames
+```
+
+`-- --video` cuts in cameras (round the lioness standing, beside the walker, low in front of the lines, beside the stalkers and, in slow motion, the pounce, by the flamethrowers, at the forest's edge), plays the lines' march faster, cuts the waits and prints the frames to keep; `tools/video/cut_showcase.py` cuts the recording into the mp4:
+
+```sh
+godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie lioness.avi --fixed-fps 30 res://scenes/dev/lioness_showcase.tscn -- --video > lioness.log
+python3 tools/video/cut_showcase.py lioness.avi lioness.log media/lioness_showcase.mp4
 ```
 
 ### Giraffe showcase
@@ -387,6 +409,14 @@ python3 tools/gltf/rig_infiltrator.py \
     --output game/assets/defenders/harpy_vanguard/infiltrator_rigged.glb
 ```
 
+The Armored Lioness comes with Meshy's auto-rig and a walk, but the rig is no good for her (the flamethrower rig on her back is skinned mostly to the head and the tail, the neck has no bone, the hind legs' joints sit in the flanks), so `tools/gltf/rig_lioness.py`, on numpy alone like the Infiltrator's, keeps the mesh and builds a new skeleton along the lioness, skinned by region like the Giraffe's: the torso in three bones, the neck, the head and the jaw, each leg in four (a cat walks on its toes) and the tail in five. The gear stays on: the flamethrower rig (turret, barrels, fuel tanks and hoses) rides rigidly on the body, small pieces ride rigidly where they sit, straps bend with the skin. `nozzle_1` and `nozzle_2` mark the two barrels' mouths, their Y axis out of the barrel (the game lights the fire blast there, `LionessRig`). It bakes six clips: `Walk` (at 1.7 m/s, the UnitTypes `anim_ref_speed`: a lateral sequence, paws planted by IK, the fore paws folding back at the wrist through the swing), `Run` (a rotary gallop at 6 m/s), `Sneak` (the stalk at 2.2 m/s, belly low, the head low and still, each paw lifted high and set down slowly), `Idle`, `Pounce` (not looped: she sinks onto her haunches, wiggles her rump, springs and flies stretched out, claws out, landing on the prey) and `Strike` (not looped: she rears up and swipes down with the right paw, biting as the head lunges in). It runs on its own output too (the rig is rebuilt from the mesh each time); `--preview DIR` renders the rest pose and frames of each clip:
+
+```sh
+python3 tools/gltf/rig_lioness.py \
+    --input game/assets/units/armored_lioness_unit/armored_lioness_unit_rigged.glb \
+    --output game/assets/units/armored_lioness_unit/armored_lioness_unit_rigged.glb
+```
+
 Static props (scenery, turrets) skip Blender: they go through [glTF-Transform](https://gltf-transform.dev) to put the pivot at the bottom center and shrink textures to 1024 px, and `game/scripts/match/props.gd` scales them to height at load time:
 
 ```sh
@@ -428,4 +458,4 @@ The game strips the placeholder weapons (`PH_*`) from its mounts and puts the tu
 - `game/assets/` — processed, game-ready versions (Blender cleanup, rigging, texture resizing)
 - `game/scripts/` — `match/` (level, rules), `attacker/` (RTS commander, CPU attacker), `defense/` (stations, defender controller), `units/`, `combat/`, `ui/`
 - `tools/blender/` — asset processing scripts
-- `tools/gltf/` — asset scripts that need no Blender (numpy on the glTF): static props, the Infiltrator's rig
+- `tools/gltf/` — asset scripts that need no Blender (numpy on the glTF): static props, the Infiltrator's and the Lioness's rigs
