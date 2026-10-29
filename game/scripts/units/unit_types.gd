@@ -92,6 +92,8 @@ extends RefCounted
 ##   blast_cooldown.
 ## line: moved together, these form up in firing lines as they go (LionessLine), unless the attacking
 ##   player has turned that off (AttackerCommander.line_formation).
+## walk_speed / gallop_after: after each move order she walks (no faster than walk_speed) for
+##   gallop_after seconds, then breaks into her gallop (anim_run); a new move order starts it over.
 ## forest_speed: movement speed multiplier inside a forest (LevelBuilder.FORESTS).
 ## climb_speed: m/s up and down stairs and ladders.
 ## structure_mult: damage multiplier against gates / the keep.
@@ -235,6 +237,7 @@ const DATA := {
 		"role": "melee", "anim": "rigged", "hotkey": KEY_Y,
 		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 1.7, "anim_scale": [0.6, 2.0],
 		"anim_run": "Run", "anim_run_speed": 6.0, "run_above": 3.4, "run_scale": [0.6, 1.3],
+		"walk_speed": 2.4, "gallop_after": 4.0,
 		"anim_sneak": "Sneak", "anim_sneak_speed": 2.2, "anim_strike": "Strike", "strike_hit": 0.36,
 		"sneak_duration": 10.0, "sneak_cooldown": 50.0, "sneak_speed": 2.6, "sneak_alpha": 0.3,
 		"pounce_range": 12.0, "pounce_damage": 70.0, "pounce_launch": 0.38, "pounce_land": 0.86,

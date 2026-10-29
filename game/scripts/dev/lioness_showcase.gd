@@ -35,8 +35,8 @@ extends Node3D
 ## and don't fight back.
 
 ## The run, in seconds: [start, phase].
-const SCRIPT := [[0.0, "intro"], [4.0, "walk"], [13.0, "line"], [37.0, "sneak"], [53.0, "defender"],
-		[63.0, "blast"], [75.0, "break"], [80.0, "trees"], [89.0, "outro"], [91.0, "end"]]
+const SCRIPT := [[0.0, "intro"], [4.0, "walk"], [13.0, "line"], [42.0, "sneak"], [58.0, "defender"],
+		[68.0, "blast"], [80.0, "break"], [85.0, "trees"], [94.0, "outro"], [96.0, "end"]]
 ## The lone walker: walking pace, when she breaks into her run, and her way across the lane.
 const WALK_FROM := Vector3(-15.0, 0.0, 190.0)
 const WALK_TO := Vector3(15.0, 0.0, 158.0)
@@ -78,9 +78,9 @@ const SHOTS := [["intro", 0.0, 4.0, "orbit"], ["walk", 0.0, 9.0, "walker"], ["li
 ## Slow motion: [phase, from, to, time scale].
 const SLOWMO := [["sneak", 9.6, 11.6, 0.4]]
 ## Played faster: [phase, from, to, every k-th frame kept].
-const FAST := [["line", 13.5, 18.5, 2], ["line", 21.0, 23.5, 2]]
+const FAST := [["line", 13.5, 16.0, 2], ["line", 19.5, 28.5, 2]]
 ## Left out: [phase, from, to].
-const CUTS := [["line", 23.5, 24.0], ["sneak", 14.5, 16.0], ["defender", 8.6, 10.0], ["blast", 9.5, 12.0],
+const CUTS := [["line", 28.5, 29.0], ["sneak", 14.5, 16.0], ["defender", 8.6, 10.0], ["blast", 9.5, 12.0],
 		["break", 3.5, 5.0], ["trees", 8.5, 9.0]]
 
 var level: LevelBuilder
@@ -353,7 +353,7 @@ func _line_step() -> void:
 	if _phase_at(5.0, "key_off"):
 		_keycap.visible = false
 	var line: LionessLine = _marks.get("line")
-	_follow = line.start + line.dir * (line.progress - 7.0) if line and _phase_t > 4.3 and _phase_t < 14.0 else null
+	_follow = line.start + line.dir * (line.progress - 7.0) if line and _phase_t > 4.3 and _phase_t < 17.0 else null
 	# The front shot (video): the selection rings off while it lasts.
 	if video and _phase_at(9.0, "unselect"):
 		controller._set_selection([])
@@ -365,7 +365,15 @@ func _line_step() -> void:
 		print("LIONESS line midway: progress %.1f/%.1f m, rank spreads %s m" % [line.progress, line.length, depth.map(func(d): return snappedf(d, 0.1))])
 		_check(line.progress > 5.0 and line.progress < line.length - 2.0, "line: under way, %.0f of %.0f m" % [line.progress, line.length])
 		_check(depth.max() < 2.5, "line: halfway there each rank already stands abreast (spread %.1f m along the way)" % depth.max())
-	if line and _phase_at(13.4, "arrived"):
+	# Sent off, they walk for gallop_after seconds, then gallop; a new order starts the walk over.
+	if _phase_at(7.3, "walking"):
+		_check(_fastest(pride) <= UnitTypes.DATA.lioness.walk_speed + 0.05, "gallop: 3 s after the order they still walk (fastest %.1f m/s)" % _fastest(pride))
+	if _phase_at(10.5, "galloping"):
+		var running := pride.filter(func(u): return u.get("_anim").current_animation == "Run").size()
+		_check(_fastest(pride) > UnitTypes.DATA.lioness.run_above and running > LINE_COUNT / 2, "gallop: past 4 s they gallop (%d/%d on the Run clip)" % [running, LINE_COUNT])
+	if _phase_at(21.0, "walk_again"):
+		_check(_fastest(pride) <= UnitTypes.DATA.lioness.walk_speed + 0.05, "gallop: a new move order and they walk again (fastest %.1f m/s)" % _fastest(pride))
+	if line and _phase_at(16.4, "arrived"):
 		var ranks := _ranks(line)
 		print("LIONESS line ranks: %s" % [ranks.map(func(r): return r.size())])
 		_check(ranks.map(func(r): return r.size()) == [8, 8, 2], "line: 8 abreast, a second line of 8, the last 2 behind (%s)" % [ranks.map(func(r): return r.size())])
@@ -374,25 +382,25 @@ func _line_step() -> void:
 		var facing := pride.filter(func(u): return (-u.global_basis.z).dot(line.dir) > 0.94).size()
 		_check(facing == LINE_COUNT, "line: all facing the way the line went (%d/%d)" % [facing, LINE_COUNT])
 		_check(pride.all(func(u): return u.order.type == "idle"), "line: and they have stopped")
-	if _phase_at(14.5, "toggle"):
+	if _phase_at(17.5, "toggle"):
 		_key(AttackerController.SCOUT_KEY)
 		_keycap.text = "T"
 		_keycap.visible = true
 		_say("Firing lines off", "T (or the toggle on the panel) turns them off: sent on, they go as a pack")
 		_check(not commander.line_formation, "line: T turns firing lines off")
-	if _phase_at(15.3, "key_off2"):
+	if _phase_at(18.3, "key_off2"):
 		_check(controller.get("_line_button").visible and controller.get("_line_button").text.contains("OFF"), "line: the panel's toggle says OFF")
 		_keycap.visible = false
-		_move_cursor(_screen(PACK_TO), 15.3, 16.0)
-	if _phase_at(16.2, "pack"):
+		_move_cursor(_screen(PACK_TO), 18.3, 19.0)
+	if _phase_at(19.2, "pack"):
 		_mouse(MOUSE_BUTTON_RIGHT, true)
 		_check(pride.all(func(u): return not u.order.has("line")), "line: lines off, the order makes no line")
-		_pan(PACK_TO + Vector3(0, 0, 6), 16.2, 21.0)
-	if _phase_at(22.0, "pack_check"):
+		_pan(PACK_TO + Vector3(0, 0, 6), 19.2, 24.0)
+	if _phase_at(28.0, "pack_check"):
 		var behind: float = pride.map(func(u): return u.global_position.z).max() - pride.map(func(u): return u.global_position.z).min()
 		print("LIONESS pack: %.1f m deep" % behind)
 		_check(behind < 12.0, "line: as a pack they gather round the spot instead (%.1f m deep)" % behind)
-	if _phase_at(23.0, "toggle_on"):
+	if _phase_at(28.3, "toggle_on"):
 		_key(AttackerController.SCOUT_KEY)
 		_keycap.text = "T"
 		_keycap.visible = true
@@ -729,6 +737,11 @@ func _ranks(line: LionessLine) -> Array:
 	for r in range(by.size()):
 		out.append(by.get(r, []))
 	return out
+
+
+## The fastest of `units` now (m/s, flat).
+func _fastest(units: Array) -> float:
+	return units.map(func(u): return Vector2(u.velocity.x, u.velocity.z).length()).max()
 
 
 ## How far apart along the way each rank's lionesses are now (m).

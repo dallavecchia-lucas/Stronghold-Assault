@@ -150,6 +150,8 @@ var _bombard_fired := false
 var _muzzle_skel: Skeleton3D
 var _muzzle_bone := -1
 var _ram_left := 0.0
+## Seconds since the last move order (a lioness walks until gallop_after: _speed).
+var _moving_for := 0.0
 var _charge_pos := Vector3.ZERO
 ## Soldiers run over during this ram: instance id -> msec, so each is hit once per pass.
 var _trampled := {}
@@ -503,6 +505,10 @@ func set_order(o: Dictionary) -> void:
 			else:
 				o = {"type": "attack", "target": keep}
 	order = o
+	if o.type in ["move", "attack_move"]:
+		_moving_for = 0.0  # a new move order: walking again
+		if _agent:
+			_agent.max_speed = _speed()
 	if o.type == "attack":
 		target = o.target
 	elif o.type == "move":
@@ -1483,6 +1489,9 @@ func _physics_process(delta: float) -> void:
 		ping_cd = maxf(ping_cd - cool, 0.0)
 		if is_pinging():
 			_ping_tick(delta)
+	_moving_for += delta
+	if stats.has("gallop_after") and _moving_for >= stats.gallop_after and _moving_for - delta < stats.gallop_after:
+		_agent.max_speed = _speed()  # the walk is over: she may gallop
 	if has_sneak():
 		sneak_cd = maxf(sneak_cd - cool, 0.0)
 		if _sneak_left > 0.0:
@@ -1588,6 +1597,8 @@ func _approach(t: Node3D) -> Vector3:
 
 func _speed() -> float:
 	var s: float = stats.speed * (stats.forest_speed if _in_forest else 1.0) * (stats.ram_speed if _ram_left > 0.0 else 1.0)
+	if stats.has("gallop_after") and _moving_for < stats.gallop_after and order.type in ["move", "attack_move"]:
+		s = minf(s, stats.walk_speed)  # sent somewhere, she walks a while before she gallops
 	return minf(s, stats.sneak_speed) if is_sneaking() else s
 
 
