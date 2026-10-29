@@ -17,6 +17,9 @@ signal bomb_dropped(bomb: TalonBomb, spot: Vector3)
 signal flash_thrown(grenade: FlashGrenade, spot: Vector3)
 ## A giraffe's ping went out from its dish.
 signal pinged(ping: GiraffePing)
+## A lioness sprang at `prey` (her pounce), and lit her fire blast.
+signal pounced(prey: Node3D)
+signal blasted(blast: LionessBlast)
 
 const HEAL_COLOR := Color(0.35, 1.0, 0.45)
 const AA_COLOR := Color(1.0, 0.9, 0.4)
@@ -46,8 +49,17 @@ const SUPPLY_COLOR := Color(0.85, 0.8, 0.35, 0.8)
 const PING_COLOR := Color(0.45, 1.0, 0.6, 0.7)
 ## Sight of a unit type with none set (m).
 const SIGHT := 30.0
+## A lioness pounces on prey no more than this far above or below her (m): not up on the gun decks.
+const POUNCE_RISE := 2.5
+## She lands this share of her reach short of the prey's middle, and the pounce hits if it is still
+## within her reach and this much more (m) when she lands.
+const POUNCE_SHORT := 0.6
+const POUNCE_SLACK := 1.0
+## A strike that lands with the prey this much further than her reach (m) still hits.
+const STRIKE_SLACK := 0.6
 
 static var _supply_tex: ImageTexture
+static var _bush_tex: ImageTexture
 
 static var _scenes := {}
 
@@ -80,6 +92,9 @@ var bomb_cd := 0.0
 var flash_cd := 0.0
 ## Seconds until the giraffe can ping again.
 var ping_cd := 0.0
+## Seconds until the lioness can sneak / light her fire blast again.
+var sneak_cd := 0.0
+var blast_cd := 0.0
 ## Share a kangaroo nearby cuts off its skills' cooldowns (the kangaroo's passive, handed out by
 ## AttackerCommander): 0 when none does.
 var resupply := 0.0
@@ -135,6 +150,8 @@ var _bombard_fired := false
 var _muzzle_skel: Skeleton3D
 var _muzzle_bone := -1
 var _ram_left := 0.0
+## Seconds since the last move order (a lioness walks until gallop_after: _speed).
+var _moving_for := 0.0
 var _charge_pos := Vector3.ZERO
 ## Soldiers run over during this ram: instance id -> msec, so each is hit once per pass.
 var _trampled := {}
@@ -158,6 +175,28 @@ var _held: MeshInstance3D  # the flash grenade in the paw while it winds up
 var _ping_t := -1.0
 var _ping_sent := false
 var _ping_ring: MeshInstance3D
+## Sneaking: seconds of it left. How each side sees it (_sneak_look): 0 as ever, 1 see-through (the
+## defender's view), 2 with the bush over her (the attacker's); the see-through materials per surface.
+var _sneak_left := 0.0
+var _look := 0
+var _ghosts: Array = []  # [MeshInstance3D, surface, see-through material]
+var _bush: Sprite3D
+## Pounce under way: seconds into it (-1: none), the prey, where she springs from and lands, the arc's
+## height and whether it has landed.
+var _pounce_t := -1.0
+var _pounce_prey: Node3D
+var _pounce_from := Vector3.ZERO
+var _pounce_to := Vector3.ZERO
+var _pounce_high := 0.0
+var _pounce_landed := false
+## Strike (a melee blow with its own clip) under way: seconds into it (-1: none), at what, whether the
+## blow has landed, and whether its clip has to start over.
+var _strike_t := -1.0
+var _strike_target: Node3D
+var _strike_hit := false
+var _clip_restart := false
+var _blast: LionessBlast
+var _lion: LionessRig  # set when the model carries the lioness's flamethrower nozzles
 ## Fighting what it has in range and sight this frame (it stands and faces it).
 var _engaged := false
 var _supply_ring: MeshInstance3D
@@ -331,6 +370,55 @@ func is_pinging() -> bool:
 	return _ping_t >= 0.0
 
 
+func has_sneak() -> bool:
+	return stats.has("sneak_cooldown")
+
+
+func sneak_ready() -> bool:
+	return has_sneak() and sneak_cd <= 0.0 and is_alive() and not is_sneaking() and not is_pouncing()
+
+
+## Stalking: see-through on the defender's side, a bush over her on the attacker's (_sneak_look).
+func is_sneaking() -> bool:
+	return _sneak_left > 0.0
+
+
+func sneak_left() -> float:
+	return _sneak_left
+
+
+## Springing at her prey, or flying onto it: she pounces through, whatever her orders.
+func is_pouncing() -> bool:
+	return _pounce_t >= 0.0
+
+
+func is_striking() -> bool:
+	return _strike_t >= 0.0
+
+
+func has_blast() -> bool:
+	return stats.has("blast_cooldown")
+
+
+func blast_ready() -> bool:
+	return has_blast() and blast_cd <= 0.0 and is_alive() and not is_blasting()
+
+
+## The flamethrowers on her back burning (LionessBlast).
+func is_blasting() -> bool:
+	return _blast != null and is_instance_valid(_blast) and _blast.left > 0.0
+
+
+## How fast it can go now (a sneaking lioness stalks slower); LionessLine marches at a share of it.
+func top_speed() -> float:
+	return _speed()
+
+
+## Standing and fighting what it has in range this frame.
+func is_engaged() -> bool:
+	return _engaged
+
+
 ## How far it sees through the fog of war (AttackerVision).
 func sight() -> float:
 	return stats.get("sight", SIGHT)
@@ -339,7 +427,7 @@ func sight() -> float:
 ## Any of its skills cooling down: what a kangaroo's resupply speeds up.
 func cooling_down() -> bool:
 	return cluster_cd > 0.0 or smoke_cd > 0.0 or missile_cd > 0.0 or ram_cd > 0.0 or bombard_cd > 0.0 \
-			or strafe_cd > 0.0 or bomb_cd > 0.0 or flash_cd > 0.0 or ping_cd > 0.0
+			or strafe_cd > 0.0 or bomb_cd > 0.0 or flash_cd > 0.0 or ping_cd > 0.0 or sneak_cd > 0.0 or blast_cd > 0.0
 
 
 ## Kangaroo passive: carries supplies for others (AttackerCommander hands them out).
@@ -417,6 +505,10 @@ func set_order(o: Dictionary) -> void:
 			else:
 				o = {"type": "attack", "target": keep}
 	order = o
+	if o.type in ["move", "attack_move"]:
+		_moving_for = 0.0  # a new move order: walking again
+		if _agent:
+			_agent.max_speed = _speed()
 	if o.type == "attack":
 		target = o.target
 	elif o.type == "move":
@@ -488,6 +580,13 @@ func _die() -> void:
 	_flash_t = -1.0
 	_ping_t = -1.0
 	_burst_left = 0
+	_sneak_left = 0.0
+	_pounce_t = -1.0
+	_strike_t = -1.0
+	if is_blasting():
+		_blast.left = 0.0
+	if has_sneak():
+		_sneak_look()
 	resupply = 0.0
 	if _held:
 		_held.visible = false
@@ -556,7 +655,8 @@ func _update_target() -> void:
 			target = order.target
 			return
 		order = {"type": "idle"}
-	if order.type == "move":
+	# A sneaking lioness picks no fights on her own: only an attack order sends her (to pounce).
+	if order.type == "move" or is_sneaking():
 		target = null
 		return
 	if Combat.targetable(target) and _in_range(target) and _can_see(target) and not Combat.low_profile(target) \
@@ -632,11 +732,10 @@ func _fire_at(t: Node3D) -> void:
 	_recoil = 1.0
 	match role:
 		"melee":
-			var mult: float = stats.structure_mult if t.is_in_group("structures") else 1.0
-			t.take_damage(stats.damage * mult, team)
-			var to := t.global_position - global_position
-			to.y = 0.0
-			Combat.spawn_impact(self, global_position + to.normalized() * (stats.radius + 0.5) + Vector3.UP * stats.height * 0.6, true)
+			if stats.has("anim_strike"):
+				_start_strike(t)
+				return
+			_melee_hit(t)
 		"artillery":
 			var aim := Combat.aim_point(t)
 			var scatter: float = global_position.distance_to(aim) * stats.spread
@@ -781,6 +880,170 @@ func _send_ping() -> void:
 	get_tree().current_scene.add_child(p)
 	p.global_position = global_position
 	pinged.emit(p)
+
+
+## A melee blow landing on `t` (structures take structure_mult of it).
+func _melee_hit(t: Node3D) -> void:
+	var mult: float = stats.structure_mult if t.is_in_group("structures") else 1.0
+	t.take_damage(stats.damage * mult, team)
+	var to := t.global_position - global_position
+	to.y = 0.0
+	Combat.spawn_impact(self, global_position + to.normalized() * (stats.radius + 0.5) + Vector3.UP * stats.height * 0.6, true)
+
+
+## Lioness: one blow of her melee attack (the Strike clip): it lands strike_hit seconds in, on `t` if it
+## is still within reach. Striking gives a sneaking lioness away.
+func _start_strike(t: Node3D) -> void:
+	end_sneak()
+	_strike_t = 0.0
+	_strike_target = t
+	_strike_hit = false
+	_clip_restart = true
+
+
+func _strike_tick(delta: float) -> void:
+	_strike_t += delta
+	if not _strike_hit and _strike_t >= stats.strike_hit:
+		_strike_hit = true
+		if Combat.targetable(_strike_target) and _range_to(_strike_target) <= stats.range + STRIKE_SLACK:
+			_melee_hit(_strike_target)
+	var length: float = _anim.get_animation(stats.anim_strike).length if _anim else stats.strike_hit * 2.0
+	if _strike_t >= length:
+		_strike_t = -1.0
+
+
+## Lioness active: sneak for sneak_duration seconds (see UnitTypes). False while on cooldown.
+func start_sneak() -> bool:
+	if not sneak_ready():
+		return false
+	sneak_cd = stats.sneak_cooldown
+	_sneak_left = stats.sneak_duration
+	_agent.max_speed = _speed()
+	_sneak_look()  # this frame, not the next
+	return true
+
+
+## The sneak is over (run out, or she struck, pounced or lit her flamethrowers): seen as ever again.
+func end_sneak() -> void:
+	if _sneak_left <= 0.0:
+		return
+	_sneak_left = 0.0
+	if _agent:
+		_agent.max_speed = _speed()
+	_sneak_look()
+
+
+## Sneaking, with an attack order on a defender on the ground: once it is within pounce_range and in
+## sight, she pounces.
+func _maybe_pounce() -> void:
+	if not is_sneaking() or order.type != "attack" or not _pounceable(order.target):
+		return
+	var to: Vector3 = order.target.global_position - global_position
+	if Vector2(to.x, to.z).length() <= stats.pounce_range and absf(to.y) < POUNCE_RISE \
+			and Combat.has_line_of_sight(self, _eye(), Combat.aim_point(order.target), order.target):
+		start_pounce(order.target)
+
+
+## Prey she can spring at: a live defender (not a building, not one under camo).
+func _pounceable(t) -> bool:
+	return Combat.targetable(t) and t.team != team and not t.is_in_group("structures")
+
+
+## The pounce (the Pounce clip): she crouches, springs at pounce_launch and flies onto `prey`, landing at
+## pounce_land; it ends the sneak the moment she starts.
+func start_pounce(prey: Node3D) -> void:
+	end_sneak()
+	_pounce_t = 0.0
+	_pounce_prey = prey
+	_pounce_landed = false
+	_pounce_from = global_position
+	_pounce_to = _pounce_landing(prey)
+	_strike_t = -1.0
+	velocity = Vector3.ZERO
+	_agent.avoidance_enabled = false
+	_clip_restart = true
+	pounced.emit(prey)
+
+
+## Where she lands, springing at `prey`: in front of it, a little short of its middle, on the ground.
+func _pounce_landing(prey: Node3D) -> Vector3:
+	var to := prey.global_position - global_position
+	to.y = 0.0
+	var at: Vector3 = prey.global_position - to.normalized() * stats.range * POUNCE_SHORT if to.length() > 0.1 else prey.global_position
+	var q := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 3.0, at + Vector3.DOWN * 6.0, GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES)
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	return hit.position if not hit.is_empty() else at
+
+
+func _pounce_tick(delta: float) -> void:
+	_pounce_t += delta
+	var launch: float = stats.pounce_launch
+	var land: float = stats.pounce_land
+	if _pounce_t < launch:
+		# Crouched, eyes on the prey, gathering herself.
+		velocity = Vector3.ZERO
+		if Combat.is_valid_target(_pounce_prey):
+			_face(_pounce_prey.global_position, delta)
+			_pounce_to = _pounce_landing(_pounce_prey)
+		_pounce_from = global_position
+		_pounce_high = stats.pounce_height + stats.pounce_arc * _flat_to(_pounce_to)
+		return
+	if _pounce_t < land:
+		var u := (_pounce_t - launch) / (land - launch)
+		var p := _pounce_from.lerp(_pounce_to, u) + Vector3.UP * sin(u * PI) * _pounce_high
+		velocity = (p - global_position) / delta
+		global_position = p
+		var d := _pounce_to - _pounce_from
+		if Vector2(d.x, d.z).length() > 0.1:
+			rotation.y = atan2(-d.x, -d.z)
+		return
+	if not _pounce_landed:
+		_pounce_landed = true
+		global_position = _pounce_to
+		velocity = Vector3.ZERO
+		_land_pounce()
+	if _pounce_t >= stats.pounce_time:
+		_pounce_t = -1.0
+		_agent.avoidance_enabled = charge_gate == null
+		_fire_cd = minf(_fire_cd, 0.05)  # straight into her claws
+
+
+## She lands on her prey: it takes pounce_damage if it is still within her reach; dust either way.
+func _land_pounce() -> void:
+	for k in 4:
+		SmokeCloud.wisp(self, global_position + Vector3(randf_range(-0.6, 0.6), 0.15, randf_range(-0.6, 0.6)), 1.1)
+	if not Combat.targetable(_pounce_prey) or _range_to(_pounce_prey) > stats.range + POUNCE_SLACK:
+		return
+	_pounce_prey.take_damage(stats.pounce_damage, team)
+	Combat.spawn_impact(self, Combat.aim_point(_pounce_prey), true)
+
+
+func _flat_to(p: Vector3) -> float:
+	return Vector2(p.x - global_position.x, p.z - global_position.z).length()
+
+
+## Lioness active: the fire blast (LionessBlast), blast_duration seconds of flame from the barrels on
+## her back. It gives a sneaking lioness away. False while on cooldown.
+func start_blast() -> bool:
+	if not blast_ready():
+		return false
+	blast_cd = stats.blast_cooldown
+	end_sneak()
+	_blast = LionessBlast.new()
+	_blast.unit = self
+	_blast.left = stats.blast_duration
+	get_tree().current_scene.add_child(_blast)
+	blasted.emit(_blast)
+	return true
+
+
+## Flamethrower nozzle k on her back (0 the lower barrel, 1 the upper), its Y axis out of the barrel: the
+## model's nozzle bones, or a guess over her shoulders.
+func nozzle(k: int) -> Transform3D:
+	if _lion and _lion.posed():
+		return _lion.nozzle(k)
+	var at := global_position + Vector3.UP * (1.39 + 0.07 * k) - global_basis.z * (1.0 - 0.22 * k) + global_basis.x * 0.08 * k
+	return Transform3D(Basis(global_basis.x, -global_basis.z, global_basis.y), at)
 
 
 ## Medic: patch up the most hurt ally in range.
@@ -1226,6 +1489,23 @@ func _physics_process(delta: float) -> void:
 		ping_cd = maxf(ping_cd - cool, 0.0)
 		if is_pinging():
 			_ping_tick(delta)
+	_moving_for += delta
+	if stats.has("gallop_after") and _moving_for >= stats.gallop_after and _moving_for - delta < stats.gallop_after:
+		_agent.max_speed = _speed()  # the walk is over: she may gallop
+	if has_sneak():
+		sneak_cd = maxf(sneak_cd - cool, 0.0)
+		if _sneak_left > 0.0:
+			_sneak_left -= delta
+			if _sneak_left <= 0.0:
+				_sneak_left = 0.0
+				_agent.max_speed = _speed()
+	if has_blast():
+		blast_cd = maxf(blast_cd - cool, 0.0)
+	if is_pouncing():
+		_pounce_tick(delta)  # she flies on her own: no orders, no avoidance
+		return
+	if is_striking():
+		_strike_tick(delta)
 	if _burst_left > 0:
 		_burst_tick(delta)
 	if stats.has("aa_dps") and _fire_cd <= 0.0:
@@ -1234,9 +1514,14 @@ func _physics_process(delta: float) -> void:
 		_raid_ram()
 	if raiding and has_flash():
 		_raid_flash()
+	if has_sneak():
+		_maybe_pounce()
+		if is_pouncing():
+			return
 	# A charging ram doesn't stop to shoot: it runs for its slot in front of the gate, or, raiding,
 	# into the soldier it hunts. A kangaroo throwing a grenade holds its fire.
 	var running_over := raiding and is_ramming() and _is_soldier(target)
+	var lined := false
 	var engaged := charge_gate == null and not running_over and not is_throwing() and not is_pinging() \
 			and Combat.targetable(target) and _in_range(target) and _sees_target
 	_engaged = engaged
@@ -1254,19 +1539,26 @@ func _physics_process(delta: float) -> void:
 			_fire_at(target)
 	elif charge_gate:
 		move_to = _charge_pos
+	elif order.has("line"):
+		lined = true  # marching in a line: _line_step
 	elif order.type == "move" or order.type == "attack_move":
 		move_to = order.pos
 	elif running_over:
 		move_to = target.global_position
 	elif (order.type == "attack" or order.type == "raid") and Combat.is_valid_target(target):
 		move_to = _approach(target)
+	elif order.has("face"):
+		# A line that has arrived: each lioness stands facing the way it went.
+		rotation.y = lerp_angle(rotation.y, atan2(-order.face.x, -order.face.z), minf(5.0 * delta, 1.0))
 
 	if is_flying():
 		_fly(move_to, delta)
 		return
 
 	_desired_velocity = Vector3.ZERO
-	if move_to != null:
+	if lined:
+		_line_step()
+	elif move_to != null:
 		if _agent.target_position.distance_to(move_to) > 1.5:
 			_agent.target_position = move_to
 		if _agent.is_navigation_finished():
@@ -1304,7 +1596,39 @@ func _approach(t: Node3D) -> Vector3:
 
 
 func _speed() -> float:
-	return stats.speed * (stats.forest_speed if _in_forest else 1.0) * (stats.ram_speed if _ram_left > 0.0 else 1.0)
+	var s: float = stats.speed * (stats.forest_speed if _in_forest else 1.0) * (stats.ram_speed if _ram_left > 0.0 else 1.0)
+	if stats.has("gallop_after") and _moving_for < stats.gallop_after and order.type in ["move", "attack_move"]:
+		s = minf(s, stats.walk_speed)  # sent somewhere, she walks a while before she gallops
+	return minf(s, stats.sneak_speed) if is_sneaking() else s
+
+
+## In a line (LionessLine): she makes for her spot in it as it marches, at its pace and faster where she
+## is behind; once it has arrived she stands on her spot, facing the way it went.
+func _line_step() -> void:
+	var line: LionessLine = order.line
+	# The spots keep the line apart: avoidance would only hold them back from their places, or push them
+	# off them once they stand in line. The next order (set_order) turns it back on.
+	_agent.avoidance_enabled = false
+	if line.arrived() and _flat_to(line.final_spot(self)) < LionessLine.ON_SPOT:
+		order = {"type": "idle", "face": line.dir}
+		return
+	var spot := line.spot(self)
+	var off := _flat_to(spot)
+	if _agent.target_position.distance_to(spot) > 0.4:
+		_agent.target_position = spot
+	var next := spot
+	if not _agent.is_navigation_finished():
+		next = _agent.get_next_path_position()
+		if not _route.is_empty():
+			return  # just reached a link (_on_link_reached)
+	var dir := next - global_position
+	dir.y = 0.0
+	# Ahead of her spot she waits (stepping into her file) until the line comes up to her.
+	var waiting := line.own(self) > line.progress + LionessLine.IN_STEP
+	if (off > LionessLine.IN_STEP or line.arrived()) and dir.length_squared() > 0.0001:
+		_desired_velocity = dir.normalized() * line.speed_for(self, off)
+	elif not line.arrived() and not waiting:
+		_desired_velocity = line.dir * line.pace  # in step: she marches with the line
 
 
 ## Infiltrators cross the stronghold's navigation links along the route each one carries:
@@ -1409,18 +1733,36 @@ func _process(delta: float) -> void:
 		_anim_t += delta * spd
 	if _anim:
 		# Rigged model: play its clips, matching the move cycle to ground speed (within anim_scale).
-		# A kangaroo throwing a flash grenade plays its throw, a giraffe pinging its ping.
+		# A kangaroo throwing a flash grenade plays its throw, a giraffe pinging its ping; a lioness
+		# runs above run_above (anim_run), stalks while she sneaks, pounces and strikes.
 		var clip: String = stats.anim_move if moving else stats.anim_idle
-		var skill := is_throwing() or is_pinging()
+		var ref: float = stats.get("anim_ref_speed", 1.0)
+		var rate: Array = stats.get("anim_scale", [0.6, 2.0])
+		if moving and is_sneaking() and stats.has("anim_sneak"):
+			clip = stats.anim_sneak
+			ref = stats.anim_sneak_speed
+		elif moving and stats.has("anim_run") and spd > stats.run_above:
+			clip = stats.anim_run
+			ref = stats.anim_run_speed
+			rate = stats.run_scale
+		var skill := is_throwing() or is_pinging() or is_pouncing() or is_striking()
 		if is_throwing():
 			clip = "Throw"
 		elif is_pinging():
 			clip = "Ping"
+		elif is_pouncing():
+			clip = "Pounce"
+		elif is_striking():
+			clip = stats.anim_strike
 		if _anim.current_animation != clip:
 			_anim.play(clip, 0.15 if skill else 0.25)
-		var rate: Array = stats.get("anim_scale", [0.6, 2.0])
-		_anim.speed_scale = clampf(spd / stats.anim_ref_speed, rate[0], 3.0 if is_ramming() else rate[1]) \
+		elif _clip_restart:
+			_anim.seek(0.0, true)  # the next blow, from the start of its clip
+		_clip_restart = false
+		_anim.speed_scale = clampf(spd / ref, rate[0], 3.0 if is_ramming() else rate[1]) \
 				if moving and not skill else 1.0
+	if has_sneak():
+		_sneak_look()
 	if _rig:
 		_pose_rig(delta)
 	match stats.anim:
@@ -1432,7 +1774,7 @@ func _process(delta: float) -> void:
 		"roll":
 			_model.position.y = randf_range(0.0, 0.02) if moving else 0.0
 		"rigged":
-			if role == "melee":
+			if role == "melee" and not stats.has("anim_strike"):
 				_model.position.z = -_recoil * 0.35  # lunge into the blow
 			elif has_ram():
 				_model.position.z = -sin(_butt * PI) * 0.5  # head-butt
@@ -1448,10 +1790,37 @@ func _process(delta: float) -> void:
 		var cam := get_viewport().get_camera_3d()
 		if cam:
 			_hp_bar.global_basis = cam.global_basis
-	# Resupplied by a kangaroo: an ammo box floats over it.
+	# Resupplied by a kangaroo: an ammo box floats over it (over a sneaking lioness's bush).
+	var bush := _bush != null and _bush.visible
 	_supply_icon.visible = resupply > 0.0
 	if _supply_icon.visible:
-		_supply_icon.global_position = global_position + Vector3.UP * (stats.height + 1.0 + 0.08 * sin(Time.get_ticks_msec() * 0.004))
+		_supply_icon.global_position = global_position + Vector3.UP * (stats.height + 1.0 + (0.95 if bush else 0.0) + 0.08 * sin(Time.get_ticks_msec() * 0.004))
+	if bush:
+		_bush.global_position = global_position + Vector3.UP * (stats.height + 1.3)
+
+
+## The sneak as each side sees it. The defending player sees her see-through (sneak_alpha opaque: the
+## see-through materials, drawn after the depth so she reads as one ghostly shape), with no shadow and
+## no health bar; the attacking player sees her as ever, with a bush over her. Follows
+## GameConfig.player_side as it is now (the showcases switch sides).
+func _sneak_look() -> void:
+	var want := 0
+	if is_sneaking() and is_alive():
+		want = 1 if GameConfig.player_side == GameConfig.PlayerSide.DEFENDER else 2
+	if want == _look:
+		return
+	_look = want
+	for g in _ghosts:
+		var mi: MeshInstance3D = g[0]
+		mi.set_surface_override_material(g[1], g[2] if want == 1 else null)
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if want == 1 else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	_bush.visible = want == 2
+	_update_hp_bar()
+
+
+## True while the defending player sees her see-through (sneaking).
+func ghosted() -> bool:
+	return _look == 1
 
 
 ## Kangaroo: rears its chest up onto what it shoots at, so the SMGs strapped to its sides point at it,
@@ -1480,7 +1849,11 @@ func _build_model() -> void:
 	var players := m.find_children("*", "AnimationPlayer", true, false)
 	if not players.is_empty() and stats.has("anim_move"):
 		_anim = players[0]
-		for clip in [stats.anim_move, stats.anim_idle]:
+		var loops := [stats.anim_move, stats.anim_idle]
+		for k in ["anim_run", "anim_sneak"]:
+			if stats.has(k):
+				loops.append(stats[k])
+		for clip in loops:
 			var a := _anim.get_animation(clip)
 			if not a.has_meta("looped"):
 				# Baked loops end on a copy of the first frame: drop it so the wrap is seamless.
@@ -1512,6 +1885,34 @@ func _build_model() -> void:
 			_held.top_level = true
 			_held.visible = false
 			add_child(_held)
+	if has_blast():
+		var skeletons := m.find_children("*", "Skeleton3D", true, false)
+		if not skeletons.is_empty():
+			_lion = LionessRig.new()
+			skeletons[0].add_child(_lion)
+	if has_sneak():
+		# See-through copies of her materials for the defender's view while she sneaks (_sneak_look).
+		for mi: MeshInstance3D in m.find_children("*", "MeshInstance3D", true, false):
+			for s in mi.mesh.get_surface_count():
+				var src := mi.get_active_material(s) as BaseMaterial3D
+				if src == null:
+					continue
+				var ghost := src.duplicate() as BaseMaterial3D
+				ghost.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+				ghost.albedo_color.a = stats.sneak_alpha
+				ghost.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_ALWAYS
+				_ghosts.append([mi, s, ghost])
+		_bush = Sprite3D.new()
+		_bush.texture = _bush_texture()
+		_bush.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		_bush.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		_bush.shaded = false
+		_bush.no_depth_test = true
+		_bush.fixed_size = true  # the same size on screen however far out the camera is
+		_bush.pixel_size = 0.0019
+		_bush.top_level = true
+		_bush.visible = false
+		add_child(_bush)
 	if stats.get("carry_gun", false):
 		# Carried weapon placeholder until weapons get modeled.
 		_model.add_child(Mats.box_mesh(Vector3(0.12, 0.16, 0.9), Vector3(0.35, 1.15, -0.45),
@@ -1624,10 +2025,46 @@ static func _supply_texture() -> ImageTexture:
 	return _supply_tex
 
 
+## A sneaking lioness's icon on the attacker's side: a leafy bush, four clumps of leaves in a dark
+## outline, lit from the upper left, leaves picked out darker, on a strip of shadow.
+static func _bush_texture() -> ImageTexture:
+	if _bush_tex:
+		return _bush_tex
+	var w := 28
+	var h := 22
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var clumps := [Vector3(8.0, 13.5, 6.5), Vector3(14.0, 8.5, 7.5), Vector3(20.5, 12.5, 6.5), Vector3(14.0, 15.0, 6.5)]
+	var ink := Color(0.04, 0.09, 0.03)
+	var dark := Color(0.13, 0.34, 0.1)
+	var lit := Color(0.47, 0.76, 0.26)
+	for y in h:
+		for x in w:
+			var p := Vector2(x + 0.5, y + 0.5)
+			var inside := -INF
+			var n := Vector2.ZERO
+			for c in clumps:
+				var d := p - Vector2(c.x, c.y)
+				if c.z - d.length() > inside:
+					inside = c.z - d.length()
+					n = d / c.z
+			if inside > 0.0:
+				var col := dark.lerp(lit, clampf(0.55 - n.x * 0.45 - n.y * 0.6, 0.0, 1.0))
+				if (x * 7 + y * 13) % 11 == 0 or (x * 5 + y * 3) % 17 == 0:
+					col = col.darkened(0.35)  # leaves picked out
+				img.set_pixel(x, y, col)
+			elif inside > -1.3:
+				img.set_pixel(x, y, ink)
+	img.fill_rect(Rect2i(4, h - 2, w - 8, 2), Color(0.0, 0.0, 0.0, 0.45))
+	_bush_tex = ImageTexture.create_from_image(img)
+	return _bush_tex
+
+
 func _update_hp_bar() -> void:
 	if not _hp_bar:
 		return
 	var ratio := clampf(hp / stats.hp, 0.0, 1.0)
-	_hp_bar.visible = hp > 0.0 and (selected or ratio < 1.0)
+	# A sneaking lioness shows none on the defender's side: it would give her away.
+	_hp_bar.visible = hp > 0.0 and (selected or ratio < 1.0) and _look != 1
 	_hp_fill.scale.x = maxf(ratio, 0.001)
 	_hp_fill.material_override = Mats.unshaded(Color(1.0, 0.25, 0.2) if ratio < 0.35 else Color(0.95, 0.8, 0.2) if ratio < 0.7 else Color(0.3, 1.0, 0.4))

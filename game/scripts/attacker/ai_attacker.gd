@@ -5,7 +5,7 @@ extends Node
 ## gate falls everyone pushes for the keep. A helipad the defenders sabotaged is retaken by the
 ## ground units nearest it (_retake_bases). It never goes after the defenders' infiltrators: it
 ## doesn't know they are there (their low profile, Combat.low_profile), unless its giraffes' pings
-## reveal them (_giraffe_pings).
+## reveal them (_giraffe_pings). Its lionesses hunt the defenders out on the field (_lioness_hunts).
 ## Uses the same command interface as the human RTS player.
 
 var commander: AttackerCommander
@@ -27,6 +27,8 @@ const FLASH_SPARE := 0.97
 const RETAKERS := 3
 ## Giraffes this close to the middle of the map (m, flat) are out on the field: they ping.
 const PING_FIELD := 150.0
+## Lionesses go after defenders on the ground this close to them (m, flat).
+const HUNT_RANGE := 32.0
 
 ## Helipad -> ids of the units sent to retake it.
 var _retakers := {}
@@ -65,6 +67,7 @@ func _think() -> void:
 	_talon_strikes()
 	_kangaroo_flashes()
 	_giraffe_pings()
+	_lioness_hunts()
 
 
 func _plan_wave() -> void:
@@ -82,6 +85,7 @@ func _plan_wave() -> void:
 		"talon": 0 if _wave < 2 else mini(_wave - 1, 4),
 		"chimp": 0 if _wave < 3 else mini(1 + _wave / 3, 4),
 		"giraffe": 1 if _wave >= 2 else 0,
+		"lioness": 0 if _wave < 2 else mini(1 + _wave / 2, 6),
 	}
 	# Interleave so a partly-spawned wave is still a sensible mix.
 	var remaining := true
@@ -228,6 +232,28 @@ func _giraffe_pings() -> void:
 			ids.append(u.unit_id)
 	if not ids.is_empty():
 		commander.submit({"type": "ping", "units": ids})
+
+
+## Lionesses hunt the defenders on the ground the army sees within HUNT_RANGE (squads out on the field,
+## riflemen off the walls; the walls' posts are out of their reach): a lioness whose sneak is ready
+## sneaks up and pounces, the others run in to maul them; close enough, she lights her fire blast.
+func _lioness_hunts() -> void:
+	for u in commander.units.values():
+		if not u.has_sneak() or not u.is_controllable() or u.is_pouncing():
+			continue
+		var on_ground := func(d): return d.get("station_kind") in ["soldier", "infiltrator"] \
+				and absf(d.global_position.y - u.global_position.y) < AttackerUnit.POUNCE_RISE
+		var prey := _in_reach(u, HUNT_RANGE, on_ground, 1.0)
+		if prey == null:
+			continue
+		var dist := Vector2(prey.global_position.x - u.global_position.x, prey.global_position.z - u.global_position.z).length()
+		if u.blast_ready() and dist < u.stats.blast_range * 0.8:
+			commander.submit({"type": "blast", "units": [u.unit_id]})
+		if u.order.type == "attack" and u.order.target == prey:
+			continue
+		if u.sneak_ready() and dist > u.stats.pounce_range * 0.6:
+			commander.submit({"type": "sneak", "units": [u.unit_id]})
+		commander.submit({"type": "attack", "units": [u.unit_id], "target": prey.get_path()})
 
 
 ## The nearest live defender `pick` takes (or gate) within `reach` of `u` (flat), with room to spare

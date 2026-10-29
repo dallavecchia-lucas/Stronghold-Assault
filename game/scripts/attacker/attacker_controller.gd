@@ -17,6 +17,9 @@ extends CanvasLayer
 ## O: aim the selected elephants' missiles: LMB an enemy aircraft (RMB/O cancel)
 ## Space: the selected breaching rams ram (then RMB a gate to charge it)
 ## P: the selected giraffes ping
+## F with no rhino or talon skill ready: the selected lionesses sneak (then RMB a defender: they pounce)
+## G with no bison or talon skill ready: the selected lionesses' fire blast
+## T with no rhino selected: lionesses moved together form firing lines, or don't (the HUD's toggle too)
 ## The fog of war (AttackerVision) dims the land the army doesn't see (FogOverlay); defenders in it
 ## can't be ordered at.
 
@@ -69,6 +72,7 @@ var _smoke_mesh: ImmediateMesh
 var _missile_preview: MeshInstance3D
 var _missile_mesh: ImmediateMesh
 var _aim_label: Label
+var _line_button: Button
 var _fog: FogOverlay
 
 
@@ -161,6 +165,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				_set_aiming("cluster")
 			elif not _ready_talons("strafe").is_empty():
 				_set_aiming("strafe")
+			elif not _ready_lionesses("sneak").is_empty():
+				commander.submit({"type": "sneak", "units": _ready_lionesses("sneak").map(func(u): return u.unit_id)})
 			return
 		if event.physical_keycode == BOMBARD_KEY:
 			if _aiming in ["bombard", "bomb"]:
@@ -169,6 +175,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				_set_aiming("bombard")
 			elif not _ready_talons("bomb").is_empty():
 				_set_aiming("bomb")
+			elif not _ready_lionesses("blast").is_empty():
+				commander.submit({"type": "blast", "units": _ready_lionesses("blast").map(func(u): return u.unit_id)})
 			return
 		if event.physical_keycode == SMOKE_KEY:
 			# A ready hippo's smoke screen comes first, then the kangaroos' flash grenades.
@@ -192,7 +200,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if event.physical_keycode == SCOUT_KEY:
 			_alive_selection()
-			commander.submit({"type": "scout", "units": selected.map(func(u): return u.unit_id)})
+			if selected.any(func(u): return u.stats.get("scouts", false)) or not selected.any(func(u): return u.stats.get("line", false)):
+				commander.submit({"type": "scout", "units": selected.map(func(u): return u.unit_id)})
+			else:
+				toggle_lines()
 			return
 		for type_id in UnitTypes.ORDER:
 			if event.physical_keycode == UnitTypes.DATA[type_id].hotkey:
@@ -512,6 +523,20 @@ func _update_flash_preview() -> void:
 	_aim_mesh.surface_end()
 
 
+# ---------------------------------------------------------------- lionesses
+
+## The selected lionesses whose sneak (`skill` "sneak") or fire blast ("blast") is ready.
+func _ready_lionesses(skill: String) -> Array:
+	_alive_selection()
+	return selected.filter(func(u): return u.sneak_ready() if skill == "sneak" else u.blast_ready())
+
+
+## T (with no rhino selected) or the HUD's toggle: lionesses moved together form up in firing lines, or
+## don't.
+func toggle_lines() -> void:
+	commander.submit({"type": "line", "on": not commander.line_formation})
+
+
 # ---------------------------------------------------------------- elephant missiles
 
 func _ready_elephants() -> Array:
@@ -642,6 +667,13 @@ func _build_hud() -> void:
 	info.add_child(_selection_label)
 	info.custom_minimum_size.x = 150
 	row.add_child(info)
+	# Lionesses moved together form up in firing lines: the toggle shows while any are selected.
+	_line_button = UIKit.button("", 13)
+	_line_button.focus_mode = Control.FOCUS_NONE
+	_line_button.tooltip_text = "Lionesses moved together converge into firing lines, 8 abreast, more lines behind"
+	_line_button.pressed.connect(toggle_lines)
+	_line_button.visible = false
+	info.add_child(_line_button)
 
 	var grid := GridContainer.new()
 	grid.columns = 8
@@ -678,7 +710,7 @@ func _build_hud() -> void:
 	row.add_child(sp)
 	set_spawn_point(0)
 
-	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nBisons: G bombardment (LMB fire, RMB cancel), onto the gun decks and roofs too\nTalons: F strafe run (press LMB on the target, drag the way to fly, let go) · G bomb strike (LMB fire) · RMB cancels\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nGiraffes: see furthest through the fog · P ping: marks every defender it reaches, even under camo, and reveals infiltrators out of camo\nKangaroos: R flash grenade (LMB fire, RMB cancel) when no hippo's smoke is ready · they resupply units nearby\nChimps / Rams / Kangaroos: RMB next to a broken gate to send them in\nHelipads (S/E/W Pad): spawn there and +%.1f supply/s each while you hold them · sabotaged, stand ground units by one to retake it" % AttackerBase.INCOME,
+	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nBisons: G bombardment (LMB fire, RMB cancel), onto the gun decks and roofs too\nTalons: F strafe run (press LMB on the target, drag the way to fly, let go) · G bomb strike (LMB fire) · RMB cancels\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nGiraffes: see furthest through the fog · P ping: marks every defender it reaches, even under camo, and reveals infiltrators out of camo\nKangaroos: R flash grenade (LMB fire, RMB cancel) when no hippo's smoke is ready · they resupply units nearby\nLionesses: F sneak (then RMB a defender: they pounce) · G fire blast · T firing lines on/off when moved together\nChimps / Rams / Kangaroos: RMB next to a broken gate to send them in\nHelipads (S/E/W Pad): spawn there and +%.1f supply/s each while you hold them · sabotaged, stand ground units by one to retake it" % AttackerBase.INCOME,
 			13, Color(0.85, 0.85, 0.85, 0.75))
 	help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	help.grow_vertical = Control.GROW_DIRECTION_BEGIN
@@ -763,6 +795,29 @@ func _process(_delta: float) -> void:
 			var soonest: float = giraffes.map(func(u): return u.ping_cd).min()
 			if soonest > 0.0:
 				_selection_label.text += "  %ds" % ceili(soonest)
+	var lionesses := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_sneak())
+	_line_button.visible = not lionesses.is_empty()
+	if not lionesses.is_empty():
+		var ready := lionesses.filter(func(u): return u.sneak_ready()).size()
+		_selection_label.text += "\nSneak %d/%d [F]" % [ready, lionesses.size()]
+		var sneaking := lionesses.filter(func(u): return u.is_sneaking())
+		if ready == 0 and sneaking.is_empty():
+			var soonest: float = lionesses.map(func(u): return u.sneak_cd).min()
+			if soonest > 0.0:
+				_selection_label.text += "  %ds" % ceili(soonest)
+		if not sneaking.is_empty():
+			var left: float = sneaking.map(func(u): return u.sneak_left()).max()
+			_selection_label.text += "\nSneaking %d  %ds · RMB a defender: pounce" % [sneaking.size(), ceili(left)]
+		var lit := lionesses.filter(func(u): return u.blast_ready()).size()
+		_selection_label.text += "\nFire blast %d/%d [G]" % [lit, lionesses.size()]
+		var burning := lionesses.filter(func(u): return u.is_blasting()).size()
+		if burning > 0:
+			_selection_label.text += "\nFlamethrowers burning %d" % burning
+		elif lit == 0:
+			var soonest: float = lionesses.map(func(u): return u.blast_cd).min()
+			if soonest > 0.0:
+				_selection_label.text += "  %ds" % ceili(soonest)
+		_line_button.text = "Firing lines: %s  [T]" % ("ON" if commander.line_formation else "OFF")
 	var rams := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_ram())
 	if not rams.is_empty():
 		var ready := rams.filter(func(u): return u.ram_ready()).size()
