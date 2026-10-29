@@ -3,14 +3,14 @@ extends Control
 ## The defender's roster of bought squads (DefenderArmory), bottom centre: a slot per squad with
 ## its key (F1-F6 takes command of it, Ctrl+F<n> changes its auto order), its troopers' health, its
 ## auto order and what it is doing, the one the player drives outlined; then the buy slots (B: an
-## AA Squad, N: a Flame Squad, M: an Infiltrator Squad) with the credits.
+## AA Squad, N: a Flame Squad, M: an Infiltrator Squad, K: a Sniper) with the credits.
 
 const SLOT := Vector2(112, 58)
 const GAP := 4.0
 const BOTTOM := 40.0
 const DIM := Color(0.6, 0.64, 0.7)
 ## The buy slots: [key, label, kind (DefenderArmory.COSTS)].
-const BUYS := [["B", "BUY AA", "aa"], ["N", "BUY FLAME", "flame"], ["M", "BUY INFIL", "infiltrator"]]
+const BUYS := [["B", "BUY AA", "aa"], ["N", "BUY FLAME", "flame"], ["M", "BUY INFIL", "infiltrator"], ["K", "BUY SNIPER", "sniper"]]
 
 var armory: DefenderArmory
 ## The station the player drives (to outline its slot).
@@ -60,8 +60,10 @@ func _draw_squad(r: Rect2, i: int, s: DefenderSquad, font: Font) -> void:
 	for t in s.troopers:
 		if t != s.leader:
 			order.append(t)
-	for k in DefenderSquad.SIZE:
-		var pip := Rect2(r.position + Vector2(7 + k * 18, 23), Vector2(15, 7))
+	# One pip a trooper (a squad of one gets one wide bar).
+	var w := DefenderSquad.SIZE * 18.0 / s.squad_size
+	for k in s.squad_size:
+		var pip := Rect2(r.position + Vector2(7 + k * w, 23), Vector2(w - 3.0, 7))
 		draw_rect(pip, Color(0, 0, 0, 0.55))
 		if k < order.size():
 			var f := clampf(order[k].hp / order[k].max_hp, 0.0, 1.0)

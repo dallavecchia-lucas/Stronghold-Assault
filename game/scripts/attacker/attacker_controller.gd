@@ -780,6 +780,9 @@ func _process(_delta: float) -> void:
 	var supplied := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.resupply > 0.0)
 	if not supplied.is_empty():
 		_selection_label.text += "\nResupplied %d · skills back %d%% sooner" % [supplied.size(), roundi(supplied[0].resupply * 100.0)]
+	var tagged := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.is_tagged())
+	if not tagged.is_empty():
+		_selection_label.text += "\nTagged by a sniper %d · defenders hit them %d%% harder" % [tagged.size(), roundi(AttackerUnit.TAG_BONUS * 100.0)]
 	var elephants := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_missiles())
 	if not elephants.is_empty():
 		var ready := elephants.filter(func(u): return u.missiles_ready()).size()
@@ -801,7 +804,10 @@ func _process(_delta: float) -> void:
 		var ready := lionesses.filter(func(u): return u.sneak_ready()).size()
 		_selection_label.text += "\nSneak %d/%d [F]" % [ready, lionesses.size()]
 		var sneaking := lionesses.filter(func(u): return u.is_sneaking())
-		if ready == 0 and sneaking.is_empty():
+		var marked := lionesses.filter(func(u): return u.is_tagged()).size()
+		if marked > 0:
+			_selection_label.text += "  · %d tagged: can't sneak" % marked
+		elif ready == 0 and sneaking.is_empty():
 			var soonest: float = lionesses.map(func(u): return u.sneak_cd).min()
 			if soonest > 0.0:
 				_selection_label.text += "  %ds" % ceili(soonest)

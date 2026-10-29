@@ -7,7 +7,7 @@ extends CanvasLayer
 ##
 ## The roster of bought squads (DefenderArmory) sits in a hotbar at the bottom (SquadHotbar):
 ## F1-F6 takes command of a squad, Ctrl+F1-F6 changes its auto order without leaving the post
-## the player is on, B buys another AA Squad, N a Flame Squad and M an Infiltrator Squad.
+## the player is on, B buys another AA Squad, N a Flame Squad, M an Infiltrator Squad and K a Sniper.
 ##
 ## A kangaroo's flash grenade going off where the post the player is on sees it (FlashGrenade) turns
 ## the screen full white for as long as it blinds, then it clears.
@@ -21,6 +21,7 @@ const ROSTER_KEYS := [KEY_F1, KEY_F2, KEY_F3, KEY_F4, KEY_F5, KEY_F6]
 const BUY_KEY := KEY_B
 const BUY_FLAME_KEY := KEY_N
 const BUY_INFILTRATOR_KEY := KEY_M
+const BUY_SNIPER_KEY := KEY_K
 
 var level: LevelBuilder
 ## The defenders' credits and bought squads; null: no roster.
@@ -89,6 +90,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.physical_keycode == BUY_INFILTRATOR_KEY:
 			buy_squad("infiltrator")
 			return
+		if event.physical_keycode == BUY_SNIPER_KEY:
+			buy_squad("sniper")
+			return
 	for i in mini(stations.size(), 10):
 		if event.is_action_pressed("slot_%d" % (i + 1)):
 			select_station(i)
@@ -125,8 +129,8 @@ func cycle_squad_order(k: int) -> void:
 	_flash_prompt("%s: %s" % [s.station_name, s.order_name()])
 
 
-## B: buys an AA Squad (N: a Flame Squad, `kind` "flame"; M: an Infiltrator Squad, "infiltrator") if
-## there are the credits and room on the roster.
+## B: buys an AA Squad (N: a Flame Squad, `kind` "flame"; M: an Infiltrator Squad, "infiltrator"; K: a
+## Sniper, "sniper") if there are the credits and room on the roster.
 func buy_squad(kind := "aa") -> DefenderSquad:
 	if armory == null:
 		return null
@@ -385,11 +389,13 @@ func _process(delta: float) -> void:
 		_hint_label.text = info.hint
 		_hp_bar.value = info.hp
 		_heat_bar.visible = info.has("heat")
+		# A scope up draws its own reticle.
+		_crosshair.visible = current.wants_captured_mouse() and info.get("crosshair", true)
 		if info.has("heat"):
 			_heat_bar.value = info.heat
 			UIKit.set_bar_color(_heat_bar, info.get("bar_color", UIKit.DANGER if info.heat > 0.75 else UIKit.WARN))
 	else:
 		_weapon_label.text = "No post"
 		_status_label.text = "—"
-		_hint_label.text = "Number keys or Tab to take over a post" + (" · F1-F6 a squad · B buy an AA Squad · N a Flame Squad · M Infiltrators" if armory else "")
+		_hint_label.text = "Number keys or Tab to take over a post" + (" · F1-F6 a squad · B buy an AA Squad · N a Flame Squad · M Infiltrators · K a Sniper" if armory else "")
 		_heat_bar.visible = false
