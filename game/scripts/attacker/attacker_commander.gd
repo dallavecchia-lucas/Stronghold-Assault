@@ -175,6 +175,10 @@ func _attack(ids: Array, target_path: NodePath) -> void:
 	for u in list:
 		u.formation_id = 0
 		u.set_order({"type": "attack", "target": target})
+	# Ordered at by units that shoot, an infiltrator loses her low profile, as if a ping had
+	# revealed her.
+	if target is InfiltratorTrooper and list.any(func(u): return u.has_basic_attack()):
+		target.reveal()
 	if RamCharge.is_gate(target):
 		for pick in RamCharge.allocate(list, target):
 			pick[0].charge(target, pick[1])
