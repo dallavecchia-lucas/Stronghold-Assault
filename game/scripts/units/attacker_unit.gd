@@ -57,9 +57,20 @@ const POUNCE_SHORT := 0.6
 const POUNCE_SLACK := 1.0
 ## A strike that lands with the prey this much further than her reach (m) still hits.
 const STRIKE_SLACK := 0.6
+## Tagged by a Sniper (tag): defenders hit it this much harder, and its aim icon blinks once the tag has
+## this long left (s).
+const TAG_BONUS := 0.2
+const TAG_BLINK := 3.0
+## The icons over a unit (the aim, the ammo box, the bush): their texel sizes on screen in the RTS view
+## (its field of view's half-angle tangent: ICON_FOV_TAN); other views scale them to look the same.
+const TAG_ICON_SIZE := 0.0019
+const SUPPLY_ICON_SIZE := 0.0017
+const BUSH_ICON_SIZE := 0.0019
+const ICON_FOV_TAN := 0.5206  # tan(55 deg / 2)
 
 static var _supply_tex: ImageTexture
 static var _bush_tex: ImageTexture
+static var _tag_tex: ImageTexture
 
 static var _scenes := {}
 
@@ -201,6 +212,9 @@ var _lion: LionessRig  # set when the model carries the lioness's flamethrower n
 var _engaged := false
 var _supply_ring: MeshInstance3D
 var _supply_icon: Sprite3D
+## Snipers' tags on it: the tagging Sniper's instance id -> seconds left (tag); its aim icon.
+var _tags := {}
+var _tag_icon: Sprite3D
 var _hp_bar: Node3D
 var _hp_fill: MeshInstance3D
 var _fire_cd := 0.0
@@ -374,8 +388,9 @@ func has_sneak() -> bool:
 	return stats.has("sneak_cooldown")
 
 
+## A tagged lioness can't sneak (tag).
 func sneak_ready() -> bool:
-	return has_sneak() and sneak_cd <= 0.0 and is_alive() and not is_sneaking() and not is_pouncing()
+	return has_sneak() and sneak_cd <= 0.0 and is_alive() and not is_sneaking() and not is_pouncing() and not is_tagged()
 
 
 ## Stalking: see-through on the defender's side, a bush over her on the attacker's (_sneak_look).
@@ -433,6 +448,30 @@ func cooling_down() -> bool:
 ## Kangaroo passive: carries supplies for others (AttackerCommander hands them out).
 func resupplies() -> bool:
 	return stats.has("resupply_range")
+
+
+## A Sniper's round hit it (Sniper): `by` tags it for `seconds` (tagged again, its time starts over).
+## While it is tagged an aim icon hangs over it, on both sides; defenders hit it TAG_BONUS harder; and a
+## lioness can't sneak (a sneak under way ends).
+func tag(by: Object, seconds: float) -> void:
+	if not is_alive():
+		return
+	_tags[by.get_instance_id()] = seconds
+	end_sneak()
+
+
+## Seconds left on `by`'s tag (0: it hasn't tagged it).
+func tag_left(by: Object) -> float:
+	return _tags.get(by.get_instance_id(), 0.0)
+
+
+func is_tagged() -> bool:
+	return not _tags.is_empty()
+
+
+## The model's meshes (what a Sniper's thermal sight shows white-hot: SniperThermal).
+func model_meshes() -> Array:
+	return _model.find_children("*", "MeshInstance3D", true, false)
 
 
 func _ready() -> void:
@@ -557,6 +596,8 @@ func get_aim_point() -> Vector3:
 func take_damage(amount: float, from_team: int) -> void:
 	if hp <= 0.0 or from_team == team:
 		return
+	if is_tagged():
+		amount *= 1.0 + TAG_BONUS
 	hp -= amount
 	_update_hp_bar()
 	if hp <= 0.0:
@@ -588,6 +629,9 @@ func _die() -> void:
 	if has_sneak():
 		_sneak_look()
 	resupply = 0.0
+	_tags.clear()
+	if _tag_icon:
+		_tag_icon.visible = false
 	if _held:
 		_held.visible = false
 	if _supply_icon:
@@ -1438,6 +1482,10 @@ func _physics_process(delta: float) -> void:
 			velocity.y -= _gravity * delta
 			move_and_slide()
 		return
+	for id in _tags.keys():
+		_tags[id] -= delta
+		if _tags[id] <= 0.0:
+			_tags.erase(id)
 	_fire_cd -= delta
 	_retarget_cd -= delta
 	if _retarget_cd <= 0.0:
@@ -1785,16 +1833,29 @@ func _process(delta: float) -> void:
 			_model.rotation.z = sin(_anim_t * 2.2) * 0.06 if moving else lerpf(_model.rotation.z, 0.0, delta * 8.0)
 	if stats.anim not in ["flight", "rigged"]:
 		_model.rotation.x = _recoil * (0.08 if stats.radius < 1.0 else 0.015)
+	var cam := get_viewport().get_camera_3d()
 	if _hp_bar.visible:
 		_hp_bar.global_position = global_position + Vector3.UP * (stats.height + 0.5)
-		var cam := get_viewport().get_camera_3d()
 		if cam:
 			_hp_bar.global_basis = cam.global_basis
-	# Resupplied by a kangaroo: an ammo box floats over it (over a sneaking lioness's bush).
+	# The icons over it keep their size on screen whatever the camera's field of view (a Sniper's scope
+	# magnifies up to 12x): their sizes are for the RTS view's.
+	var icon := tan(deg_to_rad(cam.fov) * 0.5) / ICON_FOV_TAN if cam else 1.0
+	_tag_icon.pixel_size = TAG_ICON_SIZE * icon
+	_supply_icon.pixel_size = SUPPLY_ICON_SIZE * icon
+	if _bush:
+		_bush.pixel_size = BUSH_ICON_SIZE * icon
+	# Tagged by a Sniper: the aim icon over it, blinking as the last tag runs out.
+	_tag_icon.visible = is_tagged()
+	if _tag_icon.visible:
+		var left: float = _tags.values().max()
+		_tag_icon.global_position = global_position + Vector3.UP * (stats.height + 1.0)
+		_tag_icon.modulate.a = 1.0 if left > TAG_BLINK or fmod(left, 0.5) > 0.2 else 0.25
+	# Resupplied by a kangaroo: an ammo box floats over it (over a sneaking lioness's bush, or the aim icon).
 	var bush := _bush != null and _bush.visible
 	_supply_icon.visible = resupply > 0.0
 	if _supply_icon.visible:
-		_supply_icon.global_position = global_position + Vector3.UP * (stats.height + 1.0 + (0.95 if bush else 0.0) + 0.08 * sin(Time.get_ticks_msec() * 0.004))
+		_supply_icon.global_position = global_position + Vector3.UP * (stats.height + 1.0 + (0.95 if bush or _tag_icon.visible else 0.0) + 0.08 * sin(Time.get_ticks_msec() * 0.004))
 	if bush:
 		_bush.global_position = global_position + Vector3.UP * (stats.height + 1.3)
 
@@ -1909,7 +1970,7 @@ func _build_model() -> void:
 		_bush.shaded = false
 		_bush.no_depth_test = true
 		_bush.fixed_size = true  # the same size on screen however far out the camera is
-		_bush.pixel_size = 0.0019
+		_bush.pixel_size = BUSH_ICON_SIZE
 		_bush.top_level = true
 		_bush.visible = false
 		add_child(_bush)
@@ -1998,10 +2059,21 @@ func _build_hp_bar() -> void:
 	_supply_icon.shaded = false
 	_supply_icon.no_depth_test = true
 	_supply_icon.fixed_size = true  # the same size on screen however far out the camera is
-	_supply_icon.pixel_size = 0.0017
+	_supply_icon.pixel_size = SUPPLY_ICON_SIZE
 	_supply_icon.top_level = true
 	_supply_icon.visible = false
 	add_child(_supply_icon)
+	_tag_icon = Sprite3D.new()
+	_tag_icon.texture = _tag_texture()
+	_tag_icon.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	_tag_icon.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_tag_icon.shaded = false
+	_tag_icon.no_depth_test = true
+	_tag_icon.fixed_size = true  # the same size on screen however far out the camera is
+	_tag_icon.pixel_size = TAG_ICON_SIZE
+	_tag_icon.top_level = true
+	_tag_icon.visible = false
+	add_child(_tag_icon)
 
 
 ## The resupplied units' icon: a little ammo box, olive drab with a lid, a latch and a yellow
@@ -2023,6 +2095,33 @@ static func _supply_texture() -> ImageTexture:
 	img.fill_rect(Rect2i(4, 15, 16, 2), Color(0.98, 0.86, 0.3))
 	_supply_tex = ImageTexture.create_from_image(img)
 	return _supply_tex
+
+
+## A tagged unit's icon, on both sides: a sniper's aim, a red ring with four ticks pointing in at a dot,
+## outlined dark.
+static func _tag_texture() -> ImageTexture:
+	if _tag_tex:
+		return _tag_tex
+	var n := 27
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var c := Vector2(13.0, 13.0)
+	var red := Color(1.0, 0.22, 0.16)
+	var ink := Color(0.08, 0.02, 0.02, 0.9)
+	for y in n:
+		for x in n:
+			var p := Vector2(x, y) - c
+			var r := p.length()
+			var tick := (absf(p.x) <= 1.0 and absf(p.y) >= 3.5 and absf(p.y) <= 10.5) \
+					or (absf(p.y) <= 1.0 and absf(p.x) >= 3.5 and absf(p.x) <= 10.5)
+			var ring := absf(r - 8.6) <= 1.3
+			if tick or ring or r <= 1.6:
+				img.set_pixel(x, y, red)
+			elif absf(r - 8.6) <= 2.3 or r <= 2.6 or (absf(p.x) <= 2.0 and absf(p.y) >= 2.5 and absf(p.y) <= 11.5) \
+					or (absf(p.y) <= 2.0 and absf(p.x) >= 2.5 and absf(p.x) <= 11.5):
+				img.set_pixel(x, y, ink)
+	_tag_tex = ImageTexture.create_from_image(img)
+	return _tag_tex
 
 
 ## A sneaking lioness's icon on the attacker's side: a leafy bush, four clumps of leaves in a dark
