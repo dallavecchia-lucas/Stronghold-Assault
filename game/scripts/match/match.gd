@@ -208,3 +208,6 @@ func _autotest_report() -> void:
 					s.order_name(), s.get("plan"), extra, s.get("stats")])
 	for b in level.bases:
 		print("AUTOTEST %s controlled=%s capture=%.1f" % [b.display_name, b.controlled, b.capture])
+	var dogs := commander.units.values().filter(func(u): return u.has_dog_modes())
+	print("AUTOTEST dogs healing=%d sweeping=%d mine_blasts=%d mines_disarmed=%d" % [dogs.filter(func(u): return u.dog_mode == "heal").size(),
+			dogs.filter(func(u): return u.dog_mode == "sweep").size(), GroundMine.blasts, GroundMine.disarms])

@@ -31,6 +31,8 @@ extends Node
 ##   {"type": "blast", "units": [ids]}   lionesses light their fire blast (AttackerUnit.start_blast)
 ##   {"type": "line", "on": bool}   lionesses moved together form up in firing lines, or don't
 ##               (line_formation)
+##   {"type": "dog_mode", "units": [ids], "mode": "heal" | "sweep"}   Wolf Medics switch to healing or
+##               to minesweeping (AttackerUnit.set_dog_mode)
 ##   {"type": "scout", "units": [ids]}   toggle scout formation: the rhinos in the selection
 ##                                       ring the rest of it so their anti-air covers the mass
 ##
@@ -40,7 +42,9 @@ extends Node
 ##
 ## It also hands out the kangaroos' supplies (their passive): each kangaroo resupplies the units
 ## nearest it whose skills are cooling down, up to resupply_units of them, and no unit takes
-## supplies from two kangaroos (_update_resupply).
+## supplies from two kangaroos (_update_resupply). The healing dogs' patients likewise: each heals up
+## to heal_units hurt units near it, keeps them until they are full or out of its reach, and no unit
+## takes two dogs' healing (_update_heal).
 ##
 ## Every Forward Helipad Base the attackers hold (AttackerBase) adds AttackerBase.INCOME to the
 ## supply coming in (income_rate).
@@ -90,6 +94,7 @@ func _process(delta: float) -> void:
 	if _resupply_cd <= 0.0:
 		_resupply_cd = RESUPPLY_EVERY
 		_update_resupply()
+		_update_heal()
 
 
 ## Supply a second: the commander's own income and every helipad the attackers hold.
@@ -150,6 +155,9 @@ func submit(cmd: Dictionary) -> int:
 				u.start_blast()
 		"line":
 			line_formation = cmd.get("on", not line_formation)
+		"dog_mode":
+			for u in _resolve(cmd.units):
+				u.set_dog_mode(cmd.get("mode", "heal"))
 		"scout":
 			_toggle_scout(cmd.units)
 	return 0
@@ -300,6 +308,39 @@ func _update_resupply() -> void:
 		load[k] = load.get(k, 0) + 1
 	for u in units.values():
 		u.resupply = cut.get(u, 0.0)
+
+
+# ---------------------------------------------------------------- dogs' healing
+
+## Each healing dog keeps healing the units it took until they are full, fall or leave its reach, then
+## takes the hurt units nearest it, up to heal_units of them; the closest pairs go first, and a unit one dog
+## already heals is left to it (no stacking).
+func _update_heal() -> void:
+	var taken := {}
+	var dogs := []
+	for d in units.values():
+		if not d.heals():
+			continue
+		dogs.append(d)
+		d.patients = d.patients.filter(func(u): return d.can_heal(u) and not taken.has(u))
+		for u in d.patients:
+			taken[u] = d
+	var pairs := []
+	for d in dogs:
+		if d.patients.size() >= d.stats.heal_units:
+			continue
+		for u in units.values():
+			if not taken.has(u) and d.can_heal(u):
+				pairs.append([d.global_position.distance_to(u.global_position), d, u])
+	pairs.sort_custom(func(a, b): return a[0] < b[0])
+	for p in pairs:
+		var d: AttackerUnit = p[1]
+		if taken.has(p[2]) or d.patients.size() >= d.stats.heal_units:
+			continue
+		d.patients.append(p[2])
+		taken[p[2]] = d
+	for u in units.values():
+		u.medic = taken.get(u)
 
 
 # ---------------------------------------------------------------- scout formation
