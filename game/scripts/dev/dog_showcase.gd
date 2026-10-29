@@ -38,7 +38,7 @@ const SWEEP_MAX := 170.0
 ## hp] (the first two on its way in; the ram is the one that walks off), the chimp that runs up next to it,
 ## the second dog's way in and the unit only it reaches.
 const HEAL_AT := Vector3(2.0, 0.0, 172.0)
-const DOG_FROM := Vector3(0.0, 0.0, 16.0)
+const DOG_FROM := Vector3(0.0, 0.0, 14.0)
 const DOG_STOP := Vector3(0.0, 0.0, 1.0)
 const HURT := [["breacher", Vector3(2.4, 0.0, 4.0), 150.0], ["kangaroo", Vector3(-2.2, 0.0, 3.5), 24.0],
 		["hippo", Vector3(5.0, 0.0, -4.0), 880.0], ["rhino", Vector3(-5.5, 0.0, -4.5), 1400.0]]
@@ -68,7 +68,7 @@ const FIELD_ZOOM := 36.0
 const DIG_ZOOM := 15.0
 ## Video: cameras other than the RTS view, as [phase, from, to (phase seconds), shot].
 const SHOTS := [["intro", 0.0, 3.0, "dog"], ["hidden", 3.0, 7.0, "field_low"], ["sweep", 14.5, 19.0, "dig"]]
-## Played faster: [phase, from, to, every k-th frame kept].
+## Played faster: [phase, from, to, every k-th frame kept] (the sweep's only until the field is clear).
 const FAST := [["sweep", 26.0, 999.0, 4]]
 ## Left out: [phase, from, to].
 const CUTS := [["heal", 24.5, 27.5]]
@@ -179,7 +179,7 @@ func _ready() -> void:
 	rig.pitch = deg_to_rad(-50.0)
 	rig._target_zoom = HEAL_ZOOM
 	rig.zoom = HEAL_ZOOM
-	rig.focus(HEAL_AT + Vector3(0, 0, 6))
+	rig.focus(HEAL_AT + Vector3(0, 0, 9))
 	_pan_from = rig.position
 	_pan_to = rig.position
 	cam = Camera3D.new()
@@ -305,6 +305,7 @@ func _heal_step() -> void:
 	if _phase_at(2.1, "order"):
 		_right_click(false)
 		_keycap_show("RMB")
+		_pan(HEAL_AT + Vector3(0, 0, 4), 2.1, 4.0)
 	if _phase_at(2.8, "key_off"):
 		_keycap.visible = false
 	if _phase_at(3.4, "first_two"):
@@ -362,6 +363,7 @@ func _heal_step() -> void:
 	if _phase_at(19.5, "deselect"):
 		controller._set_selection([])
 		_say("", "")
+		_move_cursor(get_viewport().get_visible_rect().size * Vector2(0.72, 0.42), 19.5, 20.5)
 
 
 ## The minefield across the lane: the defender sees it, the attacking player doesn't; a rifleman walking
@@ -636,8 +638,8 @@ func _direct() -> void:
 		_place_cam(shot)
 	var fast := 1
 	for f in FAST:
-		if _within(f):
-			fast = f[3]
+		if _within(f) and not (f[0] == "sweep" and _sweep_done >= 0.0):
+			fast = f[3]  # the sweep at its own pace again once the field is clear
 	if fast != _fast:
 		if _fast > 1:
 			print("FAST %d frames %d-%d" % [_fast, _fast_from, _frame - 1])
