@@ -76,6 +76,22 @@ extends RefCounted
 ##   stood then by a red blur, for ping_mark seconds, that doesn't follow it (GiraffePing). Even under
 ##   adaptive camo; an infiltrator caught out of camo is revealed (InfiltratorTrooper.revealed).
 ##   Reused after ping_cooldown.
+## sneak_*: sneak (Armored Lioness). For sneak_duration seconds she stalks (no faster than sneak_speed,
+##   her Sneak clip): on the defender's side she is see-through (sneak_alpha opaque, no shadow, no
+##   health bar), on the attacker's a bush icon hangs over her. She picks no fights on her own while it
+##   lasts. Ordered to attack a defender on the ground, she stalks up to within pounce_range and pounces
+##   (it ends the sneak). Reused after sneak_cooldown.
+## pounce_*: the pounce (the Pounce clip, pounce_time long): she crouches, springs pounce_launch seconds in
+##   and flies an arc onto the prey (pounce_height high, plus pounce_arc per metre), lands at pounce_land and
+##   it takes pounce_damage; then she mauls it with her basic attack.
+## strike_hit: a melee basic attack with its own clip (anim_strike): the blow lands this long into it.
+## blast_*: fire blast (Armored Lioness). The flamethrowers on her back burn a cone in front of her for
+##   blast_duration seconds (blast_range out, blast_angle either side), always where her face looks: she can
+##   move meanwhile. Defenders in it take blast_dps and burn on for blast_afterburn seconds at
+##   blast_afterburn_dps (LionessBlast). It ends a sneak, and never sets trees alight. Reused after
+##   blast_cooldown.
+## line: moved together, these form up in firing lines as they go (LionessLine), unless the attacking
+##   player has turned that off (AttackerCommander.line_formation).
 ## forest_speed: movement speed multiplier inside a forest (LevelBuilder.FORESTS).
 ## climb_speed: m/s up and down stairs and ladders.
 ## structure_mult: damage multiplier against gates / the keep.
@@ -84,7 +100,9 @@ extends RefCounted
 ##   clips: anim_move / anim_idle, with the move clip
 ##   sped up or slowed to match ground speed relative to anim_ref_speed (m/s), within anim_scale
 ##   ([slowest, fastest], default [0.6, 2.0]: a kangaroo hops at about the same rate whatever its
-##   speed, lengthening its bounds instead).
+##   speed, lengthening its bounds instead). anim_run: a faster gait's clip (authored at anim_run_speed,
+##   played within run_scale) taking over above run_above m/s; anim_sneak: the clip while sneaking
+##   (authored at anim_sneak_speed).
 ## steer: only move where the model faces, turning at turn_rate (rad/s), no strafing.
 ## model: path to a processed GLB (front facing +Z, feet at origin).
 
@@ -208,16 +226,26 @@ const DATA := {
 		"bombard_splash": 6.0, "bombard_spread": 0.008, "bombard_aim_time": 1.5, "bombard_hold": 1.0,
 		"model": "res://assets/units/semi_futuristic_pair/semi_futuristic_pair_rigged.glb",
 	},
-	# ---- Placeholder stats: models are in, roles still to be designed.
 	"lioness": {
-		"name": "Armored Lioness", "cost": 90, "hp": 160.0, "speed": 6.5,
+		"name": "Armored Lioness", "cost": 120, "hp": 300.0, "speed": 6.0,
 		"sight": 32.0,
-		"range": 22.0, "damage": 10.0, "fire_interval": 0.5, "spread": 0.04,
-		"structure_mult": 0.5, "radius": 0.6, "height": 1.6,
-		"role": "infantry", "anim": "rigged", "hotkey": KEY_Y,
-		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 3.0,
+		# Claws and teeth: within reach of her head and fore paws.
+		"range": 2.6, "damage": 28.0, "fire_interval": 0.75, "spread": 0.0,
+		"structure_mult": 0.3, "radius": 0.6, "height": 1.6,
+		"role": "melee", "anim": "rigged", "hotkey": KEY_Y,
+		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 1.7, "anim_scale": [0.6, 2.0],
+		"anim_run": "Run", "anim_run_speed": 6.0, "run_above": 3.4, "run_scale": [0.6, 1.3],
+		"anim_sneak": "Sneak", "anim_sneak_speed": 2.2, "anim_strike": "Strike", "strike_hit": 0.36,
+		"sneak_duration": 10.0, "sneak_cooldown": 50.0, "sneak_speed": 2.6, "sneak_alpha": 0.3,
+		"pounce_range": 12.0, "pounce_damage": 70.0, "pounce_launch": 0.38, "pounce_land": 0.86,
+		"pounce_time": 1.2, "pounce_height": 0.5, "pounce_arc": 0.08,
+		# The two flamethrowers on her back.
+		"blast_duration": 3.0, "blast_cooldown": 45.0, "blast_range": 8.0, "blast_angle": 0.42,
+		"blast_dps": 60.0, "blast_afterburn": 2.0, "blast_afterburn_dps": 12.0,
+		"line": true,
 		"model": "res://assets/units/armored_lioness_unit/armored_lioness_unit_rigged.glb",
 	},
+	# ---- Placeholder stats: the model is in, its role still to be designed.
 	"serpent": {
 		"name": "Serpent Sniper", "cost": 110, "hp": 80.0, "speed": 3.5,
 		"sight": 50.0,
