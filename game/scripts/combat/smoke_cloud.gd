@@ -38,12 +38,14 @@ static func blocks(from: Vector3, to: Vector3) -> bool:
 	return false
 
 
-## A small puff that rises and fades in about a second (overheating guns). Blocks nothing.
-static func wisp(ctx: Node, pos: Vector3, size := 0.8) -> void:
+## A small puff that rises and fades in about a second (overheating guns). Blocks nothing. Drawn on
+## render `layers` (a camera can leave it out).
+static func wisp(ctx: Node, pos: Vector3, size := 0.8, layers := 1) -> void:
 	var mi := MeshInstance3D.new()
 	var quad := QuadMesh.new()
 	quad.size = Vector2.ONE * size
 	mi.mesh = quad
+	mi.layers = layers
 	var mat := puff_material(Color(0.55, 0.55, 0.55, 0.7))
 	mi.material_override = mat
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

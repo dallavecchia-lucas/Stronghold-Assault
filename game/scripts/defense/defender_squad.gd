@@ -1,15 +1,15 @@
 class_name DefenderSquad
 extends Node3D
 ## A defender post of five troopers (SquadTrooper) that the player takes over in third person: the
-## Gunner Squad, the AA Squads and the Flame Squads. The player drives the trooper in the middle of
-## the formation; the other four follow it (SquadFormation: a wedge in the open, squeezing in and
-## filing behind the leader through tunnels, around trees and rocks) and aim wherever the player
-## aims. Blast doors open for the squad as it comes up to them (Structure.hold_open), so it can
-## sally out through a standing gate. Left to itself the squad runs its own AI (_ai_control). Lost
-## troopers are replaced one at a time from the post; when all five are down the squad is gone for
-## RESPAWN_TIME (or for good, if it doesn't respawn). If the leader falls, the trooper nearest it
-## takes the lead (and the player's camera and keys) and the others follow it as they did the old
-## one, a column walking on down the same trail.
+## Gunner Squad, the AA Squads, the Flame Squads and the Infiltrator Squads (the Sniper is a post of
+## one: squad_size). The player drives the trooper in the middle of the formation; the other four
+## follow it (SquadFormation: a wedge in the open, squeezing in and filing behind the leader through
+## tunnels, around trees and rocks) and aim wherever the player aims. Blast doors open for the squad
+## as it comes up to them (Structure.hold_open), so it can sally out through a standing gate. Left to
+## itself the squad runs its own AI (_ai_control). Lost troopers are replaced one at a time from the
+## post; when all five are down the squad is gone for RESPAWN_TIME (or for good, if it doesn't
+## respawn). If the leader falls, the trooper nearest it takes the lead (and the player's camera and
+## keys) and the others follow it as they did the old one, a column walking on down the same trail.
 ##
 ## What the troopers fight with, and the squad's AI, come from the subclass.
 ##
@@ -65,6 +65,8 @@ var possessed := false
 var respawns := true
 ## Hit points of one trooper (for the squad's health bar).
 var trooper_hp := 400.0
+## How many troopers it fields (SIZE; one for the Sniper).
+var squad_size := SIZE
 ## The squad's post: where it holds and respawns, facing its -Z.
 var home := Transform3D.IDENTITY
 ## Gates the squad opens on its way through.
@@ -95,10 +97,13 @@ var hp: float:
 		return s
 var max_hp: float:
 	get:
-		return SIZE * trooper_hp
+		return squad_size * trooper_hp
 
 var cam_yaw := 0.0
 var cam_pitch := deg_to_rad(-12.0)
+## The camera's arm out from its pivot, and while aiming (CAM_ARM, CAM_AIM_ARM unless the squad says).
+var cam_arm := CAM_ARM
+var cam_aim_arm := CAM_AIM_ARM
 var _cam: Camera3D
 var _cam_pivot := Vector3.ZERO
 ## 1 when the lead has just changed hands, running down to 0 while the camera glides to the new one.
@@ -221,7 +226,7 @@ func get_hud_info() -> Dictionary:
 
 func _spawn_all() -> void:
 	# In a line behind the post until the navmesh is up and the formation can be worked out.
-	for i in SIZE:
+	for i in squad_size:
 		_spawn(home.origin + home.basis.z * (float(i) * SquadFormation.TRAIL_SPACING))
 	_pick_leader()
 
@@ -314,7 +319,7 @@ func _physics_process(delta: float) -> void:
 	_update_followers(delta)
 	_arm_troopers(delta)
 	_open_gates()
-	if troopers.size() < SIZE:
+	if troopers.size() < squad_size:
 		_reinforce_cd -= delta
 		if _reinforce_cd <= 0.0:
 			_reinforce_cd = REINFORCE_TIME
@@ -599,7 +604,7 @@ func _update_camera(delta: float) -> void:
 	else:
 		_cam_pivot = _cam_pivot.lerp(target, minf(delta * follow, 1.0))
 	var basis := Basis(Vector3.UP, cam_yaw) * Basis(Vector3.RIGHT, cam_pitch)
-	var arm := CAM_ARM.lerp(CAM_AIM_ARM, _aim_t)
+	var arm := cam_arm.lerp(cam_aim_arm, _aim_t)
 	var want := _cam_pivot + basis * arm
 	# Pulled in wherever a wall or the tunnel roof is in the way.
 	var ball := SphereShape3D.new()
