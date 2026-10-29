@@ -913,6 +913,7 @@ func start_sneak() -> bool:
 	sneak_cd = stats.sneak_cooldown
 	_sneak_left = stats.sneak_duration
 	_agent.max_speed = _speed()
+	_sneak_look()  # this frame, not the next
 	return true
 
 
@@ -923,6 +924,7 @@ func end_sneak() -> void:
 	_sneak_left = 0.0
 	if _agent:
 		_agent.max_speed = _speed()
+	_sneak_look()
 
 
 ## Sneaking, with an attack order on a defender on the ground: once it is within pounce_range and in
