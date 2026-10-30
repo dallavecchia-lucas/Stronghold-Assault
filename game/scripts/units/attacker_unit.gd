@@ -8,6 +8,16 @@ extends CharacterBody3D
 ##   {"type": "raid"}                          raider inside the stronghold, on its own (_raid_target)
 ## Behaviour differences per unit come from UnitTypes role (infantry, melee, artillery,
 ## healer, flying, anti_air).
+##
+## The Wolf Medic (the dog, role healer) has two modes, one always on (dog_mode, set_dog_mode):
+##   "heal"   it heals up to heal_units hurt allies within heal_range at heal_rate HP/s each. It sticks to
+##            the ones it took until they are full or out of its reach, then takes the next; no unit takes
+##            two dogs' healing (AttackerCommander._update_heal hands them out, into patients).
+##   "sweep"  it sniffs out the defenders' mines within sweep_range (hidden from the attacking player),
+##            walks up to one (only by a way that keeps clear of every other: DogSweep), digs it out and
+##            disarms it (disarm_time seconds, the Dig clip; the mine shows to the attacker while it digs),
+##            then the next, the minefield's outer rim first. It sweeps while idle or attack-moving; a
+##            plain move (or any new order) calls the digging off.
 
 signal died(unit: AttackerUnit)
 ## A Sky Talon's strafe round landed / it dropped its bomb (for showcases and the HUD).
@@ -20,6 +30,8 @@ signal pinged(ping: GiraffePing)
 ## A lioness sprang at `prey` (her pounce), and lit her fire blast.
 signal pounced(prey: Node3D)
 signal blasted(blast: LionessBlast)
+## A dog dug a mine out and disarmed it.
+signal mine_disarmed(mine: GroundMine)
 
 const HEAL_COLOR := Color(0.35, 1.0, 0.45)
 const AA_COLOR := Color(1.0, 0.9, 0.4)
@@ -67,10 +79,18 @@ const TAG_ICON_SIZE := 0.0019
 const SUPPLY_ICON_SIZE := 0.0017
 const BUSH_ICON_SIZE := 0.0019
 const ICON_FOV_TAN := 0.5206  # tan(55 deg / 2)
+## The healed units' icon (a medic's cross) and the dogs' rings: how far a dog heals, and sniffs out mines.
+const HEAL_ICON_SIZE := 0.0017
+const SWEEP_COLOR := Color(1.0, 0.72, 0.2, 0.75)
+## Seconds between a sweeping dog's looks for its next mine (and checks that its way there is still clear).
+const SWEEP_EVERY := 0.5
+## How far ahead an attack-moving sweeping dog with no mine to go for looks for mines on its way (m).
+const WAY_AHEAD := 1.2
 
 static var _supply_tex: ImageTexture
 static var _bush_tex: ImageTexture
 static var _tag_tex: ImageTexture
+static var _heal_tex: ImageTexture
 
 static var _scenes := {}
 
@@ -109,6 +129,14 @@ var blast_cd := 0.0
 ## Share a kangaroo nearby cuts off its skills' cooldowns (the kangaroo's passive, handed out by
 ## AttackerCommander): 0 when none does.
 var resupply := 0.0
+## Wolf Medic: "heal" or "sweep" (see above); the units it is healing (AttackerCommander hands them out).
+var dog_mode := "heal"
+var patients: Array = []
+## The dog healing this unit, or null.
+var medic: AttackerUnit = null
+## Sweeping: the mine it is going for or digging out, and how many it has disarmed.
+var sweep_mine: GroundMine = null
+var mines_disarmed := 0
 ## Gate this ram is charging (RamCharge), and its slot across the doorway.
 var charge_gate: Structure = null:
 	set(g):
@@ -130,6 +158,7 @@ var selected := false:
 			_supply_ring.visible = v
 		if _ping_ring:
 			_ping_ring.visible = v
+		_dog_rings()
 		_update_hp_bar()
 
 var _agent: NavigationAgent3D
@@ -208,6 +237,18 @@ var _strike_hit := false
 var _clip_restart := false
 var _blast: LionessBlast
 var _lion: LionessRig  # set when the model carries the lioness's flamethrower nozzles
+## Sweeping: the way to the spot it digs its mine from, that spot, seconds to its next look, seconds into
+## the dig (-1: not digging) and the last throw of dirt (a quarter of the Dig clip).
+var _sweep_path: Array[Vector3] = []
+var _sweep_spot := Vector3.INF
+var _sweep_cd := 0.0
+var _dig_t := -1.0
+var _spray_k := -1
+## Healing: a beam to each unit it heals; the icon over a healed unit; the dog's rings (heal, sweep).
+var _beams: Array[MeshInstance3D] = []
+var _heal_icon: Sprite3D
+var _heal_ring: MeshInstance3D
+var _sweep_ring: MeshInstance3D
 ## Fighting what it has in range and sight this frame (it stands and faces it).
 var _engaged := false
 var _supply_ring: MeshInstance3D
@@ -450,6 +491,54 @@ func resupplies() -> bool:
 	return stats.has("resupply_range")
 
 
+## Wolf Medic: two modes, one always on (healing or minesweeping: dog_mode).
+func has_dog_modes() -> bool:
+	return stats.has("heal_units")
+
+
+## Healing (dog_mode "heal"): it heals the units in patients.
+func heals() -> bool:
+	return has_dog_modes() and dog_mode == "heal" and is_alive()
+
+
+## Minesweeping (dog_mode "sweep").
+func sweeps() -> bool:
+	return has_dog_modes() and dog_mode == "sweep" and is_alive()
+
+
+## Switches the dog to `mode` ("heal" or "sweep"). Leaving healing it lets go of the units it heals;
+## leaving sweeping, of the mine it was going for or digging out.
+func set_dog_mode(mode: String) -> void:
+	if not has_dog_modes() or mode == dog_mode or mode not in ["heal", "sweep"]:
+		return
+	dog_mode = mode
+	patients.clear()
+	_drop_mine()
+	_sweep_cd = 0.0
+	_dog_rings()
+
+
+## Digging a mine out (the Dig clip): it stands until it is done.
+func is_digging() -> bool:
+	return _dig_t >= 0.0
+
+
+## Where it digs its mine out from (INF: none).
+func sweep_spot() -> Vector3:
+	return _sweep_spot
+
+
+## How far it has got digging its mine out (0-1; 0 when not digging).
+func dig_progress() -> float:
+	return clampf(_dig_t / stats.disarm_time, 0.0, 1.0) if is_digging() else 0.0
+
+
+## A unit a healing dog may heal: a live, hurt ally (not itself) within heal_range.
+func can_heal(u: AttackerUnit) -> bool:
+	return u != self and is_instance_valid(u) and u.is_alive() and u.hp < u.stats.hp \
+			and global_position.distance_to(u.global_position) <= stats.heal_range
+
+
 ## A Sniper's round hit it (Sniper): `by` tags it for `seconds` (tagged again, its time starts over).
 ## While it is tagged an aim icon hangs over it, on both sides; defenders hit it TAG_BONUS harder; and a
 ## lioness can't sneak (a sneak under way ends).
@@ -525,6 +614,9 @@ func _ready() -> void:
 func set_order(o: Dictionary) -> void:
 	if raiding:
 		return
+	if has_dog_modes():
+		_drop_mine()  # a new order calls the digging off (attack-moving, it sweeps again on the way)
+		_sweep_cd = SWEEP_EVERY
 	charge_gate = null  # a new order calls off a charge (RamCharge hands slots out after this)
 	# Only infiltrators can reach the keep: the rest close in on the nearest broken gate.
 	if o.type == "attack" and o.target.get("buried") and not fits_inside():
@@ -557,7 +649,7 @@ func set_order(o: Dictionary) -> void:
 
 
 func is_idle() -> bool:
-	return not raiding and order.type == "idle" and not Combat.is_valid_target(target)
+	return not raiding and order.type == "idle" and not Combat.is_valid_target(target) and sweep_mine == null
 
 
 ## Open breach link whose outside end is near `pos`, or null.
@@ -629,6 +721,14 @@ func _die() -> void:
 	if has_sneak():
 		_sneak_look()
 	resupply = 0.0
+	patients.clear()
+	medic = null
+	_drop_mine()
+	for b in _beams:
+		b.visible = false
+	if _heal_icon:
+		_heal_icon.visible = false
+	_dog_rings()
 	_tags.clear()
 	if _tag_icon:
 		_tag_icon.visible = false
@@ -1090,21 +1190,148 @@ func nozzle(k: int) -> Transform3D:
 	return Transform3D(Basis(global_basis.x, -global_basis.z, global_basis.y), at)
 
 
-## Medic: patch up the most hurt ally in range.
-func _heal_tick() -> void:
-	_fire_cd = stats.fire_interval
-	var best: AttackerUnit = null
-	var worst := 0.999
-	for u in get_tree().get_nodes_in_group("attacker_units"):
-		if u == self:
+## Wolf Medic, every frame: healing, it heals the units it took; sweeping, it looks for its next mine, walks
+## up to it and digs it out. True while the sweep moves it (or holds it digging): its order waits.
+func _dog_tick(delta: float) -> bool:
+	if heals():
+		for u in patients:
+			if can_heal(u):
+				u.heal(stats.heal_rate * delta)
+		return false
+	if raiding or not sweeps():
+		return false
+	if sweep_mine != null and not (is_instance_valid(sweep_mine) and sweep_mine.is_laid()):
+		_drop_mine()  # gone off under another unit, or taken up by its squad
+	_sweep_cd -= delta
+	if sweep_mine == null:
+		if _sweep_cd <= 0.0 and order.type in ["idle", "attack_move"]:
+			_sweep_cd = SWEEP_EVERY
+			_take_mine(DogSweep.plan(self))
+		if sweep_mine == null:
+			# Attack-moving, it walks on only while its way keeps clear of the mines it knows are there; where
+			# it doesn't, it waits for a way to one to open (the others clearing the ones in the way). A plain
+			# move takes it on regardless.
+			if order.type == "attack_move" and not _way_clear():
+				_on_velocity_computed(Vector3.ZERO)
+				return true
+			return false
+	if is_digging():
+		_dig_tick(delta)
+		return true
+	if _sweep_cd <= 0.0:
+		_sweep_cd = SWEEP_EVERY
+		if DogSweep.blocked(self, _sweep_path, sweep_mine):
+			# Another mine has landed on its way: it thinks again.
+			_drop_mine()
+			_take_mine(DogSweep.plan(self))
+			if sweep_mine == null:
+				return false
+	_sweep_walk(delta)
+	return true
+
+
+## The next stretch of its order's way (WAY_AHEAD) keeps clear of every live mine within its sweep_range: no
+## nearer to one than DogSweep.CLEAR, nor nearer than it stands now.
+func _way_clear() -> bool:
+	if _agent.is_navigation_finished():
+		return true
+	var to := _agent.get_next_path_position() - global_position
+	to.y = 0.0
+	if to.length() < 0.01:
+		return true
+	var ahead := global_position + to.normalized() * WAY_AHEAD
+	for m in GroundMine.all:
+		if not m.is_laid() or _flat_to(m.spot()) > stats.sweep_range:
 			continue
-		var ratio: float = u.hp / u.stats.hp
-		if ratio < worst and global_position.distance_to(u.global_position) <= stats.range:
-			worst = ratio
-			best = u
-	if best:
-		best.heal(stats.heal_rate * stats.fire_interval)
-		Combat.spawn_tracer(self, _eye(), Combat.aim_point(best), HEAL_COLOR)
+		var d := Vector2(ahead.x - m.spot().x, ahead.z - m.spot().z).length()
+		if d < DogSweep.CLEAR and d < _flat_to(m.spot()):
+			return false
+	return true
+
+
+## While the sweep steers the dog it keeps to its own way, clear of the mines (avoidance would push it off
+## it); otherwise it avoids the others like everyone. Turned back on, avoidance starts from a standstill: it
+## carries on with the last velocity it was given until it gets a new one.
+func _avoid(on: bool) -> void:
+	if _agent.avoidance_enabled == on:
+		return
+	if on:
+		_agent.velocity = Vector3.ZERO
+	_agent.avoidance_enabled = on
+
+
+func _take_mine(plan: Dictionary) -> void:
+	if plan.is_empty():
+		return
+	sweep_mine = plan.mine
+	sweep_mine.sweeper = self
+	_sweep_path = plan.path
+	_sweep_spot = plan.spot
+
+
+## Lets go of its mine (disarmed, gone, or called off). A mine half dug out stays as far dug as it got.
+func _drop_mine() -> void:
+	if sweep_mine != null and is_instance_valid(sweep_mine) and sweep_mine.sweeper == self:
+		sweep_mine.sweeper = null
+	var had := sweep_mine != null
+	sweep_mine = null
+	_sweep_path.clear()
+	_sweep_spot = Vector3.INF
+	_dig_t = -1.0
+	if had and _agent and order.has("pos"):
+		_agent.target_position = order.pos
+
+
+## Walks its way to the dig spot (at sweep_speed), then turns to the mine and starts digging.
+func _sweep_walk(delta: float) -> void:
+	while not _sweep_path.is_empty() and _flat_to(_sweep_path[0]) < DogSweep.WAYPOINT:
+		_sweep_path.pop_front()
+	if _sweep_path.is_empty():
+		_on_velocity_computed(Vector3.ZERO)
+		_face(sweep_mine.spot(), delta)
+		var to := sweep_mine.spot() - global_position
+		var fwd := -global_basis.z
+		if Vector2(to.x, to.z).normalized().dot(Vector2(fwd.x, fwd.z).normalized()) > 0.96:
+			_dig_t = sweep_mine.dug * stats.disarm_time  # where a dog before it left off
+			_spray_k = -1
+		return
+	var to := _sweep_path[0] - global_position
+	to.y = 0.0
+	var speed: float = stats.sweep_speed
+	if _sweep_path.size() == 1:
+		speed = minf(speed, maxf(to.length() * 2.5, 0.5))  # easing onto the spot
+	_on_velocity_computed(to.normalized() * speed)
+
+
+## Digging: the mine comes up out of the ground (GroundMine.dig) and the dirt flies back under the dog;
+## after disarm_time seconds the mine is disarmed.
+func _dig_tick(delta: float) -> void:
+	_on_velocity_computed(Vector3.ZERO)
+	_face(sweep_mine.spot(), delta)
+	_dig_t += delta
+	sweep_mine.dig(_dig_t / stats.disarm_time)
+	_dig_spray()
+	if _dig_t >= stats.disarm_time:
+		var m := sweep_mine
+		m.disarm()
+		mines_disarmed += 1
+		_drop_mine()
+		_sweep_cd = 0.3
+		mine_disarmed.emit(m)
+
+
+## A throw of dirt each time a fore paw finishes its drag through the hole: dig_sprays a loop of the Dig
+## clip, the first dig_spray_at of the way into it (tools/gltf/animate_dog.py).
+func _dig_spray() -> void:
+	var f := fmod(_dig_t, 1.0)
+	if _anim and _anim.current_animation == stats.anim_dig and _anim.current_animation_length > 0.0:
+		f = _anim.current_animation_position / _anim.current_animation_length
+	var k := posmod(floori((f - stats.dig_spray_at) * stats.dig_sprays), stats.dig_sprays)
+	if k == _spray_k:
+		return
+	_spray_k = k
+	var fwd := -global_basis.z
+	DogSweep.spray(self, global_position + fwd * 0.3 + Vector3.UP * 0.25, -fwd)
 
 
 ## Rhino and elephant passive: stay locked on one enemy flyer until it dies or leaves aa_range,
@@ -1504,9 +1731,6 @@ func _physics_process(delta: float) -> void:
 	var move_to = null
 	# Skills cool down faster while a kangaroo resupplies the unit.
 	var cool := delta / (1.0 - resupply)
-	if role == "healer":
-		if _fire_cd <= 0.0:
-			_heal_tick()
 	if has_cluster_bomb():
 		cluster_cd = maxf(cluster_cd - cool, 0.0)
 		if _cluster_left > 0.0:
@@ -1549,6 +1773,11 @@ func _physics_process(delta: float) -> void:
 				_agent.max_speed = _speed()
 	if has_blast():
 		blast_cd = maxf(blast_cd - cool, 0.0)
+	if has_dog_modes():
+		var swept := _dog_tick(delta)
+		_avoid(not swept and charge_gate == null)
+		if swept:
+			return  # sweeping: walking up to its mine, digging it out, or waiting for a way in
 	if is_pouncing():
 		_pounce_tick(delta)  # she flies on her own: no orders, no avoidance
 		return
@@ -1782,7 +2011,7 @@ func _process(delta: float) -> void:
 	if _anim:
 		# Rigged model: play its clips, matching the move cycle to ground speed (within anim_scale).
 		# A kangaroo throwing a flash grenade plays its throw, a giraffe pinging its ping; a lioness
-		# runs above run_above (anim_run), stalks while she sneaks, pounces and strikes.
+		# runs above run_above (anim_run), stalks while she sneaks, pounces and strikes; a dog digs.
 		var clip: String = stats.anim_move if moving else stats.anim_idle
 		var ref: float = stats.get("anim_ref_speed", 1.0)
 		var rate: Array = stats.get("anim_scale", [0.6, 2.0])
@@ -1793,7 +2022,7 @@ func _process(delta: float) -> void:
 			clip = stats.anim_run
 			ref = stats.anim_run_speed
 			rate = stats.run_scale
-		var skill := is_throwing() or is_pinging() or is_pouncing() or is_striking()
+		var skill := is_throwing() or is_pinging() or is_pouncing() or is_striking() or is_digging()
 		if is_throwing():
 			clip = "Throw"
 		elif is_pinging():
@@ -1802,6 +2031,8 @@ func _process(delta: float) -> void:
 			clip = "Pounce"
 		elif is_striking():
 			clip = stats.anim_strike
+		elif is_digging():
+			clip = stats.anim_dig
 		if _anim.current_animation != clip:
 			_anim.play(clip, 0.15 if skill else 0.25)
 		elif _clip_restart:
@@ -1811,6 +2042,8 @@ func _process(delta: float) -> void:
 				if moving and not skill else 1.0
 	if has_sneak():
 		_sneak_look()
+	if has_dog_modes():
+		_heal_beams()
 	if _rig:
 		_pose_rig(delta)
 	match stats.anim:
@@ -1843,6 +2076,7 @@ func _process(delta: float) -> void:
 	var icon := tan(deg_to_rad(cam.fov) * 0.5) / ICON_FOV_TAN if cam else 1.0
 	_tag_icon.pixel_size = TAG_ICON_SIZE * icon
 	_supply_icon.pixel_size = SUPPLY_ICON_SIZE * icon
+	_heal_icon.pixel_size = HEAL_ICON_SIZE * icon
 	if _bush:
 		_bush.pixel_size = BUSH_ICON_SIZE * icon
 	# Tagged by a Sniper: the aim icon over it, blinking as the last tag runs out.
@@ -1858,6 +2092,11 @@ func _process(delta: float) -> void:
 		_supply_icon.global_position = global_position + Vector3.UP * (stats.height + 1.0 + (0.95 if bush or _tag_icon.visible else 0.0) + 0.08 * sin(Time.get_ticks_msec() * 0.004))
 	if bush:
 		_bush.global_position = global_position + Vector3.UP * (stats.height + 1.3)
+	# Healed by a dog: a medic's cross over it (over the other icons).
+	_heal_icon.visible = medic != null and is_instance_valid(medic) and medic.heals()
+	if _heal_icon.visible:
+		var under := (0.95 if bush or _tag_icon.visible else 0.0) + (0.95 if _supply_icon.visible else 0.0)
+		_heal_icon.global_position = global_position + Vector3.UP * (stats.height + 1.0 + under + 0.08 * sin(Time.get_ticks_msec() * 0.004 + 1.6))
 
 
 ## The sneak as each side sees it. The defending player sees her see-through (sneak_alpha opaque: the
@@ -1882,6 +2121,32 @@ func _sneak_look() -> void:
 ## True while the defending player sees her see-through (sneaking).
 func ghosted() -> bool:
 	return _look == 1
+
+
+## A healing dog: a beam from the medic pack on its back to each unit it heals.
+func _heal_beams() -> void:
+	var n := 0
+	if heals():
+		var from: Vector3 = global_position + Vector3.UP * stats.height * 0.62
+		for u in patients:
+			if n >= _beams.size() or not can_heal(u):
+				continue
+			var d: Vector3 = u.get_aim_point() - from
+			var x := d.cross(Vector3.UP if absf(d.normalized().y) < 0.95 else Vector3.RIGHT).normalized() * 0.045
+			var b := _beams[n]
+			b.global_transform = Transform3D(Basis(x, d, x.cross(d.normalized())), from + d * 0.5)
+			b.transparency = 0.3 + 0.25 * sin(Time.get_ticks_msec() * 0.008 + n * 2.0)
+			b.visible = true
+			n += 1
+	for k in range(n, _beams.size()):
+		_beams[k].visible = false
+
+
+## A selected dog's ring: how far it heals, or sniffs out mines (its mode's).
+func _dog_rings() -> void:
+	if _heal_ring:
+		_heal_ring.visible = selected and heals()
+		_sweep_ring.visible = selected and sweeps()
 
 
 ## Kangaroo: rears its chest up onto what it shoots at, so the SMGs strapped to its sides point at it,
@@ -1911,7 +2176,7 @@ func _build_model() -> void:
 	if not players.is_empty() and stats.has("anim_move"):
 		_anim = players[0]
 		var loops := [stats.anim_move, stats.anim_idle]
-		for k in ["anim_run", "anim_sneak"]:
+		for k in ["anim_run", "anim_sneak", "anim_dig"]:
 			if stats.has(k):
 				loops.append(stats[k])
 		for clip in loops:
@@ -1974,6 +2239,23 @@ func _build_model() -> void:
 		_bush.top_level = true
 		_bush.visible = false
 		add_child(_bush)
+	if has_dog_modes():
+		# The healing beams (_heal_beams): a thin cylinder each, stretched out to the unit it heals.
+		var tube := CylinderMesh.new()
+		tube.top_radius = 1.0
+		tube.bottom_radius = 1.0
+		tube.height = 1.0
+		tube.radial_segments = 6
+		tube.rings = 1
+		for k in stats.heal_units:
+			var b := MeshInstance3D.new()
+			b.mesh = tube
+			b.material_override = Mats.unshaded(Color(HEAL_COLOR, 0.7))
+			b.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			b.top_level = true
+			b.visible = false
+			add_child(b)
+			_beams.append(b)
 	if stats.get("carry_gun", false):
 		# Carried weapon placeholder until weapons get modeled.
 		_model.add_child(Mats.box_mesh(Vector3(0.12, 0.16, 0.9), Vector3(0.35, 1.15, -0.45),
@@ -2018,6 +2300,10 @@ func _build_ring() -> void:
 		_supply_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_supply_ring.visible = false
 		add_child(_supply_ring)
+	if has_dog_modes():
+		# Dashed circles showing how far the dog heals, and sniffs out mines (the mode it is in: _dog_rings).
+		_heal_ring = _dashed_ring(stats.heal_range, 40, Color(HEAL_COLOR, 0.75))
+		_sweep_ring = _dashed_ring(stats.sweep_range, 64, SWEEP_COLOR)
 	if has_ping():
 		# Dashed circle showing how far the giraffe's ping reaches.
 		var im := ImmediateMesh.new()
@@ -2030,6 +2316,20 @@ func _build_ring() -> void:
 		_ping_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_ping_ring.visible = false
 		add_child(_ping_ring)
+
+
+func _dashed_ring(radius: float, dashes: int, color: Color) -> MeshInstance3D:
+	var im := ImmediateMesh.new()
+	im.surface_begin(Mesh.PRIMITIVE_LINES)
+	RhinoAim.dashed_circle(im, Vector3.UP * 0.15, radius, dashes)
+	im.surface_end()
+	var ring := MeshInstance3D.new()
+	ring.mesh = im
+	ring.material_override = Mats.unshaded(color)
+	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	ring.visible = false
+	add_child(ring)
+	return ring
 
 
 func _build_hp_bar() -> void:
@@ -2074,6 +2374,17 @@ func _build_hp_bar() -> void:
 	_tag_icon.top_level = true
 	_tag_icon.visible = false
 	add_child(_tag_icon)
+	_heal_icon = Sprite3D.new()
+	_heal_icon.texture = _heal_texture()
+	_heal_icon.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	_heal_icon.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_heal_icon.shaded = false
+	_heal_icon.no_depth_test = true
+	_heal_icon.fixed_size = true  # the same size on screen however far out the camera is
+	_heal_icon.pixel_size = HEAL_ICON_SIZE
+	_heal_icon.top_level = true
+	_heal_icon.visible = false
+	add_child(_heal_icon)
 
 
 ## The resupplied units' icon: a little ammo box, olive drab with a lid, a latch and a yellow
@@ -2122,6 +2433,30 @@ static func _tag_texture() -> ImageTexture:
 				img.set_pixel(x, y, ink)
 	_tag_tex = ImageTexture.create_from_image(img)
 	return _tag_tex
+
+
+## A unit a dog heals: a medic's cross, red on a white disc, outlined dark, with a little shading on the
+## disc's lower right.
+static func _heal_texture() -> ImageTexture:
+	if _heal_tex:
+		return _heal_tex
+	var n := 23
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var c := Vector2(11.0, 11.0)
+	var red := Color(0.86, 0.1, 0.1)
+	for y in n:
+		for x in n:
+			var p := Vector2(x, y) - c
+			var r := p.length()
+			if r <= 9.6:
+				var cross := (absf(p.x) <= 2.0 and absf(p.y) <= 6.5) or (absf(p.y) <= 2.0 and absf(p.x) <= 6.5)
+				var shade := 0.88 if p.x + p.y > 9.0 else 1.0
+				img.set_pixel(x, y, red if cross else Color(0.97, 0.97, 0.95) * shade)
+			elif r <= 11.0:
+				img.set_pixel(x, y, Color(0.06, 0.08, 0.06, 0.9))
+	_heal_tex = ImageTexture.create_from_image(img)
+	return _heal_tex
 
 
 ## A sneaking lioness's icon on the attacker's side: a leafy bush, four clumps of leaves in a dark
