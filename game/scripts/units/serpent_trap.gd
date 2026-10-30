@@ -165,8 +165,9 @@ static func release(n: Node) -> void:
 		n.remove_meta("held_by")
 
 
+## Held by a snake that is still there (one gone without letting go holds nothing).
 static func is_held(n: Node) -> bool:
-	return n != null and n.has_meta("held_by")
+	return n != null and n.has_meta("held_by") and is_instance_id_valid(n.get_meta("held_by"))
 
 
 ## The defender on the ground nearest the bush within `reach` of it (flat) that a snake coiled round it strikes:
