@@ -20,6 +20,8 @@ extends CanvasLayer
 ## F with no rhino or talon skill ready: the selected lionesses sneak (then RMB a defender: they pounce)
 ## G with no bison or talon skill ready: the selected lionesses' fire blast
 ## T with no rhino selected: lionesses moved together form firing lines, or don't (the HUD's toggle too)
+## T with no rhino or lioness selected: the selected Wolf Medics switch between healing and minesweeping
+##    (the HUD's button too)
 ## The fog of war (AttackerVision) dims the land the army doesn't see (FogOverlay); defenders in it
 ## can't be ordered at.
 
@@ -73,6 +75,7 @@ var _missile_preview: MeshInstance3D
 var _missile_mesh: ImmediateMesh
 var _aim_label: Label
 var _line_button: Button
+var _dog_button: Button
 var _fog: FogOverlay
 
 
@@ -200,10 +203,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			return
 		if event.physical_keycode == SCOUT_KEY:
 			_alive_selection()
-			if selected.any(func(u): return u.stats.get("scouts", false)) or not selected.any(func(u): return u.stats.get("line", false)):
-				commander.submit({"type": "scout", "units": selected.map(func(u): return u.unit_id)})
-			else:
+			if selected.any(func(u): return u.stats.get("line", false)) and not selected.any(func(u): return u.stats.get("scouts", false)):
 				toggle_lines()
+			elif not _dogs().is_empty() and not selected.any(func(u): return u.stats.get("scouts", false)):
+				toggle_dog_mode()
+			else:
+				commander.submit({"type": "scout", "units": selected.map(func(u): return u.unit_id)})
 			return
 		for type_id in UnitTypes.ORDER:
 			if event.physical_keycode == UnitTypes.DATA[type_id].hotkey:
@@ -537,6 +542,23 @@ func toggle_lines() -> void:
 	commander.submit({"type": "line", "on": not commander.line_formation})
 
 
+# ---------------------------------------------------------------- Wolf Medics
+
+func _dogs() -> Array:
+	_alive_selection()
+	return selected.filter(func(u): return u.has_dog_modes())
+
+
+## T (with no rhino or lioness selected) or the HUD's button: the selected dogs switch mode, all to
+## minesweeping unless all of them sweep already (then all to healing).
+func toggle_dog_mode() -> void:
+	var dogs := _dogs()
+	if dogs.is_empty():
+		return
+	var mode := "heal" if dogs.all(func(u): return u.dog_mode == "sweep") else "sweep"
+	commander.submit({"type": "dog_mode", "units": dogs.map(func(u): return u.unit_id), "mode": mode})
+
+
 # ---------------------------------------------------------------- elephant missiles
 
 func _ready_elephants() -> Array:
@@ -674,9 +696,17 @@ func _build_hud() -> void:
 	_line_button.pressed.connect(toggle_lines)
 	_line_button.visible = false
 	info.add_child(_line_button)
+	# Wolf Medics: their mode (healing or minesweeping) and the switch, while any are selected.
+	_dog_button = UIKit.button("", 13)
+	_dog_button.focus_mode = Control.FOCUS_NONE
+	_dog_button.tooltip_text = "Healing: each dog heals up to 2 hurt units near it until they are full\nMinesweeping: each dog sniffs out the mines round it and digs them out, the minefield's outer rim first"
+	_dog_button.pressed.connect(toggle_dog_mode)
+	_dog_button.visible = false
+	info.add_child(_dog_button)
 
+	# Two rows of unit buttons and the spawn points three to a row: the panel fits the screen (1600 wide).
 	var grid := GridContainer.new()
-	grid.columns = 8
+	grid.columns = ceili(UnitTypes.ORDER.size() / 2.0)
 	grid.add_theme_constant_override("h_separation", 6)
 	grid.add_theme_constant_override("v_separation", 6)
 	row.add_child(grid)
@@ -693,7 +723,8 @@ func _build_hud() -> void:
 
 	var sp := VBoxContainer.new()
 	sp.add_child(UIKit.label("SPAWN AT  [Tab]", 12, Color(0.7, 0.75, 0.85)))
-	var sp_row := HBoxContainer.new()
+	var sp_row := GridContainer.new()
+	sp_row.columns = 3
 	var bg := ButtonGroup.new()
 	for i in level.spawn_names.size():
 		var b := UIKit.button(level.spawn_names[i], 15)
@@ -710,7 +741,7 @@ func _build_hud() -> void:
 	row.add_child(sp)
 	set_spawn_point(0)
 
-	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nBisons: G bombardment (LMB fire, RMB cancel), onto the gun decks and roofs too\nTalons: F strafe run (press LMB on the target, drag the way to fly, let go) · G bomb strike (LMB fire) · RMB cancels\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nGiraffes: see furthest through the fog · P ping: marks every defender it reaches, even under camo, and reveals infiltrators out of camo\nKangaroos: R flash grenade (LMB fire, RMB cancel) when no hippo's smoke is ready · they resupply units nearby\nLionesses: F sneak (then RMB a defender: they pounce) · G fire blast · T firing lines on/off when moved together\nChimps / Rams / Kangaroos: RMB next to a broken gate to send them in\nHelipads (S/E/W Pad): spawn there and +%.1f supply/s each while you hold them · sabotaged, stand ground units by one to retake it" % AttackerBase.INCOME,
+	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nBisons: G bombardment (LMB fire, RMB cancel), onto the gun decks and roofs too\nTalons: F strafe run (press LMB on the target, drag the way to fly, let go) · G bomb strike (LMB fire) · RMB cancels\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nGiraffes: see furthest through the fog · P ping: marks every defender it reaches, even under camo, and reveals infiltrators out of camo\nKangaroos: R flash grenade (LMB fire, RMB cancel) when no hippo's smoke is ready · they resupply units nearby\nLionesses: F sneak (then RMB a defender: they pounce) · G fire blast · T firing lines on/off when moved together\nWolf Medics: T healing (2 units each) / minesweeping (they find the hidden mines and dig them out; RMB sweeps on the way, Ctrl+RMB doesn't)\nChimps / Rams / Kangaroos: RMB next to a broken gate to send them in\nHelipads (S/E/W Pad): spawn there and +%.1f supply/s each while you hold them · sabotaged, stand ground units by one to retake it" % AttackerBase.INCOME,
 			13, Color(0.85, 0.85, 0.85, 0.75))
 	help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	help.grow_vertical = Control.GROW_DIRECTION_BEGIN
@@ -824,6 +855,21 @@ func _process(_delta: float) -> void:
 			if soonest > 0.0:
 				_selection_label.text += "  %ds" % ceili(soonest)
 		_line_button.text = "Firing lines: %s  [T]" % ("ON" if commander.line_formation else "OFF")
+	var dogs := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_dog_modes())
+	_dog_button.visible = not dogs.is_empty()
+	if not dogs.is_empty():
+		var healers := dogs.filter(func(u): return u.dog_mode == "heal")
+		var sweepers := dogs.filter(func(u): return u.dog_mode == "sweep")
+		_dog_button.text = "Dogs: %s  [T]" % ("HEALING" if sweepers.is_empty() else "MINESWEEPING" if healers.is_empty() else "MIXED")
+		if not healers.is_empty():
+			var healed: int = healers.reduce(func(n, u): return n + u.patients.filter(func(p): return u.can_heal(p)).size(), 0)
+			_selection_label.text += "\nHealing %d · %d units healed" % [healers.size(), healed]
+		if not sweepers.is_empty():
+			var digging := sweepers.filter(func(u): return u.is_digging()).size()
+			var cleared: int = sweepers.reduce(func(n, u): return n + u.mines_disarmed, 0)
+			_selection_label.text += "\nMinesweeping %d · %d disarmed" % [sweepers.size(), cleared]
+			if digging > 0:
+				_selection_label.text += " · %d digging" % digging
 	var rams := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_ram())
 	if not rams.is_empty():
 		var ready := rams.filter(func(u): return u.ram_ready()).size()

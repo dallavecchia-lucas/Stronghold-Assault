@@ -5,7 +5,7 @@ extends RefCounted
 ## role:
 ##   "infantry"  shoots defenders, falls back to gates/keep when nothing else is in range
 ##   "artillery" lobs explosive shells, no line of sight needed, has a minimum range
-##   "healer"    doesn't fight, heals the most damaged ally in range
+##   "healer"    doesn't fight. The Wolf Medic (the dog): two modes, one always on (heal_*, sweep_*)
 ##   "flying"    ignores walls and pathfinding, cruises at FLY_HEIGHT and never stops: it circles
 ##               where it was sent (TalonFlight). The Sky Talon has no basic attack: it strafes and
 ##               bombs (strafe_*, bomb_*)
@@ -94,6 +94,13 @@ extends RefCounted
 ##   player has turned that off (AttackerCommander.line_formation).
 ## walk_speed / gallop_after: after each move order she walks (no faster than walk_speed) for
 ##   gallop_after seconds, then breaks into her gallop (anim_run); a new move order starts it over.
+## heal_*: the dog's healing mode. It heals up to heal_units hurt allies within heal_range, heal_rate HP/s
+##   each, sticking to each until it is full or out of reach; no unit takes two dogs' healing (handed out by
+##   AttackerCommander).
+## sweep_*: the dog's minesweeping mode. It sniffs out the defenders' mines within sweep_range (the attacking
+##   player can't see them), walks up to one at sweep_speed by a way clear of every other (DogSweep: the
+##   minefield's outer rim first), digs it out and disarms it in disarm_time seconds (its anim_dig clip,
+##   throwing dirt dig_sprays times a loop of it, the first dig_spray_at of the way in).
 ## forest_speed: movement speed multiplier inside a forest (LevelBuilder.FORESTS).
 ## climb_speed: m/s up and down stairs and ladders.
 ## structure_mult: damage multiplier against gates / the keep.
@@ -141,10 +148,14 @@ const DATA := {
 	"medic": {
 		"name": "Wolf Medic", "cost": 90, "hp": 110.0, "speed": 5.5,
 		"sight": 28.0,
-		"range": 10.0, "heal_rate": 14.0, "damage": 0.0, "fire_interval": 0.5, "spread": 0.0,
+		"range": 0.0, "damage": 0.0, "fire_interval": 0.5, "spread": 0.0,
 		"structure_mult": 0.0, "radius": 0.55, "height": 1.4,
 		"role": "healer", "anim": "rigged", "hotkey": KEY_C,
 		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 3.0,
+		# Two modes, one always on (T switches): healing, or minesweeping.
+		"heal_range": 10.0, "heal_units": 2, "heal_rate": 12.0,
+		"sweep_range": 18.0, "sweep_speed": 2.6, "disarm_time": 6.0,
+		"anim_dig": "Dig", "dig_sprays": 4, "dig_spray_at": 0.025,
 		"model": "res://assets/units/battlefield_lifesaver/battlefield_lifesaver_rigged.glb",
 	},
 	"talon": {

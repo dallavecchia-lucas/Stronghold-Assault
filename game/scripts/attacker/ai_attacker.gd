@@ -5,7 +5,9 @@ extends Node
 ## gate falls everyone pushes for the keep. A helipad the defenders sabotaged is retaken by the
 ## ground units nearest it (_retake_bases). It never goes after the defenders' infiltrators: it
 ## doesn't know they are there (their low profile, Combat.low_profile), unless its giraffes' pings
-## reveal them (_giraffe_pings). Its lionesses hunt the defenders out on the field (_lioness_hunts).
+## reveal them (_giraffe_pings). Its lionesses hunt the defenders out on the field (_lioness_hunts). Its dogs
+## heal; it can't see the defenders' mines any more than a player can, but one going off under its army
+## tells it a minefield is there: the dogs near the blast sweep for mines until they find no more (_dog_modes).
 ## Uses the same command interface as the human RTS player.
 
 var commander: AttackerCommander
@@ -29,9 +31,16 @@ const RETAKERS := 3
 const PING_FIELD := 150.0
 ## Lionesses go after defenders on the ground this close to them (m, flat).
 const HUNT_RANGE := 32.0
+## Dogs this close to a mine that went off (m, flat) switch to minesweeping; a sweeping dog that has had no
+## mine to dig for SWEEP_IDLE seconds goes back to healing.
+const SWEEP_CALL := 40.0
+const SWEEP_IDLE := 20.0
 
 ## Helipad -> ids of the units sent to retake it.
 var _retakers := {}
+## Mine blasts it has seen so far, and how long each sweeping dog (id) has had no mine to dig (s).
+var _blasts_seen := GroundMine.blasts
+var _sweep_idle := {}
 
 
 func _process(delta: float) -> void:
@@ -68,6 +77,7 @@ func _think() -> void:
 	_kangaroo_flashes()
 	_giraffe_pings()
 	_lioness_hunts()
+	_dog_modes()
 
 
 func _plan_wave() -> void:
@@ -254,6 +264,26 @@ func _lioness_hunts() -> void:
 		if u.sneak_ready() and dist > u.stats.pounce_range * 0.6:
 			commander.submit({"type": "sneak", "units": [u.unit_id]})
 		commander.submit({"type": "attack", "units": [u.unit_id], "target": prey.get_path()})
+
+
+## Dogs heal. A mine going off under the army (the CPU sees that much): the dogs within SWEEP_CALL of it switch
+## to minesweeping; a sweeping dog with no mine to dig for SWEEP_IDLE seconds goes back to healing.
+func _dog_modes() -> void:
+	var blast := GroundMine.blasts > _blasts_seen
+	_blasts_seen = GroundMine.blasts
+	var at := GroundMine.last_blast
+	for u in commander.units.values():
+		if not u.has_dog_modes() or not u.is_controllable():
+			continue
+		if u.dog_mode == "heal":
+			if blast and Vector2(u.global_position.x - at.x, u.global_position.z - at.z).length() < SWEEP_CALL:
+				commander.submit({"type": "dog_mode", "units": [u.unit_id], "mode": "sweep"})
+				_sweep_idle[u.unit_id] = 0.0
+			continue
+		_sweep_idle[u.unit_id] = 0.0 if u.sweep_mine != null else _sweep_idle.get(u.unit_id, 0.0) + 1.0
+		if _sweep_idle[u.unit_id] >= SWEEP_IDLE:
+			commander.submit({"type": "dog_mode", "units": [u.unit_id], "mode": "heal"})
+			_sweep_idle.erase(u.unit_id)
 
 
 ## The nearest live defender `pick` takes (or gate) within `reach` of `u` (flat), with room to spare
