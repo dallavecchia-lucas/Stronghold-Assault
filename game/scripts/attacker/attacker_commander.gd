@@ -31,6 +31,10 @@ extends Node
 ##   {"type": "blast", "units": [ids]}   lionesses light their fire blast (AttackerUnit.start_blast)
 ##   {"type": "line", "on": bool}   lionesses moved together form up in firing lines, or don't
 ##               (line_formation)
+##   {"type": "nest", "units": [ids], "pos": Vector3}   Serpent Snipers climb trees to snipe from: the tree
+##               nearest pos for the snake nearest it, the free ones round it for the others (SerpentNest.assign)
+##   {"type": "trap", "units": [ids], "pos": Vector3}   Serpent Snipers coil round bushes to lie in wait: the
+##               bush nearest pos and the free ones round it likewise (SerpentTrap.assign)
 ##   {"type": "dog_mode", "units": [ids], "mode": "heal" | "sweep"}   Wolf Medics switch to healing or
 ##               to minesweeping (AttackerUnit.set_dog_mode)
 ##   {"type": "scout", "units": [ids]}   toggle scout formation: the rhinos in the selection
@@ -153,6 +157,12 @@ func submit(cmd: Dictionary) -> int:
 		"blast":
 			for u in _resolve(cmd.units):
 				u.start_blast()
+		"nest":
+			for pick in SerpentNest.assign(_resolve(cmd.units).filter(func(u): return u.has_nest() and u.is_controllable()), cmd.pos):
+				pick[0].set_order({"type": "nest", "tree": pick[1]})
+		"trap":
+			for pick in SerpentTrap.assign(_resolve(cmd.units).filter(func(u): return u.has_trap() and u.is_controllable()), cmd.pos):
+				pick[0].set_order({"type": "trap", "bush": pick[1]})
 		"line":
 			line_formation = cmd.get("on", not line_formation)
 		"dog_mode":

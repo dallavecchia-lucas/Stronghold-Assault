@@ -92,6 +92,8 @@ var _blocked := 0.0
 var _unstick := 0.0
 var _wall_away := Vector3.ZERO
 var _tossed := false
+## Held in a Serpent Sniper's coils last frame (it struggles: _in_coils).
+var _was_held := false
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 
 static var _scenes := {}
@@ -261,7 +263,7 @@ func take_damage(amount: float, from_team: int) -> void:
 
 ## Run over by a ram: the armor takes most of it, but it staggers.
 func toss(v: Vector3) -> void:
-	if hp <= 0.0:
+	if hp <= 0.0 or SerpentTrap.is_held(self):
 		return
 	velocity = v * 0.4
 	_tossed = true
@@ -340,6 +342,12 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		_tossed = not (is_on_floor() and velocity.y <= 0.0)
 		return
+	if SerpentTrap.is_held(self):
+		_in_coils(delta)
+		return
+	if _was_held:
+		_was_held = false
+		_model.rotation = Vector3.ZERO
 	_face(delta)
 	_weapon_tick(delta)
 	_animate(delta)
@@ -360,6 +368,22 @@ func _physics_process(delta: float) -> void:
 		var flat := Vector3(velocity.x, 0.0, velocity.z).move_toward(Vector3.ZERO, ACCEL * delta)
 		_agent.velocity = flat
 		_move(flat, delta)
+
+
+## Held in a Serpent Sniper's coils (SerpentTrap.hold): it can't move, turn or fight (the trigger stays off; the
+## squad's orders wait), held where it is (nothing moves it, not even the snake round it), and struggles in them.
+func _in_coils(delta: float) -> void:
+	_was_held = true
+	_driven = false
+	_want = Vector3.ZERO
+	_agent.velocity = Vector3.ZERO
+	velocity = Vector3.ZERO
+	if get("trigger") != null:
+		set("trigger", false)
+	_weapon_tick(delta)
+	_animate(delta)
+	var t := Time.get_ticks_msec() * 0.001
+	_model.rotation = Vector3(sin(t * 7.3) * 0.03, sin(t * 4.1) * 0.05, sin(t * 11.0) * 0.035)
 
 
 func _move(flat: Vector3, delta: float) -> void:
@@ -461,7 +485,7 @@ func _next_corner() -> Vector3:
 
 
 func _on_velocity_computed(safe: Vector3) -> void:
-	if hp <= 0.0 or _tossed or not following:
+	if hp <= 0.0 or _tossed or not following or SerpentTrap.is_held(self):
 		return
 	var dt := get_physics_process_delta_time()
 	var was := global_position

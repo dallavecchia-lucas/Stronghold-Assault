@@ -522,6 +522,10 @@ func _tree(p: Vector3, rng: RandomNumberGenerator, h := 0.0, models: Array = Pro
 	var tree := ForestTree.new()
 	tree.position = p
 	tree.setup(h, model, maxf(fp.x, fp.y) * 0.5, grove_at(p))
+	var trunk: Array = Props.TRUNKS.get(path, [0.0, 0.0, 0.015, 0.5])
+	tree.trunk_offset = Basis(Vector3.UP, yaw) * Vector3(trunk[0], 0.0, trunk[1]) * h
+	tree.trunk_r = trunk[2] * h
+	tree.perch = trunk[3] * h
 	nav_region.add_child(tree)
 	return tree
 
@@ -552,16 +556,20 @@ func _rock(p: Vector3, rng: RandomNumberGenerator, skip := false) -> void:
 	nav_region.add_child(body)
 
 
-## Visual-only ground cover; no collision so it never blocks units or the navmesh.
+## Visual-only ground cover (Bush); no collision so it never blocks units or the navmesh.
 func _build_ground_cover(rng: RandomNumberGenerator) -> void:
 	for i in 360:
 		var p := Vector3(rng.randf_range(-MAP_HALF, MAP_HALF), 0, rng.randf_range(-MAP_HALF, MAP_HALF))
 		if absf(p.x) < MOUNTAIN_HALF - 2 and absf(p.z) < MOUNTAIN_HALF - 2:
 			continue
-		var model := Props.instance(Props.BUSHES[rng.randi() % Props.BUSHES.size()], rng.randf_range(0.4, 1.1))
-		model.position = p
-		model.rotation.y = rng.randf() * TAU
-		add_child(model)
+		var path: String = Props.BUSHES[rng.randi() % Props.BUSHES.size()]
+		var h := rng.randf_range(0.4, 1.1)
+		var bush := Bush.new()
+		bush.position = p
+		bush.setup(Props.instance(path, h), Props.footprint(path, h), h, rng.randf() * TAU)
+		# A snake can't get at the ones under a helipad's deck or up against the mountain.
+		bush.usable = not _on_base_lot(p) and base_distance(p) > 3.0
+		add_child(bush)
 
 
 static func _dist_to_segment(p: Vector3, a: Vector3, b: Vector3) -> float:

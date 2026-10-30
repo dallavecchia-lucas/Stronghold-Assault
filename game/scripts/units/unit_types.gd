@@ -101,6 +101,19 @@ extends RefCounted
 ##   player can't see them), walks up to one at sweep_speed by a way clear of every other (DogSweep: the
 ##   minefield's outer rim first), digs it out and disarms it in disarm_time seconds (its anim_dig clip,
 ##   throwing dirt dig_sprays times a loop of it, the first dig_spray_at of the way in).
+## nest_*: sniper nest (Serpent Sniper). Sent at a tree, it goes up to it and climbs it (nest_time seconds:
+##   SerpentNest), up into its crown, and lies out along a bough with its rifle: up there it sees nest_sight times
+##   as far through the fog of war and its rifle reaches nest_range times as far. It can't move up there: a move
+##   order climbs it down (nest_time again), then it goes. Ordered to attack from up there, it fires from the
+##   tree. Perched, a tree-and-rifle icon hangs over it on the attacker's side. A tree that catches fire, it
+##   climbs down.
+## trap_*: bush trap (Serpent Sniper). Sent at a bush, it sets its rifle down in the grass and coils round the
+##   bush (trap_time seconds: SerpentTrap); coiled, it never shoots, and any order uncoils it (trap_time again)
+##   and it picks the rifle up before it goes. A defender on the ground that comes within trap_reach of the bush:
+##   it strikes and constricts it for squeeze_time seconds, and nothing calls it off. The prey can't move or fight
+##   and its health runs down steadily to nothing; then the snake goes back round its bush. Killed meanwhile, the
+##   prey goes free with what health it has left. Coiled round its bush, it is see-through on the defender's
+##   side (sneak_alpha opaque, no shadow, no health bar), a grass-and-snake icon over it on the attacker's.
 ## forest_speed: movement speed multiplier inside a forest (LevelBuilder.FORESTS).
 ## climb_speed: m/s up and down stairs and ladders.
 ## structure_mult: damage multiplier against gates / the keep.
@@ -259,15 +272,17 @@ const DATA := {
 		"line": true,
 		"model": "res://assets/units/armored_lioness_unit/armored_lioness_unit_rigged.glb",
 	},
-	# ---- Placeholder stats: the model is in, its role still to be designed.
 	"serpent": {
-		"name": "Serpent Sniper", "cost": 110, "hp": 80.0, "speed": 3.5,
-		"sight": 50.0,
-		"range": 45.0, "damage": 35.0, "fire_interval": 2.5, "spread": 0.01,
-		"structure_mult": 0.3, "radius": 0.6, "height": 0.9,
+		"name": "Serpent Sniper", "cost": 130, "hp": 240.0, "speed": 3.5,
+		"sight": 46.0,
+		# The anti-materiel rifle strapped along its back: slow to fire, hard hitting.
+		"range": 46.0, "damage": 95.0, "fire_interval": 4.0, "spread": 0.006,
+		"structure_mult": 0.4, "radius": 0.6, "height": 0.9,
 		"role": "infantry", "anim": "rigged", "hotkey": KEY_U,
-		"anim_move": "slither", "anim_idle": "idle", "anim_ref_speed": 2.4,
+		"anim_move": "Slither", "anim_idle": "Idle", "anim_ref_speed": 2.4,
 		"steer": true, "turn_rate": 2.5,
+		"nest_time": 8.0, "nest_sight": 1.8, "nest_range": 1.6,
+		"trap_time": 8.0, "trap_reach": 4.0, "squeeze_time": 15.0, "sneak_alpha": 0.3,
 		"model": "res://assets/units/serpent_sniper/serpent_sniper_rigged.glb",
 	},
 	"rhino": {

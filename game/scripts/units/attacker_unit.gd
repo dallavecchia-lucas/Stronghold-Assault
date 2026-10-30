@@ -18,6 +18,16 @@ extends CharacterBody3D
 ##            disarms it (disarm_time seconds, the Dig clip; the mine shows to the attacker while it digs),
 ##            then the next, the minefield's outer rim first. It sweeps while idle or attack-moving; a
 ##            plain move (or any new order) calls the digging off.
+##
+## The Serpent Sniper (UnitTypes nest_*, trap_*) has two skills, each an order of its own:
+##   {"type": "nest", "tree": ForestTree}   it goes up to the tree and climbs it (SerpentNest), up into its crown:
+##            perched, it sees and shoots further (sight(), reach()) and can't move; any order to go anywhere
+##            climbs it down first (the order waits in _after), an attack order it fires from the tree.
+##   {"type": "trap", "bush": Bush}   it goes up to the bush, sets its rifle down and coils round it (SerpentTrap):
+##            coiled, it never shoots; a defender on the ground in its reach it strikes and constricts to death
+##            (squeeze_time), and no order calls that off; any other order uncoils it first.
+## Both run on its rig (SerpentRig), which lays the body along the skill's way; the clips take over again once
+## it is down or uncoiled, where it stood when it began.
 
 signal died(unit: AttackerUnit)
 ## A Sky Talon's strafe round landed / it dropped its bomb (for showcases and the HUD).
@@ -32,6 +42,11 @@ signal pounced(prey: Node3D)
 signal blasted(blast: LionessBlast)
 ## A dog dug a mine out and disarmed it.
 signal mine_disarmed(mine: GroundMine)
+## A Serpent Sniper is perched up its tree, coiled round its bush, struck `prey`, and squeezed it to death.
+signal nested(tree: ForestTree)
+signal coiled(bush: Bush)
+signal struck(prey: Node3D)
+signal crushed(prey: Node3D)
 
 const HEAL_COLOR := Color(0.35, 1.0, 0.45)
 const AA_COLOR := Color(1.0, 0.9, 0.4)
@@ -86,11 +101,25 @@ const SWEEP_COLOR := Color(1.0, 0.72, 0.2, 0.75)
 const SWEEP_EVERY := 0.5
 ## How far ahead an attack-moving sweeping dog with no mine to go for looks for mines on its way (m).
 const WAY_AHEAD := 1.2
+## Serpent Sniper: its snout lies this far ahead of it in its clips (m); it starts a skill this close to where it
+## was going (m), turned to within FACE_TO of the trunk or the bush; its rig blends into a skill's pose and back
+## out over SERPENT_BLEND (s); perched, it turns round its trunk at NEST_TURN (rad/s) and tips its front onto its
+## aim at TIP_RATE; coiled, it looks for prey every TRAP_EVERY (s); its icons' sizes on screen (see TAG_ICON_SIZE).
+const SNOUT_AHEAD := 2.45
+const SKILL_REACH := 1.6
+const FACE_TO := 0.15
+const SERPENT_BLEND := 0.3
+const NEST_TURN := 1.4
+const TIP_RATE := 1.5
+const TRAP_EVERY := 0.15
+const NEST_ICON_SIZE := 0.0019
 
 static var _supply_tex: ImageTexture
 static var _bush_tex: ImageTexture
 static var _tag_tex: ImageTexture
 static var _heal_tex: ImageTexture
+static var _nest_tex: ImageTexture
+static var _trap_tex: ImageTexture
 
 static var _scenes := {}
 
@@ -237,6 +266,27 @@ var _strike_hit := false
 var _clip_restart := false
 var _blast: LionessBlast
 var _lion: LionessRig  # set when the model carries the lioness's flamethrower nozzles
+## Serpent Sniper: its rig; the climb up its tree (SerpentNest) or its coil round its bush (SerpentTrap), how far
+## along (0 on the ground beside it, 1 perched or coiled) and which way it is going (+1 up or in, -1 down or
+## out, 0 still); where it stood when it began (it is back there when it is done); the order it follows once it
+## is down or uncoiled; perched, what it was ordered to shoot; the strike under way (seconds into it, -1: none),
+## the prey's health then, the way out to the prey and how far along it the snout is, and whether it is letting
+## go (sliding back into its coil); its icon perched (the bush trap's is _bush).
+var _serpent: SerpentRig
+var _nest: SerpentNest
+var _trap: SerpentTrap
+var _skill_p := 0.0
+var _skill_dir := 0
+var _skill_xf := Transform3D.IDENTITY
+var _after = null
+var _focus: Node3D = null
+var _squeeze_t := -1.0
+var _squeeze_hp := 0.0
+var _strike_way: Array = []
+var _strike_s := 0.0
+var _letting_go := false
+var _trap_cd := 0.0
+var _nest_icon: Sprite3D
 ## Sweeping: the way to the spot it digs its mine from, that spot, seconds to its next look, seconds into
 ## the dig (-1: not digging) and the last throw of dirt (a quarter of the Dig clip).
 var _sweep_path: Array[Vector3] = []
@@ -475,9 +525,84 @@ func is_engaged() -> bool:
 	return _engaged
 
 
-## How far it sees through the fog of war (AttackerVision).
+## How far it sees through the fog of war (AttackerVision): a Serpent Sniper perched in its nest, further.
 func sight() -> float:
-	return stats.get("sight", SIGHT)
+	return stats.get("sight", SIGHT) * (stats.nest_sight if is_perched() else 1.0)
+
+
+## How far its basic attack reaches: a Serpent Sniper perched in its nest, further.
+func reach() -> float:
+	return stats.range * (stats.nest_range if is_perched() else 1.0)
+
+
+func has_nest() -> bool:
+	return stats.has("nest_time")
+
+
+func has_trap() -> bool:
+	return stats.has("trap_time")
+
+
+## Up its tree, or on its way up or down it (SerpentNest).
+func in_tree() -> bool:
+	return _nest != null
+
+
+## Perched in its nest, all the way up: it sees and shoots further.
+func is_perched() -> bool:
+	return _nest != null and _skill_p >= 1.0 and _skill_dir == 0
+
+
+## Round its bush, or on its way in or out of the coil (SerpentTrap), striking or letting go.
+func in_bush() -> bool:
+	return _trap != null
+
+
+## Coiled round its bush, lying in wait: see-through on the defender's side, its icon on the attacker's.
+func is_coiled() -> bool:
+	return _trap != null and _skill_p >= 1.0 and _skill_dir == 0 and _squeeze_t < 0.0
+
+
+## Striking and squeezing its prey: nothing calls it off.
+func is_constricting() -> bool:
+	return _trap != null and _squeeze_t >= 0.0 and not _letting_go
+
+
+## Seconds of squeezing left.
+func squeeze_left() -> float:
+	return maxf(stats.squeeze_time - _squeeze_t, 0.0) if is_constricting() else 0.0
+
+
+## How far up its tree or round its bush it is (0-1), and which way it is going (+1, -1, 0).
+func skill_progress() -> float:
+	return _skill_p if _nest != null or _trap != null else 0.0
+
+
+func skill_dir() -> int:
+	return _skill_dir
+
+
+## The prey in its coils, or null.
+func prey() -> Node3D:
+	return _trap.prey if is_constricting() else null
+
+
+## The tree it nests in (or is on its way to), the bush it coils round (or is on its way to).
+func nest_tree() -> ForestTree:
+	if _nest != null:
+		return _nest.tree
+	return order.tree if order.type == "nest" else null
+
+
+func trap_bush() -> Bush:
+	if _trap != null:
+		return _trap.bush
+	return order.bush if order.type == "trap" else null
+
+
+## The Serpent Sniper's rig (null for the others).
+func serpent_rig() -> SerpentRig:
+	return _serpent
 
 
 ## Any of its skills cooling down: what a kangaroo's resupply speeds up.
@@ -614,6 +739,8 @@ func _ready() -> void:
 func set_order(o: Dictionary) -> void:
 	if raiding:
 		return
+	if _serpent and not _serpent_order(o):
+		return
 	if has_dog_modes():
 		_drop_mine()  # a new order calls the digging off (attack-moving, it sweeps again on the way)
 		_sweep_cd = SWEEP_EVERY
@@ -636,7 +763,7 @@ func set_order(o: Dictionary) -> void:
 			else:
 				o = {"type": "attack", "target": keep}
 	order = o
-	if o.type in ["move", "attack_move"]:
+	if o.type in ["move", "attack_move", "nest", "trap"]:
 		_moving_for = 0.0  # a new move order: walking again
 		if _agent:
 			_agent.max_speed = _speed()
@@ -650,6 +777,54 @@ func set_order(o: Dictionary) -> void:
 
 func is_idle() -> bool:
 	return not raiding and order.type == "idle" and not Combat.is_valid_target(target) and sweep_mine == null
+
+
+## Serpent Sniper: an order while up its tree or round its bush. Up the tree an attack order it fires from
+## there; squeezing its prey it takes none; sent back up its own tree or round its own bush it goes back to it;
+## anything else climbs it down or uncoils it first, and waits till then (_after). False when it has dealt with
+## it. On the ground, a nest or trap order claims the tree or the bush for it.
+func _serpent_order(o: Dictionary) -> bool:
+	if _nest == null and _trap == null:
+		_claim(o)
+		return true
+	if is_constricting() or o.type == "idle":
+		return false
+	if _nest != null and o.type == "attack" and _skill_dir >= 0:
+		_focus = o.target
+		return false
+	if (o.type == "nest" and _nest != null and o.tree == _nest.tree) or (o.type == "trap" and _trap != null and o.bush == _trap.bush):
+		_after = null
+		if _skill_dir < 0:
+			_skill_dir = 1
+		return false
+	_after = o
+	_skill_dir = -1
+	return false
+
+
+## The tree or the bush a nest or trap order sends it to is its own (one snake to each), and where it goes to
+## start from: its snout just short of the trunk or the bush, facing it. The one it was going to is free again.
+func _claim(o: Dictionary) -> void:
+	var tree = order.get("tree") if order.type == "nest" else null
+	var bush = order.get("bush") if order.type == "trap" else null
+	if tree != null and is_instance_valid(tree) and tree.nest_by == self and o.get("tree") != tree:
+		tree.nest_by = null
+	if bush != null and is_instance_valid(bush) and bush.coiled_by == self and o.get("bush") != bush:
+		bush.coiled_by = null
+	if o.type == "nest":
+		o.tree.nest_by = self
+		o.pos = _skill_approach(o.tree.trunk_centre(), o.tree.trunk_radius(0.0) + SerpentNest.BODY_R + 0.3)
+	elif o.type == "trap":
+		o.bush.coiled_by = self
+		o.pos = _skill_approach(o.bush.global_position, SerpentTrap.ring_radius(o.bush) + 0.35)
+
+
+## Where it lies, facing `centre` from the side it comes from, with its snout `gap` m short of it.
+func _skill_approach(centre: Vector3, gap: float) -> Vector3:
+	var out := global_position - centre
+	out.y = 0.0
+	out = out.normalized() if out.length() > 0.1 else global_basis.z
+	return Vector3(centre.x, global_position.y, centre.z) + out * (gap + SNOUT_AHEAD)
 
 
 ## Open breach link whose outside end is near `pos`, or null.
@@ -718,8 +893,11 @@ func _die() -> void:
 	_strike_t = -1.0
 	if is_blasting():
 		_blast.left = 0.0
-	if has_sneak():
+	var rolls := not (_serpent and _serpent_die())
+	if has_sneak() or has_trap():
 		_sneak_look()
+	if _nest_icon:
+		_nest_icon.visible = false
 	resupply = 0.0
 	patients.clear()
 	medic = null
@@ -756,7 +934,10 @@ func _die() -> void:
 	_hp_bar.visible = false
 	died.emit(self)
 	var tw := create_tween()
-	tw.tween_property(_model, "rotation:z", PI * 0.5, 0.6).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	if rolls:
+		tw.tween_property(_model, "rotation:z", PI * 0.5, 0.6).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	else:
+		tw.tween_interval(0.6)  # its rig drops the body where it lay (SerpentRig.die)
 	tw.tween_interval(3.0)
 	tw.tween_property(_model, "position:y", -stats.height, 2.0)
 	tw.tween_callback(queue_free)
@@ -769,7 +950,7 @@ func _range_to(t: Node3D) -> float:
 
 func _in_range(t: Node3D) -> bool:
 	var d := _range_to(t)
-	return d <= stats.range and d >= stats.get("min_range", 0.0)
+	return d <= reach() and d >= stats.get("min_range", 0.0)
 
 
 func _eye() -> Vector3:
@@ -799,6 +980,14 @@ func _update_target() -> void:
 			target = order.target
 			return
 		order = {"type": "idle"}
+	# A Serpent Sniper on its way to a tree or a bush, climbing it or coiled round it picks no fights; perched, it
+	# shoots what it was ordered to while it can, else whatever it can.
+	if order.type in ["nest", "trap"] and not is_perched():
+		target = null
+		return
+	if is_perched() and Combat.targetable(_focus) and AttackerVision.sees_node(_focus) and _in_range(_focus) and _can_see(_focus):
+		target = _focus
+		return
 	# A sneaking lioness picks no fights on her own: only an attack order sends her (to pounce).
 	if order.type == "move" or is_sneaking():
 		target = null
@@ -826,7 +1015,7 @@ func _find_enemy() -> Node3D:
 	for s in get_tree().get_nodes_in_group("structures"):
 		if s.is_alive() and s.team != team:
 			var d := _range_to(s)
-			if d <= stats.range + 2.0 and d >= stats.get("min_range", 0.0) and d < best_d and _can_see(s):
+			if d <= reach() + 2.0 and d >= stats.get("min_range", 0.0) and d < best_d and _can_see(s):
 				best_d = d
 				best = s
 	return best
@@ -900,6 +1089,9 @@ func _fire_at(t: Node3D) -> void:
 				_burst_cd = 0.0
 				_burst_target = t
 				return
+			if _serpent:
+				_rifle_shot(t)
+				return
 			var aim := Combat.aim_point(t)
 			if stats.has("suppress_radius"):
 				# Spray: aim somewhere around the target, so neighbours catch rounds too.
@@ -910,6 +1102,17 @@ func _fire_at(t: Node3D) -> void:
 			for _pellet in stats.get("pellets", 1):
 				Combat.fire_hitscan(self, _eye(), aim, stats.spread, stats.damage, team,
 						stats.structure_mult, [get_rid()])
+
+
+## Serpent Sniper: one heavy round from the rifle on its back, from its eyes at `t` (its tracer from the muzzle),
+## the rifle kicking back, a flash and a puff of smoke at the muzzle.
+func _rifle_shot(t: Node3D) -> void:
+	var muzzle := _serpent.muzzle().origin if _serpent.posed() else _eye()
+	Combat.fire_hitscan(self, _eye(), Combat.aim_point(t), stats.spread, stats.damage, team, stats.structure_mult,
+			[get_rid()], muzzle, 0.07)
+	Combat.spawn_impact(self, muzzle, true)
+	SmokeCloud.wisp(self, muzzle, 1.0)
+	_serpent.kick()
 
 
 func _burst_tick(delta: float) -> void:
@@ -1699,6 +1902,248 @@ func _slam() -> void:
 	_fire_cd = maxf(_fire_cd, 0.6)
 
 
+# ---------------------------------------------------------------- Serpent Sniper
+
+## Every physics frame: up its tree or round its bush the skill runs; come up to the tree or the bush it was
+## sent to, it turns to face it and starts; done with one, it stands while its rig blends back into its clips.
+## True while that holds it (no other movement this frame).
+func _serpent_tick(delta: float) -> bool:
+	if _nest != null:
+		_nest_tick(delta)
+		return true
+	if _trap != null:
+		_trap_tick(delta)
+		return true
+	if _serpent.weight > 0.0:
+		_serpent.weight = move_toward(_serpent.weight, 0.0, delta / SERPENT_BLEND)
+		_serpent.rifle_w = 0.0
+		_on_velocity_computed(Vector3.ZERO)
+		return true
+	if order.type not in ["nest", "trap"]:
+		return false
+	var spot = order.tree if order.type == "nest" else order.bush
+	if not is_instance_valid(spot) or not (spot.nest_free(self) if order.type == "nest" else spot.trap_free(self)):
+		set_order({"type": "idle"})  # burnt down, or another snake's
+		return false
+	var to: Vector3 = order.pos - global_position
+	var near := Vector2(to.x, to.z).length() < SKILL_REACH or (_agent.is_navigation_finished() and _moving_for > 0.5 and Vector2(to.x, to.z).length() < 4.0)
+	if not near:
+		return false
+	var centre: Vector3 = spot.trunk_centre() if order.type == "nest" else spot.global_position
+	_on_velocity_computed(Vector3.ZERO)
+	_face(centre, delta)
+	var fwd := -global_basis.z
+	var want := Vector3(centre.x - global_position.x, 0.0, centre.z - global_position.z).normalized()
+	if Vector2(fwd.x, fwd.z).normalized().dot(Vector2(want.x, want.z)) > cos(FACE_TO) and _serpent.posed():
+		if order.type == "nest":
+			_begin_nest(spot)
+		else:
+			_begin_trap(spot)
+	return true
+
+
+## Starts up `tree` from where it lies (its body as it lies now: SerpentRig.body_path), winding round the trunk
+## one way or the other.
+func _begin_nest(tree: ForestTree) -> void:
+	tree.nest_by = self
+	_nest = SerpentNest.new(tree, _serpent.body_path(), global_position.y, 1.0 if unit_id % 2 == 0 else -1.0)
+	_skill_start()
+
+
+func _begin_trap(bush: Bush) -> void:
+	bush.coiled_by = self
+	_trap = SerpentTrap.new(bush, _serpent.body_path(), global_position.y)
+	_serpent.rifle_down = SerpentTrap.rifle_rest(_serpent.rifle(), global_position.y)
+	_skill_start()
+
+
+func _skill_start() -> void:
+	_skill_xf = global_transform
+	_skill_p = 0.0
+	_skill_dir = 1
+	_after = null
+	_focus = null
+	_squeeze_t = -1.0
+	_letting_go = false
+	_engaged = false
+	target = null
+	velocity = Vector3.ZERO
+	_agent.avoidance_enabled = false
+
+
+## Climbing (nest_time up, nest_time down), or perched: shooting from the tree, the nest turning round the trunk
+## to aim. A tree that catches fire, it climbs down.
+func _nest_tick(delta: float) -> void:
+	velocity = Vector3.ZERO
+	_engaged = false
+	if not _nest.tree.is_standing() and _skill_dir >= 0:
+		_skill_dir = -1
+	_skill_p = clampf(_skill_p + _skill_dir * delta / stats.nest_time, 0.0, 1.0)
+	if _skill_p >= 1.0 and _skill_dir > 0:
+		_skill_dir = 0
+		rotation.y = _nest.heading()
+		nested.emit(_nest.tree)
+	if is_perched():
+		_perch_aim(delta)
+	var pose := _nest.pose(_skill_p)
+	_serpent.lay(pose[0], pose[1], pose[2])
+	_serpent.weight = move_toward(_serpent.weight, 1.0, delta / SERPENT_BLEND)
+	global_position = _nest.anchor(pose[2])
+	if _skill_p <= 0.0 and _skill_dir < 0:
+		var turn := Basis(Vector3.UP, _nest.yaw)
+		var axis := Vector3(_nest.axis.x, _skill_xf.origin.y, _nest.axis.z)
+		global_transform = Transform3D(turn * _skill_xf.basis, axis + turn * (_skill_xf.origin - axis))
+		if _nest.tree.nest_by == self:
+			_nest.tree.nest_by = null
+		_nest = null
+		_skill_done()
+
+
+## Perched: it turns round its trunk onto what it shoots at (or toward the stronghold), tips its front onto it
+## and fires.
+func _perch_aim(delta: float) -> void:
+	var shoot := target if Combat.targetable(target) and _in_range(target) and _sees_target else null
+	var tip := 0.0
+	if shoot:
+		_engaged = true
+		var d := Combat.aim_point(shoot) - _eye()
+		rotation.y = rotate_toward(rotation.y, atan2(-d.x, -d.z), NEST_TURN * delta)
+		tip = atan2(d.y, Vector2(d.x, d.z).length())
+		if _fire_cd <= 0.0 and absf(angle_difference(rotation.y, atan2(-d.x, -d.z))) < 0.05:
+			_fire_at(shoot)
+	_nest.aim(rotation.y, move_toward(_nest.pitch, tip, TIP_RATE * delta))
+
+
+## Coiling round its bush (trap_time in, trap_time out), coiled and lying in wait, or striking.
+func _trap_tick(delta: float) -> void:
+	velocity = Vector3.ZERO
+	_engaged = false
+	_serpent.weight = move_toward(_serpent.weight, 1.0, delta / SERPENT_BLEND)
+	if _squeeze_t >= 0.0:
+		_squeeze_tick(delta)
+		return
+	_skill_p = clampf(_skill_p + _skill_dir * delta / stats.trap_time, 0.0, 1.0)
+	# The rifle goes down in the grass as it slides out from under it (and up onto its back as it slides back).
+	var r := clampf(_skill_p / 0.15, 0.0, 1.0)
+	_serpent.rifle_w = r * r * (3.0 - 2.0 * r)
+	if _skill_p >= 1.0 and _skill_dir > 0:
+		_skill_dir = 0
+		_sneak_look()  # this frame, not the next
+		coiled.emit(_trap.bush)
+	var pose := _trap.pose(_skill_p)
+	_serpent.lay(pose[0], pose[1])
+	var e := _skill_p * _skill_p * (3.0 - 2.0 * _skill_p)
+	global_position = _skill_xf.origin.lerp(Vector3(_trap.centre.x, _skill_xf.origin.y, _trap.centre.z), e)
+	if is_coiled():
+		_trap_cd -= delta
+		if _trap_cd <= 0.0:
+			_trap_cd = TRAP_EVERY
+			var p := SerpentTrap.prey_near(self, _trap.bush, stats.trap_reach)
+			if p:
+				_strike(p)
+	if _skill_p <= 0.0 and _skill_dir < 0:
+		global_transform = _skill_xf
+		if _trap.bush.coiled_by == self:
+			_trap.bush.coiled_by = null
+		_trap = null
+		_skill_done()
+
+
+## It strikes `p` and holds it: squeeze_time seconds to squeeze it to death.
+func _strike(p: Node3D) -> void:
+	_trap.strike(p)
+	SerpentTrap.hold(p, self)
+	_squeeze_t = 0.0
+	_squeeze_hp = p.hp
+	_letting_go = false
+	_strike_way = _trap.strike_way(0.0)
+	_strike_s = _strike_way[1]
+	struck.emit(p)
+	_sneak_look()  # it shows the moment it strikes
+
+
+## Squeezing: the prey's health runs down steadily from what it had when struck to nothing at squeeze_time.
+## Dead (or gone), it lets go and slides back round its bush.
+func _squeeze_tick(delta: float) -> void:
+	var prey_node := _trap.prey
+	if _letting_go:
+		_strike_s = move_toward(_strike_s, _strike_way[1], SerpentTrap.LET_GO * delta)
+		_serpent.lay(_strike_way[0], _strike_s)
+		var home := Vector3(_trap.centre.x, global_position.y, _trap.centre.z)
+		global_position = global_position.move_toward(home, SerpentTrap.LET_GO * delta)
+		if _strike_s <= _strike_way[1] + 0.001:
+			_squeeze_t = -1.0
+			_letting_go = false
+			_trap.prey = null
+			global_position = home
+			if _skill_dir == 0:
+				_sneak_look()
+				coiled.emit(_trap.bush)
+		return
+	_squeeze_t += delta
+	if Combat.is_valid_target(prey_node):
+		if _squeeze_t >= stats.squeeze_time:
+			prey_node.take_damage(prey_node.hp + 1000.0, team)
+		else:
+			var want: float = _squeeze_hp * (1.0 - _squeeze_t / stats.squeeze_time)
+			if prey_node.hp > want:
+				prey_node.take_damage(prey_node.hp - want, team)
+	if not Combat.is_valid_target(prey_node):
+		SerpentTrap.release(prey_node)
+		if prey_node != null and is_instance_valid(prey_node):
+			crushed.emit(prey_node)
+		_letting_go = true
+		return
+	_strike_way = _trap.strike_way(SerpentTrap.squeeze_at(_squeeze_t))
+	_strike_s = SerpentTrap.strike_reach(_squeeze_t, _strike_way[1], _strike_way[2], _strike_way[3])
+	_serpent.lay(_strike_way[0], _strike_s)
+	# It stands where its coils are, at the prey's side toward the bush (what shoots at it aims there).
+	var side := Vector3(_trap.centre.x - _trap.prey_at.x, 0.0, _trap.centre.z - _trap.prey_at.z)
+	side = side.normalized() if side.length() > 0.05 else Vector3.FORWARD
+	var at := Vector3(_trap.prey_at.x, global_position.y, _trap.prey_at.z) + side * 0.6
+	global_position = global_position.move_toward(at, 12.0 * delta)
+
+
+## Down from its tree or out of its bush: back on its clips (the rig blends out), and on with the order it was
+## given meanwhile.
+func _skill_done() -> void:
+	_skill_p = 0.0
+	_skill_dir = 0
+	_focus = null
+	_serpent.rifle_w = 0.0
+	_agent.avoidance_enabled = charge_gate == null
+	var next = _after
+	_after = null
+	order = {"type": "idle"}
+	set_order(next if next != null else {"type": "idle"})
+
+
+## Dead up its tree or round its bush: the prey goes free, the tree or the bush is free again, the body drops.
+## True if its rig takes the fall (the body laid along a skill's way).
+func _serpent_die() -> bool:
+	if _trap != null:
+		SerpentTrap.release(_trap.prey)
+		if _trap.bush.coiled_by == self:
+			_trap.bush.coiled_by = null
+	if _nest != null and _nest.tree.nest_by == self:
+		_nest.tree.nest_by = null
+	var tree = order.get("tree")
+	if tree != null and is_instance_valid(tree) and tree.nest_by == self:
+		tree.nest_by = null
+	var bush = order.get("bush")
+	if bush != null and is_instance_valid(bush) and bush.coiled_by == self:
+		bush.coiled_by = null
+	var laid := _serpent.weight > 0.0
+	if laid:
+		var q := PhysicsRayQueryParameters3D.create(global_position + Vector3.UP * 2.0, global_position + Vector3.DOWN * 40.0, GameConfig.LAYER_WORLD)
+		var hit := get_world_3d().direct_space_state.intersect_ray(q)
+		_serpent.die(hit.position.y if not hit.is_empty() else _skill_xf.origin.y)
+	_nest = null
+	_trap = null
+	_squeeze_t = -1.0
+	return laid
+
+
 # ---------------------------------------------------------------- movement
 
 func _physics_process(delta: float) -> void:
@@ -1778,6 +2223,8 @@ func _physics_process(delta: float) -> void:
 		_avoid(not swept and charge_gate == null)
 		if swept:
 			return  # sweeping: walking up to its mine, digging it out, or waiting for a way in
+	if _serpent and _serpent_tick(delta):
+		return  # up its tree, round its bush, or turning to start on one
 	if is_pouncing():
 		_pounce_tick(delta)  # she flies on her own: no orders, no avoidance
 		return
@@ -1818,7 +2265,7 @@ func _physics_process(delta: float) -> void:
 		move_to = _charge_pos
 	elif order.has("line"):
 		lined = true  # marching in a line: _line_step
-	elif order.type == "move" or order.type == "attack_move":
+	elif order.type in ["move", "attack_move", "nest", "trap"]:
 		move_to = order.pos
 	elif running_over:
 		move_to = target.global_position
@@ -1839,7 +2286,7 @@ func _physics_process(delta: float) -> void:
 		if _agent.target_position.distance_to(move_to) > 1.5:
 			_agent.target_position = move_to
 		if _agent.is_navigation_finished():
-			if order.type != "attack" and order.type != "raid":
+			if order.type not in ["attack", "raid", "nest", "trap"]:
 				order = {"type": "idle"}
 			elif role == "melee" or charge_gate or running_over:
 				# Close the last stretch to the target straight on.
@@ -2040,7 +2487,7 @@ func _process(delta: float) -> void:
 		_clip_restart = false
 		_anim.speed_scale = clampf(spd / ref, rate[0], 3.0 if is_ramming() else rate[1]) \
 				if moving and not skill else 1.0
-	if has_sneak():
+	if has_sneak() or has_trap():
 		_sneak_look()
 	if has_dog_modes():
 		_heal_beams()
@@ -2079,6 +2526,12 @@ func _process(delta: float) -> void:
 	_heal_icon.pixel_size = HEAL_ICON_SIZE * icon
 	if _bush:
 		_bush.pixel_size = BUSH_ICON_SIZE * icon
+	if _nest_icon:
+		# Perched in its nest: a tree-and-rifle icon over it, on the attacker's side only.
+		_nest_icon.pixel_size = NEST_ICON_SIZE * icon
+		_nest_icon.visible = is_perched() and GameConfig.player_side == GameConfig.PlayerSide.ATTACKER
+		if _nest_icon.visible:
+			_nest_icon.global_position = global_position + Vector3.UP * (stats.height + 1.3)
 	# Tagged by a Sniper: the aim icon over it, blinking as the last tag runs out.
 	_tag_icon.visible = is_tagged()
 	if _tag_icon.visible:
@@ -2086,11 +2539,11 @@ func _process(delta: float) -> void:
 		_tag_icon.global_position = global_position + Vector3.UP * (stats.height + 1.0)
 		_tag_icon.modulate.a = 1.0 if left > TAG_BLINK or fmod(left, 0.5) > 0.2 else 0.25
 	# Resupplied by a kangaroo: an ammo box floats over it (over a sneaking lioness's bush, or the aim icon).
-	var bush := _bush != null and _bush.visible
+	var bush := (_bush != null and _bush.visible) or (_nest_icon != null and _nest_icon.visible)
 	_supply_icon.visible = resupply > 0.0
 	if _supply_icon.visible:
 		_supply_icon.global_position = global_position + Vector3.UP * (stats.height + 1.0 + (0.95 if bush or _tag_icon.visible else 0.0) + 0.08 * sin(Time.get_ticks_msec() * 0.004))
-	if bush:
+	if _bush != null and _bush.visible:
 		_bush.global_position = global_position + Vector3.UP * (stats.height + 1.3)
 	# Healed by a dog: a medic's cross over it (over the other icons).
 	_heal_icon.visible = medic != null and is_instance_valid(medic) and medic.heals()
@@ -2102,10 +2555,11 @@ func _process(delta: float) -> void:
 ## The sneak as each side sees it. The defending player sees her see-through (sneak_alpha opaque: the
 ## see-through materials, drawn after the depth so she reads as one ghostly shape), with no shadow and
 ## no health bar; the attacking player sees her as ever, with a bush over her. Follows
-## GameConfig.player_side as it is now (the showcases switch sides).
+## GameConfig.player_side as it is now (the showcases switch sides). A Serpent Sniper coiled round its bush
+## the same, a grass-and-snake icon over it instead of the bush.
 func _sneak_look() -> void:
 	var want := 0
-	if is_sneaking() and is_alive():
+	if (is_sneaking() or is_coiled()) and is_alive():
 		want = 1 if GameConfig.player_side == GameConfig.PlayerSide.DEFENDER else 2
 	if want == _look:
 		return
@@ -2216,8 +2670,25 @@ func _build_model() -> void:
 		if not skeletons.is_empty():
 			_lion = LionessRig.new()
 			skeletons[0].add_child(_lion)
-	if has_sneak():
-		# See-through copies of her materials for the defender's view while she sneaks (_sneak_look).
+	if has_nest():
+		var skeletons := m.find_children("*", "Skeleton3D", true, false)
+		if not skeletons.is_empty():
+			_serpent = SerpentRig.new()
+			skeletons[0].add_child(_serpent)
+		_nest_icon = Sprite3D.new()
+		_nest_icon.texture = _nest_texture()
+		_nest_icon.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+		_nest_icon.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		_nest_icon.shaded = false
+		_nest_icon.no_depth_test = true
+		_nest_icon.fixed_size = true  # the same size on screen however far out the camera is
+		_nest_icon.pixel_size = NEST_ICON_SIZE
+		_nest_icon.top_level = true
+		_nest_icon.visible = false
+		add_child(_nest_icon)
+	if has_sneak() or has_trap():
+		# See-through copies of her materials for the defender's view while she sneaks (_sneak_look), or the
+		# snake's while it lies coiled round its bush.
 		for mi: MeshInstance3D in m.find_children("*", "MeshInstance3D", true, false):
 			for s in mi.mesh.get_surface_count():
 				var src := mi.get_active_material(s) as BaseMaterial3D
@@ -2229,7 +2700,7 @@ func _build_model() -> void:
 				ghost.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_ALWAYS
 				_ghosts.append([mi, s, ghost])
 		_bush = Sprite3D.new()
-		_bush.texture = _bush_texture()
+		_bush.texture = _trap_texture() if has_trap() else _bush_texture()
 		_bush.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 		_bush.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		_bush.shaded = false
@@ -2492,6 +2963,136 @@ static func _bush_texture() -> ImageTexture:
 	img.fill_rect(Rect2i(4, h - 2, w - 8, 2), Color(0.0, 0.0, 0.0, 0.45))
 	_bush_tex = ImageTexture.create_from_image(img)
 	return _bush_tex
+
+
+## A Serpent Sniper perched in its nest, on the attacker's side: a tree, a round crown of leaves on a brown
+## trunk, with a sniper rifle across it (the scope on top, a muzzle brake, the stock to the left), outlined dark.
+static func _nest_texture() -> ImageTexture:
+	if _nest_tex:
+		return _nest_tex
+	var w := 30
+	var h := 26
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var ink := Color(0.04, 0.07, 0.03)
+	var crown := [Vector3(9.5, 9.0, 6.0), Vector3(15.5, 6.5, 6.5), Vector3(21.0, 9.5, 5.5), Vector3(15.0, 12.0, 5.5)]
+	var dark := Color(0.13, 0.34, 0.1)
+	var lit := Color(0.47, 0.76, 0.26)
+	var rifle := {}
+	for y in range(16, 18):
+		for x in range(8, 27):
+			rifle[Vector2i(x, y)] = Color(0.22, 0.23, 0.25) if y == 16 else Color(0.14, 0.15, 0.16)  # the barrel
+	for y in range(15, 19):
+		for x in range(26, 29):
+			rifle[Vector2i(x, y)] = Color(0.18, 0.19, 0.2)  # the muzzle brake
+	for y in range(15, 20):
+		for x in range(6, 14):
+			rifle[Vector2i(x, y)] = Color(0.3, 0.3, 0.28) if y < 17 else Color(0.2, 0.2, 0.19)  # the receiver
+	for y in range(16, 21):
+		for x in range(1, 7):
+			if x + (20 - y) >= 2:
+				rifle[Vector2i(x, y)] = Color(0.36, 0.3, 0.2) if y < 18 else Color(0.27, 0.22, 0.15)  # the stock
+	for x in range(8, 15):
+		rifle[Vector2i(x, 13)] = Color(0.16, 0.17, 0.19)
+		rifle[Vector2i(x, 14)] = Color(0.1, 0.1, 0.12)  # the scope
+	rifle[Vector2i(14, 13)] = Color(0.55, 0.8, 0.95)
+	rifle[Vector2i(8, 13)] = Color(0.55, 0.8, 0.95)
+	for y in range(19, 22):
+		rifle[Vector2i(11, y)] = Color(0.14, 0.15, 0.16)  # the magazine
+		rifle[Vector2i(12, y)] = Color(0.14, 0.15, 0.16)
+	for y in h:
+		for x in w:
+			var p := Vector2(x + 0.5, y + 0.5)
+			var inside := -INF
+			var n := Vector2.ZERO
+			for c in crown:
+				var d := p - Vector2(c.x, c.y)
+				if c.z - d.length() > inside:
+					inside = c.z - d.length()
+					n = d / c.z
+			var trunk := x >= 13 and x <= 16 and y >= 14 and y <= 24
+			if inside > 0.0:
+				var col := dark.lerp(lit, clampf(0.55 - n.x * 0.45 - n.y * 0.6, 0.0, 1.0))
+				if (x * 7 + y * 13) % 11 == 0:
+					col = col.darkened(0.35)
+				img.set_pixel(x, y, col)
+			elif trunk:
+				img.set_pixel(x, y, Color(0.45, 0.3, 0.17) if x < 15 else Color(0.33, 0.21, 0.12))
+			elif inside > -1.3 or (x >= 12 and x <= 17 and y >= 13 and y <= 25):
+				img.set_pixel(x, y, ink)
+	# The rifle over it, outlined.
+	for k in rifle:
+		for dy in range(-1, 2):
+			for dx in range(-1, 2):
+				var q: Vector2i = k + Vector2i(dx, dy)
+				if q.x >= 0 and q.y >= 0 and q.x < w and q.y < h and not rifle.has(q):
+					img.set_pixel(q.x, q.y, ink)
+	for k in rifle:
+		img.set_pixel(k.x, k.y, rifle[k])
+	_nest_tex = ImageTexture.create_from_image(img)
+	return _nest_tex
+
+
+## A Serpent Sniper coiled round its bush, on the attacker's side: tall grass, a snake's head looking out of it
+## (spotted, a yellow eye with a slit pupil, a red forked tongue), outlined dark.
+static func _trap_texture() -> ImageTexture:
+	if _trap_tex:
+		return _trap_tex
+	var w := 28
+	var h := 26
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0, 0, 0, 0))
+	var ink := Color(0.04, 0.07, 0.03)
+	var col := {}
+	# Blades of grass [base x, tip x, tip y, base width, in front of the head], shaded from the left.
+	var blades := [[3.5, 1.5, 8.0, 3.0, false], [7.0, 6.0, 3.0, 3.2, false], [11.0, 13.0, 6.0, 3.0, false],
+			[20.0, 23.0, 4.0, 3.0, false], [24.5, 26.5, 9.0, 2.8, false], [5.5, 9.0, 11.0, 3.0, true],
+			[14.5, 12.5, 12.0, 3.4, true], [18.5, 21.0, 13.0, 3.0, true]]
+	var snake := {}
+	# The neck, then the head (snout to the right), spotted, a lighter jaw.
+	for y in h:
+		for x in w:
+			var p := Vector2(x + 0.5, y + 0.5)
+			var neck := Vector2(p.x - lerpf(12.0, 13.5, (p.y - 9.0) / 12.0), 0.0).length() < 2.6 and p.y > 9.0 and p.y < 22.0
+			var e := Vector2((p.x - 15.0) / 6.0, (p.y - 8.5) / 3.6)
+			var head := e.length() < 1.0 or (p.x > 19.0 and p.x < 21.6 and absf(p.y - 9.2) < 1.8 - (p.x - 19.0) * 0.35)
+			if head or neck:
+				var c := Color(0.66, 0.64, 0.3) if p.y < 9.5 or neck else Color(0.84, 0.8, 0.5)
+				if (x * 5 + y * 3) % 7 == 0 and p.y < 10.0:
+					c = Color(0.2, 0.18, 0.08)
+				snake[Vector2i(x, y)] = c
+	snake[Vector2i(17, 7)] = Color(0.98, 0.84, 0.15)
+	snake[Vector2i(18, 7)] = Color(0.05, 0.04, 0.02)  # the eye, its slit pupil
+	snake[Vector2i(17, 8)] = Color(0.9, 0.72, 0.1)
+	for t in [Vector2i(22, 10), Vector2i(23, 10), Vector2i(24, 9), Vector2i(25, 8), Vector2i(24, 11), Vector2i(25, 12)]:
+		snake[t] = Color(0.85, 0.08, 0.1)  # the forked tongue
+	for front in [false, true]:
+		for b in blades:
+			if b[4] != front:
+				continue
+			for y in h:
+				var u := clampf((25.5 - (y + 0.5)) / (25.5 - b[2]), 0.0, 1.0)
+				if y + 0.5 < b[2]:
+					continue
+				var cx: float = lerpf(b[0], b[1], u * u)
+				var half: float = b[3] * 0.5 * (1.0 - u)
+				for x in w:
+					var d := absf(x + 0.5 - cx)
+					if d <= half + 0.35:
+						col[Vector2i(x, y)] = Color(0.5, 0.78, 0.27) if x + 0.5 < cx else Color(0.2, 0.46, 0.12)
+		if not front:
+			for k in snake:
+				col[k] = snake[k]
+	for k in col:
+		for dy in range(-1, 2):
+			for dx in range(-1, 2):
+				var q: Vector2i = k + Vector2i(dx, dy)
+				if q.x >= 0 and q.y >= 0 and q.x < w and q.y < h and not col.has(q):
+					img.set_pixel(q.x, q.y, ink)
+	for k in col:
+		img.set_pixel(k.x, k.y, col[k])
+	_trap_tex = ImageTexture.create_from_image(img)
+	return _trap_tex
 
 
 func _update_hp_bar() -> void:

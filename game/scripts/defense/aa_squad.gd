@@ -495,6 +495,8 @@ func throw_mines(toward: Vector3) -> bool:
 			if spots.is_empty():
 				break
 			var tr: MissileTrooper = troopers[k]
+			if SerpentTrap.is_held(tr):
+				continue  # in a snake's coils: it can't throw
 			var best := 0
 			for j in spots.size():
 				if _flat(spots[j], tr.global_position) < _flat(spots[best], tr.global_position):
@@ -523,8 +525,11 @@ func _on_mine_gone(m: GroundMine) -> void:
 	mines.erase(m)
 
 
-## Tubes a trooper still has for new launches (loaded, less those already promised).
+## Tubes a trooper still has for new launches (loaded, less those already promised; none while a Serpent
+## Sniper holds it in its coils).
 func _free_tubes(t: SquadTrooper) -> int:
+	if SerpentTrap.is_held(t):
+		return 0
 	var n := (t as MissileTrooper).loaded()
 	for l in _launches:
 		if l.trooper == t:
@@ -546,7 +551,7 @@ func _arm_troopers(delta: float) -> void:
 			continue
 		_launches.remove_at(i)
 		var tr = l.trooper
-		var alive: bool = is_instance_valid(tr) and tr.is_alive()
+		var alive: bool = is_instance_valid(tr) and tr.is_alive() and not SerpentTrap.is_held(tr)
 		if l.kind == "missile":
 			var ok: bool = alive and Combat.is_valid_target(l.target) \
 					and tr.launch_missile(l.target, MISSILE_DAMAGE, ElephantMissiles.release.bind(l.id, MISSILE_DAMAGE))

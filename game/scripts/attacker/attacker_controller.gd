@@ -22,6 +22,10 @@ extends CanvasLayer
 ## T with no rhino selected: lionesses moved together form firing lines, or don't (the HUD's toggle too)
 ## T with no rhino or lioness selected: the selected Wolf Medics switch between healing and minesweeping
 ##    (the HUD's button too)
+## F with no rhino, talon or lioness skill ready: the selected Serpent Snipers' sniper nest, LMB a tree (they
+##    climb it and the trees round it; RMB/F cancel)
+## G with no bison, talon or lioness skill ready: the selected Serpent Snipers' bush trap, LMB a bush (they coil
+##    round it and the bushes round it; RMB/G cancel)
 ## The fog of war (AttackerVision) dims the land the army doesn't see (FogOverlay); defenders in it
 ## can't be ordered at.
 
@@ -55,7 +59,7 @@ var _spawn_buttons := {}
 var _spawn_point_buttons: Array[Button] = []
 var _marker: MeshInstance3D
 ## Ability aim mode: "" (off), "cluster" (rhinos), "bombard" (bisons), "smoke" (hippos),
-## "missile" (elephants), "strafe" or "bomb" (talons), "flash" (kangaroos).
+## "missile" (elephants), "strafe" or "bomb" (talons), "flash" (kangaroos), "nest" or "trap" (Serpent Snipers).
 ## Cluster: preview of every rhino's aim zone and where its bombs will land.
 ## Bombard: every ready bison's range and where its shell will land (its blast).
 ## Flash: every ready kangaroo's throw and where its grenade will go off (the flash's reach).
@@ -64,6 +68,9 @@ var _marker: MeshInstance3D
 ## the elephants that would fire at it.
 ## Strafe: every ready talon's circle and the lane it will strafe, with an arrow the way it flies.
 ## Bomb: every ready talon's circle and where its bomb will land (its blast).
+## Nest: the tree under the cursor and the ones round it the snakes will take (a ring round each trunk, a line
+## from each snake), and how far the first will see and shoot from up there.
+## Trap: the bush under the cursor and the ones round it, each with the reach of its trap.
 var _aiming := ""
 ## Strafe: where LMB went down (the middle of the line), INF before it does.
 var _strafe_at := Vector3.INF
@@ -130,6 +137,12 @@ func _unhandled_input(event: InputEvent) -> void:
 					_fire_smoke(event.position)
 				"flash":
 					_fire_flash(event.position)
+				"nest":
+					if not _fire_nest(event.position):
+						return  # no tree there: still aiming
+				"trap":
+					if not _fire_trap(event.position):
+						return  # no bush there: still aiming
 				"missile":
 					# Elephants that didn't fire stay ready for the next target: keep aiming.
 					if _fire_missiles(event.position) and not _ready_elephants().is_empty():
@@ -162,7 +175,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_select_rect.visible = true
 	elif event is InputEventKey and event.pressed and not event.echo:
 		if event.physical_keycode == CLUSTER_KEY:
-			if _aiming in ["cluster", "strafe"]:
+			if _aiming in ["cluster", "strafe", "nest"]:
 				_set_aiming("")
 			elif not _ready_rhinos().is_empty():
 				_set_aiming("cluster")
@@ -170,9 +183,11 @@ func _unhandled_input(event: InputEvent) -> void:
 				_set_aiming("strafe")
 			elif not _ready_lionesses("sneak").is_empty():
 				commander.submit({"type": "sneak", "units": _ready_lionesses("sneak").map(func(u): return u.unit_id)})
+			elif not _serpents("nest").is_empty():
+				_set_aiming("nest")
 			return
 		if event.physical_keycode == BOMBARD_KEY:
-			if _aiming in ["bombard", "bomb"]:
+			if _aiming in ["bombard", "bomb", "trap"]:
 				_set_aiming("")
 			elif not _ready_bisons().is_empty():
 				_set_aiming("bombard")
@@ -180,6 +195,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				_set_aiming("bomb")
 			elif not _ready_lionesses("blast").is_empty():
 				commander.submit({"type": "blast", "units": _ready_lionesses("blast").map(func(u): return u.unit_id)})
+			elif not _serpents("trap").is_empty():
+				_set_aiming("trap")
 			return
 		if event.physical_keycode == SMOKE_KEY:
 			# A ready hippo's smoke screen comes first, then the kangaroos' flash grenades.
@@ -301,10 +318,10 @@ func _ready_rhinos() -> Array:
 func _set_aiming(mode: String) -> void:
 	_aiming = mode
 	_strafe_at = Vector3.INF
-	_aim_preview.visible = mode in ["cluster", "bombard", "strafe", "bomb", "flash"]
+	_aim_preview.visible = mode in ["cluster", "bombard", "strafe", "bomb", "flash", "nest", "trap"]
 	_smoke_preview.visible = mode == "smoke"
 	_missile_preview.visible = mode == "missile"
-	_aim_label.visible = mode == "missile"
+	_aim_label.visible = mode in ["missile", "nest", "trap"]
 
 
 func _fire_cluster(screen_pos: Vector2) -> void:
@@ -542,6 +559,105 @@ func toggle_lines() -> void:
 	commander.submit({"type": "line", "on": not commander.line_formation})
 
 
+# ---------------------------------------------------------------- Serpent Snipers
+
+## The selected Serpent Snipers that can be sent up a tree (`skill` "nest") or round a bush ("trap"): all but
+## those squeezing their prey (nothing calls that off).
+func _serpents(skill: String) -> Array:
+	_alive_selection()
+	return selected.filter(func(u): return (u.has_nest() if skill == "nest" else u.has_trap()) and not u.is_constricting())
+
+
+func _tree_under(screen_pos: Vector2) -> ForestTree:
+	var cam := camera_rig.camera
+	return SerpentNest.tree_under(cam.project_ray_origin(screen_pos), cam.project_ray_normal(screen_pos))
+
+
+func _bush_under(screen_pos: Vector2, snakes: Array) -> Bush:
+	var hit := _ray(screen_pos, GameConfig.LAYER_WORLD)
+	return SerpentTrap.bush_near(hit.position, snakes) if not hit.is_empty() else null
+
+
+## LMB with the sniper nest aimed: the snakes go up the tree under the cursor and the ones round it. False if
+## there is no tree there.
+func _fire_nest(screen_pos: Vector2) -> bool:
+	var tree := _tree_under(screen_pos)
+	var snakes := _serpents("nest")
+	if tree == null or snakes.is_empty():
+		return false
+	commander.submit({"type": "nest", "units": snakes.map(func(u): return u.unit_id), "pos": tree.trunk_centre()})
+	_ping(tree.trunk_centre(), UIKit.GOOD)
+	return true
+
+
+## LMB with the bush trap aimed: the snakes coil round the bush under the cursor and the ones round it. False if
+## there is no bush there.
+func _fire_trap(screen_pos: Vector2) -> bool:
+	var snakes := _serpents("trap")
+	var bush := _bush_under(screen_pos, snakes)
+	if bush == null or snakes.is_empty():
+		return false
+	commander.submit({"type": "trap", "units": snakes.map(func(u): return u.unit_id), "pos": bush.global_position})
+	_ping(bush.global_position, UIKit.GOOD)
+	return true
+
+
+func _update_nest_preview() -> void:
+	var snakes := _serpents("nest")
+	if snakes.is_empty():
+		_set_aiming("")
+		return
+	_aim_mesh.clear_surfaces()
+	var mouse := get_viewport().get_mouse_position()
+	_aim_label.position = mouse + Vector2(22, 14)
+	var tree := _tree_under(mouse)
+	if tree == null:
+		_aim_label.text = "Sniper nest: click a tree"
+		return
+	var picks := SerpentNest.assign(snakes, tree.trunk_centre())
+	_aim_label.text = "Sniper nest: %d up %s" % [picks.size(), "this tree" if picks.size() == 1 else "these trees"]
+	var lift := Vector3.UP * 0.3
+	_aim_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
+	for k in picks.size():
+		var u: AttackerUnit = picks[k][0]
+		var t: ForestTree = picks[k][1]
+		var foot := t.trunk_centre()
+		foot.y = u.global_position.y
+		RhinoAim.dashed_circle(_aim_mesh, foot + lift, t.trunk_radius(0.0) + 0.8, 16)
+		_aim_mesh.surface_add_vertex(u.global_position + lift)
+		_aim_mesh.surface_add_vertex(foot + lift)
+		if k == 0:
+			RhinoAim.dashed_circle(_aim_mesh, foot + lift, u.stats.range * u.stats.nest_range, 96)
+	_aim_mesh.surface_end()
+
+
+func _update_trap_preview() -> void:
+	var snakes := _serpents("trap")
+	if snakes.is_empty():
+		_set_aiming("")
+		return
+	_aim_mesh.clear_surfaces()
+	var mouse := get_viewport().get_mouse_position()
+	_aim_label.position = mouse + Vector2(22, 14)
+	var bush := _bush_under(mouse, snakes)
+	if bush == null:
+		_aim_label.text = "Bush trap: click a bush"
+		return
+	var picks := SerpentTrap.assign(snakes, bush.global_position)
+	_aim_label.text = "Bush trap: %d round %s" % [picks.size(), "this bush" if picks.size() == 1 else "these bushes"]
+	var lift := Vector3.UP * 0.3
+	_aim_mesh.surface_begin(Mesh.PRIMITIVE_LINES)
+	for pick in picks:
+		var u: AttackerUnit = pick[0]
+		var b: Bush = pick[1]
+		var at := Vector3(b.global_position.x, u.global_position.y, b.global_position.z)
+		RhinoAim.dashed_circle(_aim_mesh, at + lift, SerpentTrap.ring_radius(b), 12)
+		RhinoAim.dashed_circle(_aim_mesh, at + lift, u.stats.trap_reach, 28)
+		_aim_mesh.surface_add_vertex(u.global_position + lift)
+		_aim_mesh.surface_add_vertex(at + lift)
+	_aim_mesh.surface_end()
+
+
 # ---------------------------------------------------------------- Wolf Medics
 
 func _dogs() -> Array:
@@ -741,7 +857,7 @@ func _build_hud() -> void:
 	row.add_child(sp)
 	set_spawn_point(0)
 
-	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nBisons: G bombardment (LMB fire, RMB cancel), onto the gun decks and roofs too\nTalons: F strafe run (press LMB on the target, drag the way to fly, let go) · G bomb strike (LMB fire) · RMB cancels\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nGiraffes: see furthest through the fog · P ping: marks every defender it reaches, even under camo, and reveals infiltrators out of camo\nKangaroos: R flash grenade (LMB fire, RMB cancel) when no hippo's smoke is ready · they resupply units nearby\nLionesses: F sneak (then RMB a defender: they pounce) · G fire blast · T firing lines on/off when moved together\nWolf Medics: T healing (2 units each) / minesweeping (they find the hidden mines and dig them out; RMB sweeps on the way, Ctrl+RMB doesn't)\nChimps / Rams / Kangaroos: RMB next to a broken gate to send them in\nHelipads (S/E/W Pad): spawn there and +%.1f supply/s each while you hold them · sabotaged, stand ground units by one to retake it" % AttackerBase.INCOME,
+	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nBisons: G bombardment (LMB fire, RMB cancel), onto the gun decks and roofs too\nTalons: F strafe run (press LMB on the target, drag the way to fly, let go) · G bomb strike (LMB fire) · RMB cancels\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nGiraffes: see furthest through the fog · P ping: marks every defender it reaches, even under camo, and reveals infiltrators out of camo\nKangaroos: R flash grenade (LMB fire, RMB cancel) when no hippo's smoke is ready · they resupply units nearby\nLionesses: F sneak (then RMB a defender: they pounce) · G fire blast · T firing lines on/off when moved together\nSerpent Snipers: F sniper nest (LMB a tree: up it they see and shoot further; any move order climbs them down) · G bush trap (LMB a bush: coiled, they strike and crush a defender who comes close)\nWolf Medics: T healing (2 units each) / minesweeping (they find the hidden mines and dig them out; RMB sweeps on the way, Ctrl+RMB doesn't)\nChimps / Rams / Kangaroos: RMB next to a broken gate to send them in\nHelipads (S/E/W Pad): spawn there and +%.1f supply/s each while you hold them · sabotaged, stand ground units by one to retake it" % AttackerBase.INCOME,
 			13, Color(0.85, 0.85, 0.85, 0.75))
 	help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	help.grow_vertical = Control.GROW_DIRECTION_BEGIN
@@ -855,6 +971,23 @@ func _process(_delta: float) -> void:
 			if soonest > 0.0:
 				_selection_label.text += "  %ds" % ceili(soonest)
 		_line_button.text = "Firing lines: %s  [T]" % ("ON" if commander.line_formation else "OFF")
+	var snakes := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_nest())
+	if not snakes.is_empty():
+		var perched := snakes.filter(func(u): return u.is_perched()).size()
+		var climbing := snakes.filter(func(u): return u.in_tree() and not u.is_perched())
+		_selection_label.text += "\nSniper nest [F] · %d up a tree" % perched
+		if not climbing.is_empty():
+			var up := climbing.filter(func(u): return u.skill_dir() > 0).size()
+			_selection_label.text += " · %d climbing %s" % [climbing.size(), "up" if up == climbing.size() else "down" if up == 0 else "up and down"]
+		var coiled := snakes.filter(func(u): return u.is_coiled()).size()
+		var squeezing := snakes.filter(func(u): return u.is_constricting())
+		var coiling := snakes.filter(func(u): return u.in_bush() and not u.is_coiled() and not u.is_constricting()).size()
+		_selection_label.text += "\nBush trap [G] · %d coiled" % coiled
+		if coiling > 0:
+			_selection_label.text += " · %d coiling or uncoiling" % coiling
+		if not squeezing.is_empty():
+			var left: float = squeezing.map(func(u): return u.squeeze_left()).max()
+			_selection_label.text += "\nConstricting %d  %ds (can't be called off)" % [squeezing.size(), ceili(left)]
 	var dogs := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_dog_modes())
 	_dog_button.visible = not dogs.is_empty()
 	if not dogs.is_empty():
@@ -898,6 +1031,10 @@ func _process(_delta: float) -> void:
 		_update_flash_preview()
 	elif _aiming == "missile":
 		_update_missile_preview()
+	elif _aiming == "nest":
+		_update_nest_preview()
+	elif _aiming == "trap":
+		_update_trap_preview()
 	for type_id in _spawn_buttons:
 		_spawn_buttons[type_id].disabled = not commander.can_afford(type_id)
 	# A sabotaged helipad spawns nothing until it is retaken.
