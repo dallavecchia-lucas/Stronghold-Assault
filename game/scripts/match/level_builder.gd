@@ -26,6 +26,10 @@ const STRONGHOLD_OFFSET := Vector3(0, 0, 78)
 const FACE_DIST := 80.0
 const MOUNTAIN_HALF := 86.0
 const GATE_HP := 1500.0
+## The bushes out on the field: how wide (m, the Serpent Sniper's 2.3 m rifle lies hidden across one), no
+## taller than BUSH_TALLEST (m).
+const BUSH_WIDTH := [2.8, 3.3]
+const BUSH_TALLEST := 2.2
 const KEEP_HP := 4000.0
 ## Blast door filling an exit C tunnel portal (between the concrete jambs, under the lintel).
 const DOOR_SIZE := Vector3(3.0, 2.8, 0.4)
@@ -563,7 +567,8 @@ func _build_ground_cover(rng: RandomNumberGenerator) -> void:
 		if absf(p.x) < MOUNTAIN_HALF - 2 and absf(p.z) < MOUNTAIN_HALF - 2:
 			continue
 		var path: String = Props.BUSHES[rng.randi() % Props.BUSHES.size()]
-		var h := rng.randf_range(0.4, 1.1)
+		# Sized by how wide it is: big enough for a Serpent Sniper to hide its rifle in (SerpentTrap).
+		var h := minf(rng.randf_range(BUSH_WIDTH[0], BUSH_WIDTH[1]) / Props.aspect(path), BUSH_TALLEST)
 		var bush := Bush.new()
 		bush.position = p
 		bush.setup(Props.instance(path, h), Props.footprint(path, h), h, rng.randf() * TAU)

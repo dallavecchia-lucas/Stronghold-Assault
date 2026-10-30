@@ -2,10 +2,10 @@ class_name SerpentTrap
 extends RefCounted
 ## A Serpent Sniper's bush trap (AttackerUnit, UnitTypes trap_*): where its body lies as it coils round a bush
 ## (progress 0, lying beside it as it came up, to 1, coiled round it) and as it strikes and constricts its prey,
-## for SerpentRig. The body follows its snout's way, the rifle set down in the grass first (rifle_rest):
-##   coiling     the snout curves in onto a ring round the foot of the bush, inside its foliage, and winds round
-##               it, the body following it round, the last of it up on top of the first turn, the head resting
-##               on top
+## for SerpentRig. The body follows its snout's way, the rifle pushed in across the middle of the bush first,
+## hidden in it (rifle_rest):
+##   coiling     the snout curves in onto a ring round the bush, hugging the edge of its foliage, and winds round
+##               it, the body following it round (as far as its length goes), the head resting by its tail
 ##   striking    the snout darts out at the prey (STRIKE_TIME) and winds round its legs and body up to its chest
 ##               (WRAP_TIME), the coils sliding off the bush after it
 ##   squeezing   the coils round the prey tighten, in slow pulses
@@ -14,9 +14,10 @@ extends RefCounted
 ## defenders' soldiers, troopers and squads check it).
 
 const BODY_R := 0.17
-## The ring round the bush: this share of its footprint, no tighter or wider than RING_R (m), plus BODY_R.
-const RING := 0.5
-const RING_R := [0.25, 0.5]
+## The ring round the bush: this share of its footprint (the foliage's edge), no tighter or wider than RING_R
+## (m), plus BODY_R.
+const RING := 0.72
+const RING_R := [0.3, 0.9]
 ## The strike: out to the prey in STRIKE_TIME, wound round it WRAP_TIME later; the coils round it start at
 ## WRAP_LOW up its legs, end at WRAP_HIGH round its chest, WRAP_TURNS round, PREY_R out from its middle.
 const STRIKE_TIME := 0.35
@@ -35,6 +36,13 @@ const LET_GO := 3.0
 const SPREAD := 20.0
 ## What it strikes: the defenders' soldiers and squad troopers (station_kind), on the ground.
 const PREY := ["soldier", "infiltrator", "sniper"]
+## The rifle's middle is this far up the barrel from its bone (m: rig_serpent.py's `rifle`, 2.3 m butt to muzzle).
+const RIFLE_MIDDLE := 0.58
+## Set down in a bush, the barrel slants up this much (rad), its bone this high over the ground at the rifle's
+## middle (m).
+const RIFLE_TILT := deg_to_rad(8.0)
+const RIFLE_LOW := 0.15
+const RIFLE_IN := 0.12
 
 var bush: Bush
 var centre := Vector3.ZERO
@@ -93,13 +101,16 @@ func pose(p: float) -> Array:
 	return [way, lerpf(_u0, _u_end, lerpf(p, e, 0.6))]
 
 
-## Where the rifle lies set down in the grass, from where it rode (world): upright on the ground, level, slid
-## back off the snake's front.
-static func rifle_rest(rode: Transform3D, ground: float) -> Transform3D:
+## Where the rifle lies set down inside `b`, from where it rode (world): the way it pointed, low in the bush,
+## sunk into the grass and the muzzle a little up (RIFLE_TILT), its middle (RIFLE_MIDDLE up the barrel from its
+## bone) just past the middle of the bush (RIFLE_IN, pushed in), so all of it is hidden under the leaves.
+static func rifle_rest(rode: Transform3D, b: Bush, ground: float) -> Transform3D:
 	var along := _flat(rode.basis.y).normalized()
-	var at := rode.origin - along * 0.5
-	at.y = ground + 0.42
-	return Transform3D(Basis(along.cross(Vector3.UP), along, Vector3.UP), at)
+	var barrel := along * cos(RIFLE_TILT) + Vector3.UP * sin(RIFLE_TILT)
+	var up := Vector3.UP * cos(RIFLE_TILT) - along * sin(RIFLE_TILT)
+	var at := b.global_position + along * (RIFLE_IN - RIFLE_MIDDLE * cos(RIFLE_TILT))
+	at.y = ground + RIFLE_LOW + RIFLE_MIDDLE * sin(RIFLE_TILT)
+	return Transform3D(Basis(along.cross(Vector3.UP), barrel, up), at)
 
 
 # ---------------------------------------------------------------- the strike

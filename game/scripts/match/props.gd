@@ -62,6 +62,14 @@ static func instance(path: String, height: float) -> Node3D:
 	return root
 
 
+## How wide `path` is (its wider footprint side) for each metre of its height.
+static func aspect(path: String) -> float:
+	if not _sizes.has(path):
+		instance(path, 1.0).free()
+	var s: Vector3 = _sizes[path]
+	return maxf(s.x, s.z) / maxf(s.y, 0.001)
+
+
 ## Footprint (x/z extent) of `path` once scaled to `height`.
 static func footprint(path: String, height: float) -> Vector2:
 	var s: Vector3 = _sizes[path] * (height / maxf(_sizes[path].y, 0.001))

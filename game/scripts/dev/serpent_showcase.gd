@@ -9,7 +9,7 @@ extends Node3D
 ##             on top of the crown, rifle out over the field; the tree-and-rifle icon; up there it sees and shoots
 ##             further: a trooper beyond its reach on the ground, out of its sight in the fog, it now sees and
 ##             shoots; RMB on the ground: it climbs down (8 s), then goes
-##   trap      G, LMB on a bush: it sets its rifle down in the grass and coils round the bush (8 s); the grass-
+##   trap      G, LMB on a bush: it pushes its rifle in under the bush and coils round it (8 s); the grass-
 ##             and-snake icon; a Flame Trooper walking past comes within its reach: it strikes, winds round it and
 ##             squeezes, 15 s, the trooper's health running down steadily to nothing; an order meanwhile changes
 ##             nothing; then it goes back round its bush; RMB on the ground: it uncoils (8 s), picks its rifle up
@@ -459,7 +459,7 @@ func _trap_step() -> void:
 		controller._set_selection([])
 		_pan(at + out * 3.0, 0.0, 1.0)
 		rig._target_zoom = CLOSE_ZOOM
-		_say("Bush trap", "G, then click a bush: it sets its rifle down in the grass and coils round the bush (%d s)" % UnitTypes.DATA.serpent.trap_time)
+		_say("Bush trap", "G, then click a bush: it hides its rifle in the bush and coils round it (%d s)" % UnitTypes.DATA.serpent.trap_time)
 		print("SERPENT trap bush at %s, %.2f m across, %.2f m tall" % [at, bush.radius * 2.0, bush.height])
 	if _phase_at(1.0, "select"):
 		_move_cursor(_screen(trapper.global_position + Vector3.UP * 0.5), 1.0, 1.6)
@@ -491,7 +491,7 @@ func _trap_step() -> void:
 		print("SERPENT coiled after %.2f s (phase %.1f s)" % [took, _phase_t])
 		_check(absf(took - UnitTypes.DATA.serpent.trap_time) < 0.15, "trap: coiling round the bush took %.1f s (%d)" % [took, UnitTypes.DATA.serpent.trap_time])
 		_check(_rate("trap_icon_off") == 1.0, "trap: no icon until it is all coiled")
-		_check(_rate("rifle_down") == 1.0, "trap: its rifle lies in the grass")
+		_check(_rate("rifle_down") == 1.0, "trap: its rifle lies hidden in the bush")
 		_say("Lying in wait", "Coiled, it never shoots. A defender who comes within %d m of the bush, it strikes" % UnitTypes.DATA.serpent.trap_reach)
 	if _marks.has("coiled") and _once("coiled_checks"):
 		_check(trapper.is_coiled() and trapper.get("_bush").visible and not trapper.ghosted(), "trap: coiled, the grass-and-snake icon over it, as ever on the attacker's side")

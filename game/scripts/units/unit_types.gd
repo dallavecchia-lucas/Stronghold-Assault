@@ -107,7 +107,7 @@ extends RefCounted
 ##   order climbs it down (nest_time again), then it goes. Ordered to attack from up there, it fires from the
 ##   tree. Perched, a tree-and-rifle icon hangs over it on the attacker's side. A tree that catches fire, it
 ##   climbs down.
-## trap_*: bush trap (Serpent Sniper). Sent at a bush, it sets its rifle down in the grass and coils round the
+## trap_*: bush trap (Serpent Sniper). Sent at a bush, it hides its rifle in the bush and coils round the
 ##   bush (trap_time seconds: SerpentTrap); coiled, it never shoots, and any order uncoils it (trap_time again)
 ##   and it picks the rifle up before it goes. A defender on the ground that comes within trap_reach of the bush:
 ##   it strikes and constricts it for squeeze_time seconds, and nothing calls it off. The prey can't move or fight

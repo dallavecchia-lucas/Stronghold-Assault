@@ -1104,12 +1104,14 @@ func _fire_at(t: Node3D) -> void:
 						stats.structure_mult, [get_rid()])
 
 
-## Serpent Sniper: one heavy round from the rifle on its back, from its eyes at `t` (its tracer from the muzzle),
-## the rifle kicking back, a flash and a puff of smoke at the muzzle.
+## Serpent Sniper: one heavy round from the rifle on its back, from its eyes at `t` (its tracer from the muzzle,
+## and the white trail it leaves), the rifle kicking back, a flash and a puff of smoke at the muzzle.
 func _rifle_shot(t: Node3D) -> void:
 	var muzzle := _serpent.muzzle().origin if _serpent.posed() else _eye()
-	Combat.fire_hitscan(self, _eye(), Combat.aim_point(t), stats.spread, stats.damage, team, stats.structure_mult,
+	var shot := Combat.fire_hitscan(self, _eye(), Combat.aim_point(t), stats.spread, stats.damage, team, stats.structure_mult,
 			[get_rid()], muzzle, 0.07)
+	# The white trail the round leaves hangs behind its tracer, like the defenders' Sniper's.
+	SniperTrail.trail(self, muzzle, shot.position, Combat.BULLET_SPEED)
 	Combat.spawn_impact(self, muzzle, true)
 	SmokeCloud.wisp(self, muzzle, 1.0)
 	_serpent.kick()
@@ -1953,7 +1955,7 @@ func _begin_nest(tree: ForestTree) -> void:
 func _begin_trap(bush: Bush) -> void:
 	bush.coiled_by = self
 	_trap = SerpentTrap.new(bush, _serpent.body_path(), global_position.y)
-	_serpent.rifle_down = SerpentTrap.rifle_rest(_serpent.rifle(), global_position.y)
+	_serpent.rifle_down = SerpentTrap.rifle_rest(_serpent.rifle(), bush, global_position.y)
 	_skill_start()
 
 
@@ -2023,7 +2025,7 @@ func _trap_tick(delta: float) -> void:
 		_squeeze_tick(delta)
 		return
 	_skill_p = clampf(_skill_p + _skill_dir * delta / stats.trap_time, 0.0, 1.0)
-	# The rifle goes down in the grass as it slides out from under it (and up onto its back as it slides back).
+	# The rifle goes into the bush as it slides out from under it (and up onto its back as it slides back).
 	var r := clampf(_skill_p / 0.15, 0.0, 1.0)
 	_serpent.rifle_w = r * r * (3.0 - 2.0 * r)
 	if _skill_p >= 1.0 and _skill_dir > 0:
