@@ -17,9 +17,13 @@ const LAYER_NAV_BLOCK := 16
 const LAYER_ALL_SOLID := LAYER_WORLD | LAYER_ATTACKERS | LAYER_DEFENDERS | LAYER_STRUCTURES
 
 const DIFFICULTY_NAMES := ["Easy", "Normal", "Hard"]
+## The maps: the Jungle Keep (JungleLevel, the default) and the classic open field (LevelBuilder).
+const MAPS := ["jungle", "classic"]
+const MAP_NAMES := ["Jungle Keep", "Classic Field"]
 
 var player_side: PlayerSide = PlayerSide.DEFENDER
 var difficulty := 1
+var map := "jungle"
 var match_duration := 600.0
 var mouse_sensitivity := 0.0025
 
@@ -27,6 +31,7 @@ var mouse_sensitivity := 0.0025
 #   --autotest=defender|attacker   play a scripted match and quit
 #   --screenshot=path.png          save a screenshot during the autotest
 #   --duration=seconds             autotest length (game time)
+#   --map=jungle|classic           the map to play
 var autotest := ""
 var screenshot_path := ""
 var autotest_duration := 90.0
@@ -41,6 +46,8 @@ func _ready() -> void:
 			screenshot_path = arg.get_slice("=", 1)
 		elif arg.begins_with("--duration="):
 			autotest_duration = arg.get_slice("=", 1).to_float()
+		elif arg.begins_with("--map="):
+			map = arg.get_slice("=", 1)
 
 
 ## CPU attacker income multiplier for the chosen difficulty.

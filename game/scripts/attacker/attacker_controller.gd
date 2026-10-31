@@ -92,10 +92,14 @@ var _fog: FogOverlay
 func _ready() -> void:
 	layer = 2
 	camera_rig = RTSCamera.new()
-	camera_rig.bounds = LevelBuilder.MAP_HALF
+	camera_rig.bounds = LevelBuilder.map_half
+	if LevelBuilder.jungle:
+		camera_rig.max_zoom = 320.0
 	level.add_child(camera_rig)
+	if LevelBuilder.jungle:
+		camera_rig.camera.far = 2400.0
 	camera_rig.camera.current = true
-	camera_rig.focus(commander.spawn_points[0] * 0.65)
+	camera_rig.focus(level.camera_home())
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	commander.unit_died.connect(func(u): selected.erase(u))
 	_build_marker()

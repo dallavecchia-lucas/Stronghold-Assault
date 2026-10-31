@@ -21,3 +21,7 @@ Thumbs.db
 *.tmp
 .vscode/
 .idea/
+
+# Scratch scenes and scripts for local experiments
+game/scenes/tmp/
+game/scripts/tmp/

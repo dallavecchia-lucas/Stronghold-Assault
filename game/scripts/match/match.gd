@@ -22,7 +22,7 @@ var _autotest_t := 0.0
 
 func _ready() -> void:
 	time_left = GameConfig.match_duration
-	level = LevelBuilder.new()
+	level = JungleLevel.new() if GameConfig.map == "jungle" else LevelBuilder.new()
 	level.name = "Level"
 	add_child(level)
 	level.build()

@@ -413,7 +413,7 @@ func _pick_anchor() -> ForestTree:
 func _next_tree(t: SquadTrooper) -> Array:
 	var lpos := leader.global_position
 	var cands: Array = []
-	for tree in ForestTree.standing:
+	for tree in ForestTree.near(lpos, WORK_RADIUS + 1.0):
 		if tree.grove < 0 or _flat(lpos, tree.global_position) > WORK_RADIUS or not _claimable(tree, t):
 			continue
 		cands.append([LevelBuilder.base_distance(tree.global_position) + WALK_COST * _flat(t.global_position, tree.global_position), tree])

@@ -113,6 +113,9 @@ var spawn_names: Array[String] = []
 ## Per spawn point: the AttackerBase it belongs to (a forward helipad: open only while the attackers
 ## hold it), or null (the flags at the map's edge, always open).
 var spawn_bases: Array = []
+## The spawn point at the map's edge a wave for a side ("south", "east", "west") comes from when that
+## side's helipad is lost (AIAttacker).
+var edge_spawns := {"south": 0, "east": 1, "west": 2}
 var bases: Array[AttackerBase] = []
 var _stronghold: Node3D
 
@@ -121,8 +124,33 @@ var _rebake_queued := false
 var _first_bake_done := false
 var _clearing := false
 
+## The map being played: half its width (the RTS camera, the mortar's spotter and the Infiltrators'
+## sneak routes stay inside it), and whether it is the Jungle Keep (JungleLevel), whose forest is the
+## whole jungle rather than FORESTS' groves and whose ground isn't flat (ground_height()).
+static var map_half := MAP_HALF
+static var jungle := false
+## The ground's height (m) at a point, for maps whose land rolls (JungleTerrain); null: flat at 0.
+static var terrain: Object = null
+
+
+## The ground's height under `p` (0 on the flat classic map).
+static func ground_height(p: Vector3) -> float:
+	return terrain.height_at(p.x, p.z) if terrain else 0.0
+
+
+## How high `p` is over the ground under it.
+static func above_ground(p: Vector3) -> float:
+	return p.y - ground_height(p)
+
 
 func build() -> void:
+	map_half = MAP_HALF
+	jungle = false
+	terrain = null
+	_build_all()
+
+
+func _build_all() -> void:
 	_build_environment()
 	nav_region = NavigationRegion3D.new()
 	var nm := NavigationMesh.new()
@@ -164,9 +192,9 @@ func rebake_navigation() -> void:
 	nav_region.bake_navigation_mesh(true)
 
 
-## Something that blocked the way is gone (a burnt tree has fallen): rebake the navmesh soon,
+## Something that blocked the way is gone (a burnt tree has fallen at `at`): rebake the navmesh soon,
 ## once for a run of them.
-func clear_obstacle() -> void:
+func clear_obstacle(_at := Vector3.INF) -> void:
 	if _clearing:
 		return
 	_clearing = true
@@ -291,8 +319,10 @@ func _marker(marker_name: String) -> Node3D:
 	return _stronghold.find_child(marker_name, true, false) as Node3D
 
 
-## Index into FORESTS of the grove `p` stands in, or -1.
+## Index into FORESTS of the grove `p` stands in, or -1. On the Jungle Keep the jungle is one grove (0).
 static func grove_at(p: Vector3) -> int:
+	if jungle:
+		return 0 if JungleFlora.in_jungle(p) else -1
 	for k in FORESTS.size():
 		var f: Array = FORESTS[k]
 		if Vector2(p.x - f[0], p.z - f[1]).length() <= f[2]:
@@ -304,10 +334,7 @@ static func grove_at(p: Vector3) -> int:
 static func in_forest(p: Vector3) -> bool:
 	if grove_at(p) < 0:
 		return false
-	for t in ForestTree.standing:
-		if Vector2(p.x - t.global_position.x, p.z - t.global_position.z).length() <= FOREST_NEAR:
-			return true
-	return false
+	return not ForestTree.near(p, FOREST_NEAR).is_empty()
 
 
 ## How far `p` is from the base: from the mountain's footprint, flat (0 on or inside it).
@@ -584,6 +611,18 @@ static func _dist_to_segment(p: Vector3, a: Vector3, b: Vector3) -> float:
 	return p.distance_to(a + ab * t)
 
 
+## Where a CPU wave spawned at spawn point `idx` gathers before it sets off: a way down its lane from
+## the map's edge, right there at a helipad.
+func rally_point(idx: int) -> Vector3:
+	var at: Vector3 = spawn_points[idx]
+	return at if spawn_bases[idx] != null else at * 0.72
+
+
+## Where the RTS camera starts.
+func camera_home() -> Vector3:
+	return spawn_points[0] * 0.65
+
+
 func _build_spawns() -> void:
 	for side in ["south", "east", "west"]:
 		var out: Vector3 = SIDES[side].dir
@@ -652,7 +691,7 @@ func _build_stations() -> Array:
 	var art := ArtilleryStation.new()
 	art.name = "Artillery"
 	art.station_name = "Mortar · South Roof"
-	art.map_half = MAP_HALF
+	art.map_half = map_half
 	art.spotter_home = SIDES.south.dir * (FACE_DIST + 30.0)
 	art.position = mortar.global_position
 	add_child(art)

@@ -16,10 +16,11 @@ signal retaken(base: AttackerBase)
 
 const MODEL := "res://assets/structures/forward_helipad_base/forward_helipad_base.glb"
 ## Height the model is scaled to (m, to the mast tips): the deck then stands DECK_HEIGHT up on its
-## stilts and spans SIZE (x along its length, z across).
-const HEIGHT := 9.8
-const DECK_HEIGHT := 2.85
-const SIZE := Vector2(26.1, 20.2)
+## stilts and spans SIZE (x along its length, z across). Real size: the pad's touchdown square is about
+## 17 m across, room for a transport helicopter's rotor, and the containers on the deck are 6 m long.
+const HEIGHT := 14.7
+const DECK_HEIGHT := 4.28
+const SIZE := Vector2(39.15, 30.3)
 ## Supply a second it brings in while the attackers hold it.
 const INCOME := 1.5
 ## Retaking it: ground units within CAPTURE_REACH of the deck's edge, for CAPTURE_TIME; every unit
@@ -72,13 +73,20 @@ var _label: Label3D
 var _ring: MeshInstance3D
 
 
-## Names it after its side ("south").
-func setup(p_side: String) -> void:
+## Names it after its side ("south"), or `title` ("Quarry": the Quarry Helipad, "Quarry" on the spawn
+## button, "Q" on the roster).
+func setup(p_side: String, title := "") -> void:
 	side = p_side
-	display_name = "%s Helipad" % side.capitalize()
-	short_name = "%s Pad" % side.substr(0, 1).to_upper()
-	code = side.substr(0, 1).to_upper()
-	name = "Helipad_%s" % side
+	if title == "":
+		display_name = "%s Helipad" % side.capitalize()
+		short_name = "%s Pad" % side.substr(0, 1).to_upper()
+		code = side.substr(0, 1).to_upper()
+		name = "Helipad_%s" % side
+	else:
+		display_name = "%s Helipad" % title
+		short_name = title
+		code = title.substr(0, 1).to_upper()
+		name = "Helipad_%s" % title
 
 
 func _ready() -> void:
@@ -213,7 +221,7 @@ func _process(delta: float) -> void:
 ## The flag on its mast, the beacon, the name over it and the ring where units retake it.
 func _build_marks() -> void:
 	var corner := Vector3(SIZE.x * 0.5 - 1.0, DECK_HEIGHT, SIZE.y * 0.5 - 1.0)
-	var pole := Mats.cylinder_mesh(0.1, 6.0, corner + Vector3(0, 3.0, 0), Mats.flat(Color(0.2, 0.2, 0.22), 0.6, 0.5), 6)
+	var pole := Mats.cylinder_mesh(0.12, 6.0, corner + Vector3(0, 3.0, 0), Mats.flat(Color(0.2, 0.2, 0.22), 0.6, 0.5), 6)
 	add_child(pole)
 	_flag = Mats.box_mesh(Vector3(2.0, 1.2, 0.05), corner + Vector3(-1.0, 5.3, 0), Mats.flat(HELD_COLOR))
 	add_child(_flag)

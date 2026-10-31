@@ -15,11 +15,13 @@ var usable := true
 var coiled_by: Node = null
 
 
+## `model` null: a proxy, drawn by a shared MultiMesh batch (JungleFlora).
 func setup(model: Node3D, footprint: Vector2, h: float, yaw: float) -> void:
 	radius = maxf(footprint.x, footprint.y) * 0.5
 	height = h
-	model.rotation.y = yaw
-	add_child(model)
+	if model:
+		model.rotation.y = yaw
+		add_child(model)
 
 
 func _enter_tree() -> void:

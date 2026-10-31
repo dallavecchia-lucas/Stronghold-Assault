@@ -199,7 +199,7 @@ static func tree_under(from: Vector3, dir: Vector3) -> ForestTree:
 static func tree_near(at: Vector3, reach: float) -> ForestTree:
 	var best: ForestTree = null
 	var best_d := reach
-	for tree in ForestTree.standing:
+	for tree in ForestTree.near(at, reach + 4.0):
 		var d := _flat(tree.trunk_centre() - at).length()
 		if d < best_d:
 			best_d = d
@@ -213,7 +213,7 @@ static func assign(snakes: Array, at: Vector3) -> Array:
 	var first := tree_near(at, 2.0)
 	if first == null or snakes.is_empty():
 		return []
-	var trees := ForestTree.standing.filter(func(t): return _flat(t.trunk_centre() - first.trunk_centre()).length() <= SPREAD \
+	var trees := ForestTree.near(first.global_position, SPREAD + 4.0).filter(func(t): return _flat(t.trunk_centre() - first.trunk_centre()).length() <= SPREAD \
 			and (t.nest_by == null or not is_instance_valid(t.nest_by) or t.nest_by in snakes))
 	trees.sort_custom(func(a, b): return _flat(a.trunk_centre() - at).length() < _flat(b.trunk_centre() - at).length())
 	var left := snakes.duplicate()

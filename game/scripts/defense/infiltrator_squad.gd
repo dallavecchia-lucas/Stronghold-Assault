@@ -523,7 +523,7 @@ func _pick_spot() -> Vector3:
 ## In the mountain (the tunnels, halls, decks and roofs, and the rock's foot): the way out is the
 ## navmesh's, through a gate.
 static func _in_mountain(p: Vector3) -> bool:
-	return LevelBuilder.base_distance(p) <= 0.0 or p.y > 1.5
+	return LevelBuilder.base_distance(p) <= 0.0 or (LevelBuilder.base_distance(p) < 30.0 and LevelBuilder.above_ground(p) > 1.5)
 
 
 ## Out in front of the gate nearest `p`.

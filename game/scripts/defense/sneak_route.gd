@@ -72,7 +72,7 @@ static func plan(world: World3D, from: Vector3, to: Vector3, units: Array) -> Pa
 		return out
 	for k in range(1, ids.size() - 1):
 		out.append(_centre(ids[k]))
-	out.append(Vector3(to.x, 0.0, to.z))
+	out.append(Vector3(to.x, LevelBuilder.ground_height(to), to.z))
 	return out
 
 
@@ -86,8 +86,8 @@ static func _lay_out(world: World3D) -> bool:
 	if _grid != null and iteration == _iteration:
 		return true
 	_iteration = iteration
-	_n = int(ceil(LevelBuilder.MAP_HALF * 2.0 / CELL))
-	_origin = Vector2(-LevelBuilder.MAP_HALF, -LevelBuilder.MAP_HALF)
+	_n = int(ceil(LevelBuilder.map_half * 2.0 / CELL))
+	_origin = Vector2(-LevelBuilder.map_half, -LevelBuilder.map_half)
 	_grid = AStarGrid2D.new()
 	_grid.region = Rect2i(0, 0, _n, _n)
 	_grid.cell_size = Vector2(CELL, CELL)
@@ -99,7 +99,7 @@ static func _lay_out(world: World3D) -> bool:
 			var solid := LevelBuilder.base_distance(c) <= 1.0
 			if not solid:
 				var p := NavigationServer3D.map_get_closest_point(map, c + Vector3.UP * 0.5)
-				solid = Vector2(p.x - c.x, p.z - c.z).length() > CELL * 0.5 or p.y > 1.5
+				solid = Vector2(p.x - c.x, p.z - c.z).length() > CELL * 0.5 or LevelBuilder.above_ground(p) > 1.5
 			_grid.set_point_solid(Vector2i(i, j), solid)
 	return true
 
@@ -110,7 +110,9 @@ static func _cell(p: Vector3) -> Vector2i:
 
 
 static func _centre(c: Vector2i) -> Vector3:
-	return Vector3(_origin.x + (c.x + 0.5) * CELL, 0.0, _origin.y + (c.y + 0.5) * CELL)
+	var p := Vector3(_origin.x + (c.x + 0.5) * CELL, 0.0, _origin.y + (c.y + 0.5) * CELL)
+	p.y = LevelBuilder.ground_height(p)
+	return p
 
 
 ## The open cell nearest `c` (itself if it is open), within a few cells; (-1, -1) if none.

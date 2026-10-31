@@ -40,6 +40,10 @@ const WIND := Vector3(0.9, 0.0, 0.35)
 ## Trees still standing (not on fire), and every tree on the map.
 static var standing: Array[ForestTree] = []
 static var all: Array[ForestTree] = []
+## Standing trees by GRID_CELL square (Vector2i -> Array[ForestTree]), for near(): the Jungle Keep has
+## thousands of them.
+const GRID_CELL := 16.0
+static var _grid := {}
 
 var height := 8.0
 var canopy_radius := 2.5
@@ -75,6 +79,12 @@ var _emit := 0.0
 var _smoke := 0.0
 var _flicker := 0.0
 var _shape: CollisionShape3D
+## A proxy tree (the Jungle Keep's): drawn by a shared MultiMesh batch (JungleFlora) until it needs a
+## model of its own (catching fire): the model's path and yaw, and the batches' instances to hide then.
+var _model_path := ""
+var _model_yaw := 0.0
+var _proxies: Array = []
+var _grid_key := Vector2i(1 << 30, 0)
 
 
 ## Sets the tree up before it goes into the scene: `model` (scaled to `h`), the trunk's collision.
@@ -92,18 +102,78 @@ func setup(h: float, model: Node3D, canopy_r: float, grove_index: int) -> void:
 	_shape.position.y = h * 0.25
 	add_child(_shape)
 	_model = model
-	add_child(model)
+	if model:
+		add_child(model)
+
+
+## Sets up a proxy tree (JungleFlora): no model of its own until it catches fire; `proxies` are
+## [MultiMesh, instance] pairs drawing it meanwhile. `trunk_radius_m`: its trunk's collision radius.
+func setup_proxy(h: float, model_path: String, yaw: float, canopy_r: float, grove_index: int, trunk_radius_m: float, proxies: Array) -> void:
+	setup(h, null, canopy_r, grove_index)
+	_model_path = model_path
+	_model_yaw = yaw
+	_proxies = proxies
+	(_shape.shape as CylinderShape3D).radius = trunk_radius_m
+
+
+func is_proxy() -> bool:
+	return _model == null and _model_path != ""
+
+
+## The standing trees within `r` of `p` (flat, from their positions).
+static func near(p: Vector3, r: float) -> Array[ForestTree]:
+	var out: Array[ForestTree] = []
+	var c0 := Vector2i(floori((p.x - r) / GRID_CELL), floori((p.z - r) / GRID_CELL))
+	var c1 := Vector2i(floori((p.x + r) / GRID_CELL), floori((p.z + r) / GRID_CELL))
+	var r2 := r * r
+	for cx in range(c0.x, c1.x + 1):
+		for cz in range(c0.y, c1.y + 1):
+			var cell: Array = _grid.get(Vector2i(cx, cz), [])
+			for t in cell:
+				var dx: float = t.global_position.x - p.x
+				var dz: float = t.global_position.z - p.z
+				if dx * dx + dz * dz <= r2:
+					out.append(t)
+	return out
+
+
+func _grid_add() -> void:
+	_grid_key = Vector2i(floori(global_position.x / GRID_CELL), floori(global_position.z / GRID_CELL))
+	if not _grid.has(_grid_key):
+		_grid[_grid_key] = []
+	_grid[_grid_key].append(self)
+
+
+func _grid_remove() -> void:
+	if _grid.has(_grid_key):
+		_grid[_grid_key].erase(self)
+	_grid_key = Vector2i(1 << 30, 0)
 
 
 func _enter_tree() -> void:
 	all.append(self)
 	if state == State.STANDING:
 		standing.append(self)
+		_grid_add()
 
 
 func _exit_tree() -> void:
 	all.erase(self)
 	standing.erase(self)
+	_grid_remove()
+
+
+## A proxy tree gets its own model (hiding it in the batches) when it is about to burn.
+func _materialize() -> void:
+	if not is_proxy():
+		return
+	_model = Props.instance(_model_path, height)
+	_model.rotation.y = _model_yaw
+	add_child(_model)
+	for pr in _proxies:
+		var mm: MultiMesh = pr[0]
+		mm.set_instance_transform(pr[1], Transform3D(Basis().scaled(Vector3.ZERO), Vector3(0, -1000, 0)))
+	_proxies.clear()
 
 
 func _ready() -> void:
@@ -161,10 +231,12 @@ func scorch(delta: float, at: Vector3) -> bool:
 
 
 func _ignite() -> void:
+	_materialize()
 	state = State.BURNING
 	heat = IGNITE_TIME
 	burn_t = 0.0
 	standing.erase(self)
+	_grid_remove()
 	claimed_by = null
 	var h := absi(hash(global_position))
 	_fall_at = FALL_TIME + (float(h % 1000) / 1000.0 - 0.5) * 2.0 * FALL_SPREAD
@@ -207,7 +279,7 @@ func _build_snag() -> void:
 	var trunk := MeshInstance3D.new()
 	var c := CylinderMesh.new()
 	c.top_radius = 0.07
-	c.bottom_radius = TRUNK_RADIUS * 0.75
+	c.bottom_radius = maxf(TRUNK_RADIUS, trunk_r) * 0.75
 	c.height = tall
 	c.radial_segments = 7
 	c.rings = 2
@@ -347,7 +419,7 @@ func _landed() -> void:
 	fell.emit(self)
 	var level := _level()
 	if level:
-		level.clear_obstacle()
+		level.clear_obstacle(global_position)
 
 
 ## Lying on the ground, a thin smoke for a while.

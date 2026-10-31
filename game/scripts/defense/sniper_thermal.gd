@@ -82,7 +82,7 @@ func _stop() -> void:
 		camera.environment = null
 	for mi in _overridden:
 		if is_instance_valid(mi):
-			(mi as MeshInstance3D).material_override = _overridden[mi]
+			(mi as GeometryInstance3D).material_override = _overridden[mi]
 	_overridden.clear()
 	_trees.clear()
 
@@ -95,8 +95,13 @@ func _scan() -> void:
 			if not _overridden.has(mi):
 				_overridden[mi] = mi.material_override
 				mi.material_override = _hot
+	# The Jungle Keep's plants are drawn in shared batches (JungleFlora): they all go see-through.
+	for mi in get_tree().get_nodes_in_group("flora_batches"):
+		if not _overridden.has(mi):
+			_overridden[mi] = mi.material_override
+			mi.material_override = _foliage
 	for t in ForestTree.standing:
-		if not _trees.has(t):
+		if not _trees.has(t) and not t.is_proxy():
 			_trees[t] = true
 			for mi in t.find_children("*", "MeshInstance3D", true, false):
 				if not _overridden.has(mi):
