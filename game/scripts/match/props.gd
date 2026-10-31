@@ -10,6 +10,17 @@ const TREES := [
 	"res://assets/environment/majestic_oak/majestic_oak.glb",
 	"res://assets/environment/solitary_evergreen/solitary_evergreen.glb",
 ]
+## The trees' trunks as modelled, for a Serpent Sniper winding up one (ForestTree.trunk_centre): where the foot of
+## the trunk stands off the model's middle (x, z) and how thick it is there, as shares of the tree's height, and
+## how high up it the snake lies out (a share of its height): on top of the crown, just under its highest leaves,
+## the front laid out over them.
+const TRUNKS := {
+	"res://assets/environment/birch_tree/birch_tree.glb": [-0.016, -0.014, 0.0145, 0.93],
+	"res://assets/environment/silver_birch/silver_birch.glb": [0.02, 0.005, 0.0095, 0.93],
+	"res://assets/environment/white_birch_majesty/white_birch_majesty.glb": [0.004, 0.0025, 0.0125, 0.93],
+	"res://assets/environment/majestic_oak/majestic_oak.glb": [0.025, 0.005, 0.0375, 0.95],
+	"res://assets/environment/solitary_evergreen/solitary_evergreen.glb": [-0.009, 0.0, 0.011, 0.86],
+}
 const ROCKS := [
 	"res://assets/environment/mossy_berry_rock/mossy_berry_rock.glb",
 	"res://assets/environment/mossy_mountain_garden/mossy_mountain_garden.glb",
@@ -49,6 +60,14 @@ static func instance(path: String, height: float) -> Node3D:
 		_sizes[path] = local_aabb(m).size
 	m.scale = Vector3.ONE * (height / maxf(_sizes[path].y, 0.001))
 	return root
+
+
+## How wide `path` is (its wider footprint side) for each metre of its height.
+static func aspect(path: String) -> float:
+	if not _sizes.has(path):
+		instance(path, 1.0).free()
+	var s: Vector3 = _sizes[path]
+	return maxf(s.x, s.z) / maxf(s.y, 0.001)
 
 
 ## Footprint (x/z extent) of `path` once scaled to `height`.

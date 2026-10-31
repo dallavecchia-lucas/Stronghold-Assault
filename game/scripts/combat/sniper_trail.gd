@@ -6,7 +6,8 @@ extends Node3D
 ## strips turned to face whichever camera is looking (the scope, the RTS view), soft at the edges, never
 ## wider on its screen than MAX_PIXELS (from the scope, just behind the muzzle, they are a fine line running
 ## out to the target instead of a wall across the magnified view) and never narrower than their MIN_PIXELS
-## (from the RTS camera, high over the field, they still read).
+## (from the RTS camera, high over the field, they still read). A trail alone (trail()) follows a round whose
+## tracer is drawn by something else (Combat.spawn_tracer, the Serpent Sniper's rifle), at that tracer's speed.
 
 const SPEED := 520.0
 ## Longer than a frame's flight at 30 fps, so the streak never jumps.
@@ -27,6 +28,10 @@ const PIECES := 16
 
 var from := Vector3.ZERO
 var to := Vector3.ZERO
+## How fast the round flies (m/s), how long its tracer is (m) and whether this draws it.
+var speed := SPEED
+var tracer_length := TRACER_LENGTH
+var with_tracer := true
 ## Seconds since the round left the muzzle, and since the trail was whole (-1: not yet).
 var age := 0.0
 var held := -1.0
@@ -47,6 +52,19 @@ static func fire(ctx: Node, p_from: Vector3, p_to: Vector3) -> SniperTrail:
 	var s := SniperTrail.new()
 	s.from = p_from
 	s.to = p_to
+	ctx.get_tree().current_scene.add_child(s)
+	return s
+
+
+## Only the white trail of a round from `p_from` that landed at `p_to`, flying at `p_speed` behind a tracer
+## drawn by something else.
+static func trail(ctx: Node, p_from: Vector3, p_to: Vector3, p_speed: float) -> SniperTrail:
+	var s := SniperTrail.new()
+	s.from = p_from
+	s.to = p_to
+	s.speed = p_speed
+	s.tracer_length = 0.0
+	s.with_tracer = false
 	ctx.get_tree().current_scene.add_child(s)
 	return s
 
@@ -101,11 +119,11 @@ func _process(delta: float) -> void:
 
 ## How far along the path the tracer's head and tail are (m from the muzzle).
 func head() -> float:
-	return minf(age * SPEED, _length)
+	return minf(age * speed, _length)
 
 
 func tail() -> float:
-	return clampf(age * SPEED - TRACER_LENGTH, 0.0, _length)
+	return clampf(age * speed - tracer_length, 0.0, _length)
 
 
 ## The tracer from its tail to its head, the trail from the muzzle up to the tracer's tail, each turned to
@@ -115,7 +133,8 @@ func _place() -> void:
 	var eye := cam.global_position if cam else from - _dir * 10.0 + Vector3.UP
 	# A pixel on that camera's screen, as metres a metre away from it.
 	var px := 2.0 * tan(deg_to_rad(cam.fov if cam else 55.0) * 0.5) / get_viewport().get_visible_rect().size.y
-	_lay(_tracer, tail(), head(), TRACER_WIDTH, eye, px * TRACER_MIN_PIXELS, px * MAX_PIXELS)
+	if with_tracer:
+		_lay(_tracer, tail(), head(), TRACER_WIDTH, eye, px * TRACER_MIN_PIXELS, px * MAX_PIXELS)
 	_lay(_trail, 0.0, tail(), TRAIL_WIDTH + TRAIL_SPREAD * age, eye, px * TRAIL_MIN_PIXELS, px * MAX_PIXELS)
 
 

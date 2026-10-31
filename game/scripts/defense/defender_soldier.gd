@@ -36,6 +36,8 @@ var _pitch := 0.0
 var _kick := 0.0
 ## Knocked off its feet (run over by a ram): flies until it lands, no control meanwhile.
 var _tossed := false
+## Held in a Serpent Sniper's coils last frame (it struggles).
+var _was_held := false
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 
 var _head: Node3D
@@ -175,7 +177,7 @@ func take_damage(amount: float, from_team: int) -> void:
 
 ## Run over: thrown along `v` (m/s), out of control until it lands.
 func toss(v: Vector3) -> void:
-	if hp <= 0.0:
+	if hp <= 0.0 or SerpentTrap.is_held(self):
 		return
 	velocity = v
 	_tossed = true
@@ -216,6 +218,16 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		_tossed = not (is_on_floor() and velocity.y <= 0.0)
 		return
+	if SerpentTrap.is_held(self):
+		# In a Serpent Sniper's coils (SerpentTrap.hold): it can't move or fight, and struggles.
+		_was_held = true
+		velocity = Vector3.ZERO
+		var t := Time.get_ticks_msec() * 0.001
+		_body.rotation = Vector3(sin(t * 7.3) * 0.03, 0.0, sin(t * 11.0) * 0.035)
+		return
+	if _was_held:
+		_was_held = false
+		_body.rotation = Vector3.ZERO
 	_fire_cd -= delta
 	if _reloading > 0.0:
 		_reloading -= delta
