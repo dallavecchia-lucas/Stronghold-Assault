@@ -342,6 +342,8 @@ func _player_update(delta: float) -> void:
 		_camera.fov = lerpf(_camera.fov, SCOPE_FOV if aiming else 75.0, delta * 12.0)
 		_scope.amount = move_toward(_scope.amount, 1.0 if aiming else 0.0, delta * 6.0)
 		_viewmodel.visible = _scope.amount < 0.6
+		if _scope.amount > 0.0:
+			_feed_scope()
 	else:
 		_camera.fov = lerpf(_camera.fov, 50.0 if aiming else 75.0, delta * 12.0)
 	_viewmodel.position = _viewmodel.position.lerp(_view_aim if aiming else _view_hip, delta * 12.0)
@@ -361,9 +363,32 @@ func _player_update(delta: float) -> void:
 			Combat.fire_hitscan(self, from, aim_at, spread, PLAYER_DAMAGE, team, 0.3, [get_rid()], _muzzle.global_position)
 			Combat.spawn_muzzle_light(self, _muzzle.global_position)
 			_kick = 0.04
+			if _scope:
+				_scope.fired()
 			# recoil climb
 			_pitch = clampf(_pitch + 0.006, -1.45, 1.45)
 			_head.rotation.x = _pitch
+
+
+## The smart scope's readouts: the range to what is under the dot (and whether it is a hostile), the
+## heading and elevation, the magazine, the zoom.
+func _feed_scope() -> void:
+	var from := _camera.global_position
+	var q := PhysicsRayQueryParameters3D.create(from, from - _camera.global_basis.z * RifleScope.SCALE_MAX * 1.5,
+			GameConfig.LAYER_ALL_SOLID, [get_rid()])
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	_scope.range_m = from.distance_to(hit.position) if not hit.is_empty() else -1.0
+	_scope.target = ""
+	if not hit.is_empty():
+		var d := Combat.find_damageable(hit.collider)
+		if d is AttackerUnit and (d as AttackerUnit).team != team:
+			_scope.target = str((d as AttackerUnit).stats.get("name", "Hostile"))
+	_scope.heading = fposmod(-rad_to_deg(global_rotation.y), 360.0)
+	_scope.elevation = rad_to_deg(_pitch)
+	_scope.ammo = ammo
+	_scope.mag = MAG_SIZE
+	_scope.reload = 1.0 - _reloading / RELOAD_TIME if _reloading > 0.0 else 0.0
+	_scope.zoom = tan(deg_to_rad(37.5)) / tan(deg_to_rad(_camera.fov * 0.5))
 
 
 func _start_reload() -> void:
