@@ -43,6 +43,13 @@ static var all: Array[ForestTree] = []
 
 var height := 8.0
 var canopy_radius := 2.5
+## The trunk as modelled (Props.TRUNKS): where its foot stands off the tree's position (world), how thick it is
+## there and how high up it a Serpent Sniper lies out in its nest, on top of the crown (m; SerpentNest).
+var trunk_offset := Vector3.ZERO
+var trunk_r := 0.12
+var perch := 4.0
+## The Serpent Sniper nesting in it, or on its way up to it (one to a tree).
+var nest_by: Node = null
 ## Index into LevelBuilder.FORESTS of the grove it stands in (-1: a lone tree).
 var grove := -1
 var heat := 0.0
@@ -106,6 +113,21 @@ func _ready() -> void:
 
 func is_standing() -> bool:
 	return state == State.STANDING
+
+
+## The foot of the trunk as modelled (world).
+func trunk_centre() -> Vector3:
+	return global_position + trunk_offset
+
+
+## How thick the trunk is `y` m up it (it thins toward the crown).
+func trunk_radius(y: float) -> float:
+	return trunk_r * clampf(1.0 - 0.45 * y / height, 0.45, 1.0)
+
+
+## A Serpent Sniper may nest in it: standing, and no other snake's.
+func nest_free(snake: Node) -> bool:
+	return is_standing() and (nest_by == null or nest_by == snake or not is_instance_valid(nest_by))
 
 
 ## How far it is to catching fire (0..1).

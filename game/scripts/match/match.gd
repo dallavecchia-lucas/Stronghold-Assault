@@ -173,6 +173,15 @@ func _autotest_step(delta: float) -> void:
 			commander.submit({"type": "smoke", "units": ids, "pos": gate.global_position})
 			# Flash grenades onto the gate's machine gun (the first three posts are the gate guns).
 			commander.submit({"type": "flash", "units": ids, "pos": level.stations[step % 3].global_position})
+			# Serpent Snipers up the tree nearest the gate, or round the bush nearest it, by turns.
+			if step % 4 == 1:
+				var tree := SerpentNest.tree_near(gate.global_position, 120.0)
+				if tree:
+					commander.submit({"type": "nest", "units": ids, "pos": tree.trunk_centre()})
+			elif step % 4 == 3:
+				var bush := Bush.nearest(gate.global_position, 120.0)
+				if bush:
+					commander.submit({"type": "trap", "units": ids, "pos": bush.global_position})
 	if GameConfig.screenshot_path != "" and not _autotest_shot and _autotest_t > GameConfig.autotest_duration * 0.8:
 		_autotest_shot = true
 		await RenderingServer.frame_post_draw

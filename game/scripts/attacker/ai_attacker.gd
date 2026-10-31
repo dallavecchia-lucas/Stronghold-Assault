@@ -8,6 +8,8 @@ extends Node
 ## reveal them (_giraffe_pings). Its lionesses hunt the defenders out on the field (_lioness_hunts). Its dogs
 ## heal; it can't see the defenders' mines any more than a player can, but one going off under its army
 ## tells it a minefield is there: the dogs near the blast sweep for mines until they find no more (_dog_modes).
+## Its Serpent Snipers snipe from the trees in reach of the gate they go for, and lie in wait round bushes where
+## the army saw the defenders out on the field (_serpent_skills).
 ## Uses the same command interface as the human RTS player.
 
 var commander: AttackerCommander
@@ -35,12 +37,34 @@ const HUNT_RANGE := 32.0
 ## mine to dig for SWEEP_IDLE seconds goes back to healing.
 const SWEEP_CALL := 40.0
 const SWEEP_IDLE := 20.0
+## Serpent Snipers go up a tree this far off their way at most (m, flat), one with the gate nearest them in their
+## rifle's reach from up there (with a little to spare) and no closer to it than NEST_CLEAR (not under the wall).
+const NEST_LOOK := 30.0
+const NEST_CLEAR := 25.0
+## Where the army saw a defender out on the field in the last TRAP_MEMORY seconds, within TRAP_CALL of a snake
+## (m, flat), the snake coils round the free bush nearest the spot (within TRAP_LOOK of it) and lies in wait.
+const TRAP_MEMORY := 45.0
+const TRAP_CALL := 40.0
+const TRAP_LOOK := 10.0
+## A snake up a tree with nothing to shoot for NEST_IDLE seconds, or round a bush with nothing come by for
+## TRAP_IDLE, comes down (uncoils) and goes on; it rests SKILL_REST seconds before it climbs or coils again.
+const NEST_IDLE := 20.0
+const TRAP_IDLE := 40.0
+const SKILL_REST := 45.0
 
 ## Helipad -> ids of the units sent to retake it.
 var _retakers := {}
 ## Mine blasts it has seen so far, and how long each sweeping dog (id) has had no mine to dig (s).
 var _blasts_seen := GroundMine.blasts
 var _sweep_idle := {}
+## Seconds of thinking so far, and where the army saw defenders out on the field: [where, when], the last
+## TRAP_MEMORY seconds of them.
+var _clock := 0.0
+var _sightings: Array = []
+## Serpent Sniper id -> seconds up its tree or round its bush with nothing to do, and seconds before it may climb
+## or coil again.
+var _skill_idle := {}
+var _skill_rest := {}
 
 
 func _process(delta: float) -> void:
@@ -77,6 +101,7 @@ func _think() -> void:
 	_kangaroo_flashes()
 	_giraffe_pings()
 	_lioness_hunts()
+	_serpent_skills()
 	_dog_modes()
 
 
@@ -96,6 +121,7 @@ func _plan_wave() -> void:
 		"chimp": 0 if _wave < 3 else mini(1 + _wave / 3, 4),
 		"giraffe": 1 if _wave >= 2 else 0,
 		"lioness": 0 if _wave < 2 else mini(1 + _wave / 2, 6),
+		"serpent": 0 if _wave < 3 else mini(1 + (_wave - 3) / 2, 3),
 	}
 	# Interleave so a partly-spawned wave is still a sensible mix.
 	var remaining := true
@@ -266,6 +292,84 @@ func _lioness_hunts() -> void:
 		commander.submit({"type": "attack", "units": [u.unit_id], "target": prey.get_path()})
 
 
+## Serpent Snipers: one with a tree near it (NEST_LOOK) from which the gate nearest it is in its rifle's reach
+## climbs it and snipes from the crown. Otherwise, where the army saw a defender out on the field lately near one,
+## it coils round the free bush nearest the spot and lies in wait. Up there with nothing to shoot for NEST_IDLE, or
+## round its bush with nothing come by for TRAP_IDLE, it comes down (uncoils) and goes on with the army, and rests
+## (SKILL_REST) before it climbs or coils again. One squeezing its prey is left to it.
+func _serpent_skills() -> void:
+	_clock += 1.0
+	_note_sightings()
+	for u in commander.units.values():
+		if not (u.has_nest() or u.has_trap()) or not u.is_controllable() or u.unit_id in _staging:
+			continue
+		var id: int = u.unit_id
+		if u.in_tree() or u.in_bush():
+			var busy: bool = u.skill_dir() != 0 or u.is_constricting() or Combat.is_valid_target(u.target)
+			_skill_idle[id] = 0.0 if busy else _skill_idle.get(id, 0.0) + 1.0
+			if _skill_idle[id] >= (NEST_IDLE if u.in_tree() else TRAP_IDLE):
+				_skill_idle.erase(id)
+				_skill_rest[id] = SKILL_REST
+				_send_on([id])  # it climbs down (uncoils) first
+			continue
+		_skill_rest[id] = _skill_rest.get(id, 0.0) - 1.0
+		if _skill_rest[id] > 0.0 or u.order.type in ["nest", "trap"]:
+			continue
+		var tree := _nest_tree(u) if u.has_nest() else null
+		if tree:
+			commander.submit({"type": "nest", "units": [id], "pos": tree.trunk_centre()})
+			continue
+		var bush := _trap_bush(u) if u.has_trap() else null
+		if bush:
+			commander.submit({"type": "trap", "units": [id], "pos": bush.global_position})
+
+
+## Remembers where the army sees defenders out on the field now (the soldiers and troopers a snake strikes,
+## SerpentTrap.PREY, on the ground outside the mountain), forgetting what it saw over TRAP_MEMORY ago.
+func _note_sightings() -> void:
+	_sightings = _sightings.filter(func(s): return _clock - s[1] <= TRAP_MEMORY)
+	for d in level.get_tree().get_nodes_in_group("defender_targets"):
+		if not d.is_alive() or d.get("station_kind") not in SerpentTrap.PREY or Combat.low_profile(d) or not AttackerVision.sees_node(d):
+			continue
+		var p: Vector3 = d.global_position
+		if p.y < 2.0 and Vector2(p.x, p.z).length() > LevelBuilder.FACE_DIST + 4.0:
+			_sightings.append([p, _clock])
+
+
+## The tree for `u` to snipe from: standing and free, within NEST_LOOK of it, the standing gate nearest it in its
+## rifle's reach from up there and no closer to it than NEST_CLEAR; the nearest such, or null.
+func _nest_tree(u: AttackerUnit) -> ForestTree:
+	var gate := _nearest_gate(u.global_position)
+	if gate == null:
+		return null
+	var reach: float = u.stats.range * u.stats.nest_range * 0.85
+	var best: ForestTree = null
+	var best_d := NEST_LOOK
+	for tree in ForestTree.standing:
+		if not tree.nest_free(u):
+			continue
+		var foot := tree.trunk_centre()
+		var to_gate := _flat_dist(foot, gate.global_position)
+		var d := _flat_dist(foot, u.global_position)
+		if to_gate <= reach and to_gate >= NEST_CLEAR and d < best_d:
+			best_d = d
+			best = tree
+	return best
+
+
+## The bush for `u` to lie in wait round: the free one nearest where the army last saw a defender out on the
+## field within TRAP_CALL of it (no further than TRAP_LOOK from the spot), or null.
+func _trap_bush(u: AttackerUnit) -> Bush:
+	for k in range(_sightings.size() - 1, -1, -1):
+		var at: Vector3 = _sightings[k][0]
+		if _flat_dist(at, u.global_position) > TRAP_CALL:
+			continue
+		var bush := Bush.nearest(at, TRAP_LOOK, u)
+		if bush:
+			return bush
+	return null
+
+
 ## Dogs heal. A mine going off under the army (the CPU sees that much): the dogs within SWEEP_CALL of it switch
 ## to minesweeping; a sweeping dog with no mine to dig for SWEEP_IDLE seconds goes back to healing.
 func _dog_modes() -> void:
@@ -326,7 +430,7 @@ func _retake_bases() -> void:
 		var cands := []
 		for id in commander.units:
 			var u: AttackerUnit = commander.units[id]
-			if id in sent or id in _staging or u.is_flying() or not u.is_controllable():
+			if id in sent or id in _staging or u.is_flying() or not u.is_controllable() or u.in_tree() or u.in_bush():
 				continue
 			cands.append([b.edge_distance(u.global_position), id])
 		cands.sort_custom(func(x, y): return x[0] < y[0])
@@ -338,7 +442,6 @@ func _retake_bases() -> void:
 
 ## Units with nothing to do look for the next objective.
 func _reassign_idle() -> void:
-	var breached := level.gates.values().any(func(g): return not g.is_alive())
 	var idle := []
 	var retaking := []
 	for ids in _retakers.values():
@@ -349,26 +452,37 @@ func _reassign_idle() -> void:
 		var u: AttackerUnit = commander.units[id]
 		if u.is_idle():
 			idle.append(id)
-	if idle.is_empty():
+	if not idle.is_empty():
+		_send_on(idle)
+
+
+## Sends `ids` on to the next objective: the keep once a gate is down, else the standing gate nearest each.
+func _send_on(ids: Array) -> void:
+	if level.gates.values().any(func(g): return not g.is_alive()):
+		_push_keep(ids)
 		return
-	if breached:
-		_push_keep(idle)
-		return
-	# No breach yet: hit the nearest standing gate.
 	var by_gate := {}
-	for id in idle:
+	for id in ids:
 		var u: AttackerUnit = commander.units[id]
-		var best: Structure = null
-		var best_d := INF
-		for g in level.gates.values():
-			if g.is_alive():
-				var d := u.global_position.distance_to(g.global_position)
-				if d < best_d:
-					best_d = d
-					best = g
+		var best := _nearest_gate(u.global_position)
 		if best:
 			if not by_gate.has(best):
 				by_gate[best] = []
 			by_gate[best].append(id)
 	for g in by_gate:
 		commander.submit({"type": "attack", "units": by_gate[g], "target": g.get_path()})
+
+
+## The standing gate nearest `p`, or null.
+func _nearest_gate(p: Vector3) -> Structure:
+	var best: Structure = null
+	var best_d := INF
+	for g in level.gates.values():
+		if g.is_alive() and p.distance_to(g.global_position) < best_d:
+			best_d = p.distance_to(g.global_position)
+			best = g
+	return best
+
+
+static func _flat_dist(a: Vector3, b: Vector3) -> float:
+	return Vector2(a.x - b.x, a.z - b.z).length()

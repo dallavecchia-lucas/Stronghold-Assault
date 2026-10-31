@@ -111,9 +111,9 @@ func _weapon_tick(delta: float) -> void:
 
 # ---------------------------------------------------------------- the rifle
 
-## A round chambered and her rifle up: she can fire.
+## A round chambered and her rifle up: she can fire (not held in a Serpent Sniper's coils).
 func ready_to_fire() -> bool:
-	return hp > 0.0 and ammo > 0 and _bolt <= 0.0 and _reload <= 0.0
+	return hp > 0.0 and ammo > 0 and _bolt <= 0.0 and _reload <= 0.0 and not SerpentTrap.is_held(self)
 
 
 func reloading() -> bool:
