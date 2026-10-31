@@ -28,6 +28,10 @@ extends CharacterBody3D
 ##            (squeeze_time), and no order calls that off; any other order uncoils it first.
 ## Both run on its rig (SerpentRig), which lays the body along the skill's way; the clips take over again once
 ## it is down or uncoiled, where it stood when it began.
+##
+## The Mule Artillery (UnitTypes setup_*) sets its gun up to fire and packs it up to move (set_gun): setup_time
+## seconds each way (its Setup clip, played backward to pack up), and it can't move unless the gun is packed.
+## Set up, it bombards like the bison, but stays put: its gun's turret swings round onto the aim (MuleGun).
 
 signal died(unit: AttackerUnit)
 ## A Sky Talon's strafe round landed / it dropped its bomb (for showcases and the HUD).
@@ -47,6 +51,9 @@ signal nested(tree: ForestTree)
 signal coiled(bush: Bush)
 signal struck(prey: Node3D)
 signal crushed(prey: Node3D)
+## A Mule Artillery's gun is set up (armed true) or packed up again; it fired a shell at `spot`.
+signal gun_set(armed: bool)
+signal shelled(shell: Shell, spot: Vector3)
 
 const HEAL_COLOR := Color(0.35, 1.0, 0.45)
 const AA_COLOR := Color(1.0, 0.9, 0.4)
@@ -113,6 +120,11 @@ const NEST_TURN := 1.4
 const TIP_RATE := 1.5
 const TRAP_EVERY := 0.15
 const NEST_ICON_SIZE := 0.0019
+## Mule Artillery: turning on the spot, its donkeys walk round at the turn rate times this (m): the lead pair
+## swings a long way out, the wheel pair hardly at all.
+const TEAM_SWING := 2.0
+## Its Setup clip is put back where the gun has got to once it drifts this far off (s).
+const SETUP_DRIFT := 0.1
 
 static var _supply_tex: ImageTexture
 static var _bush_tex: ImageTexture
@@ -215,9 +227,19 @@ var _overheat_left := 0.0
 var _bombard_aim := Vector3.ZERO
 var _bombard_left := 0.0
 var _bombard_fired := false
+## Seconds since the bombardment under way began (a Mule Artillery's turret swinging round onto it).
+var _lay_t := 0.0
 ## The model's muzzle bone (bombardment), when it has one.
 var _muzzle_skel: Skeleton3D
 var _muzzle_bone := -1
+## Mule Artillery: how far its gun is set up (0 packed: it can move, 1 set up: it can fire), which way it is
+## going (+1 setting up, -1 packing up, 0 neither), the order it carries out once packed (given while it packs
+## up), its gun's turret and tube (MuleGun), and its yaw last frame (turning on the spot, the team walks).
+var gun_setup := 0.0
+var _setup_dir := 0
+var _after_pack = null
+var _gun: MuleGun
+var _last_yaw := 0.0
 var _ram_left := 0.0
 ## Seconds since the last move order (a lioness walks until gallop_after: _speed).
 var _moving_for := 0.0
@@ -395,8 +417,62 @@ func has_bombard() -> bool:
 	return stats.has("bombard_cooldown")
 
 
+## A Mule Artillery fires only with its gun set up.
 func bombard_ready() -> bool:
-	return has_bombard() and bombard_cd <= 0.0 and is_alive()
+	return has_bombard() and bombard_cd <= 0.0 and is_alive() and (not has_setup() or is_armed())
+
+
+## Mule Artillery: its gun is set up to fire and packed up to move (set_gun).
+func has_setup() -> bool:
+	return stats.has("setup_time")
+
+
+## Its gun packed (any unit without one too): it moves as ever.
+func is_packed() -> bool:
+	return not has_setup() or (gun_setup <= 0.0 and _setup_dir == 0)
+
+
+## Its gun set up all the way: it can fire, and it stays put.
+func is_armed() -> bool:
+	return has_setup() and gun_setup >= 1.0 and _setup_dir == 0
+
+
+func setting_up() -> bool:
+	return _setup_dir > 0
+
+
+func packing_up() -> bool:
+	return _setup_dir < 0
+
+
+## Seconds until its gun is set up (setting up) or packed (packing up); 0 otherwise.
+func setup_left() -> float:
+	if _setup_dir > 0:
+		return (1.0 - gun_setup) * stats.setup_time
+	if _setup_dir < 0:
+		return gun_setup * stats.setup_time
+	return 0.0
+
+
+## Mule Artillery: sets its gun up (armed true: it stops where it is) or packs it up. Changing its mind halfway,
+## it goes back the way it came from there. A shot it was laying is called off (its reload given back). False if
+## it can't (no gun to set up, raiding, dead) or the gun is already set up, or packed, or on its way there.
+func set_gun(armed: bool) -> bool:
+	if not has_setup() or not is_alive() or raiding:
+		return false
+	if armed and (is_armed() or setting_up()):
+		return false
+	if not armed and (is_packed() or packing_up()):
+		return false
+	_setup_dir = 1 if armed else -1
+	_end_bombard()
+	if armed:
+		_after_pack = null
+		order = {"type": "idle"}
+		target = null
+	elif _gun:
+		_gun.stow()
+	return true
 
 
 func has_strafe() -> bool:
@@ -734,6 +810,7 @@ func _ready() -> void:
 	_build_hp_bar()
 	_retarget_cd = randf() * 0.3
 	_circle_at = global_position
+	_last_yaw = rotation.y
 
 
 # ---------------------------------------------------------------- orders
@@ -741,6 +818,14 @@ func _ready() -> void:
 func set_order(o: Dictionary) -> void:
 	if raiding:
 		return
+	if not is_packed():
+		# A Mule Artillery can't move with its gun set up, or on its way up or down: an order to go anywhere is
+		# refused, unless it is packing up, when it waits till it is packed.
+		if o.type != "idle":
+			if packing_up():
+				_after_pack = o
+			return
+		_after_pack = null
 	if _serpent and not _serpent_order(o):
 		return
 	if has_dog_modes():
@@ -777,8 +862,10 @@ func set_order(o: Dictionary) -> void:
 		_agent.target_position = o.pos
 
 
+## A Mule Artillery with its gun set up (or on its way up or down) is busy, not idle.
 func is_idle() -> bool:
-	return not raiding and order.type == "idle" and not Combat.is_valid_target(target) and sweep_mine == null
+	return not raiding and order.type == "idle" and not Combat.is_valid_target(target) and sweep_mine == null \
+			and is_packed()
 
 
 ## Serpent Sniper: an order while up its tree or round its bush. Up the tree an attack order it fires from
@@ -1618,6 +1705,7 @@ func _cluster_tick(delta: float) -> void:
 
 ## Bison active: stand still, lay the gun on `aim` and fire one heavy shell at it, then carry on
 ## with the order. `aim` should be within bombard_range (RhinoAim.bombard). False while reloading.
+## A Mule Artillery (its gun set up) swings its turret round onto `aim` instead, and fires once it is on it.
 func start_bombard(aim: Vector3) -> bool:
 	if not bombard_ready():
 		return false
@@ -1625,14 +1713,49 @@ func start_bombard(aim: Vector3) -> bool:
 	_bombard_aim = aim
 	_bombard_left = stats.bombard_aim_time + stats.bombard_hold
 	_bombard_fired = false
+	_lay_t = 0.0
+	if _gun:
+		_gun.aim(aim)
 	return true
 
 
 func _bombard_tick(delta: float) -> void:
+	_lay_t += delta
+	if not _bombard_fired and _gun != null and not _gun.aimed() and _lay_t < PI / stats.traverse + 1.0:
+		# The turret is still swinging round onto the aim: the gun is laid as long as that takes (no longer
+		# than a half turn would).
+		_bombard_left = maxf(_bombard_left - delta, stats.bombard_hold + 0.001)
+		return
 	_bombard_left -= delta
 	if not _bombard_fired and _bombard_left <= stats.bombard_hold:
 		_bombard_fired = true
 		_fire_bombard()
+
+
+## A bombardment under way is over (the Mule Artillery packing its gun up): a shot not yet fired is called off
+## and its reload given back.
+func _end_bombard() -> void:
+	if _bombard_left > 0.0 and not _bombard_fired:
+		bombard_cd = 0.0
+	_bombard_left = 0.0
+
+
+## Mule Artillery, every physics frame: its gun going up or coming down, setup_time seconds each way (the Setup
+## clip plays along: _gun_clip). Packed, it carries out the order it was given meanwhile.
+func _setup_tick(delta: float) -> void:
+	if _setup_dir == 0:
+		return
+	gun_setup = clampf(gun_setup + _setup_dir * delta / stats.setup_time, 0.0, 1.0)
+	if _setup_dir > 0 and gun_setup >= 1.0:
+		_setup_dir = 0
+		gun_set.emit(true)
+	elif _setup_dir < 0 and gun_setup <= 0.0:
+		_setup_dir = 0
+		gun_set.emit(false)
+		var next = _after_pack
+		_after_pack = null
+		if next != null:
+			set_order(next)
 
 
 func _fire_bombard() -> void:
@@ -1644,18 +1767,30 @@ func _fire_bombard() -> void:
 	shell.damage = stats.bombard_damage
 	shell.radius = stats.bombard_splash
 	shell.structure_mult = stats.structure_mult
-	shell.size = 0.4
+	shell.size = stats.get("shell_size", 0.4)
 	shell.trail = 0.04
 	get_tree().current_scene.add_child(shell)
 	var muzzle := muzzle_position()
 	shell.launch(muzzle, _bombard_aim + Vector3(cos(a), 0.0, sin(a)) * scatter)
-	Combat.spawn_explosion(self, muzzle, 1.6)
+	Combat.spawn_explosion(self, muzzle, stats.get("muzzle_blast", 1.6))
 	SmokeCloud.wisp(self, muzzle, 2.0)
 	_recoil = 1.0
+	if _gun:
+		# The barrel's tube kicks back into its cradle, and the blast raises the dust all round the gun.
+		_gun.kick()
+		SmokeCloud.wisp(self, muzzle + _gun.muzzle().basis.z * 2.5, 2.6, 2)
+		var at := _gun.turret_position()
+		for k in 6:
+			var out := Vector3(cos(k * TAU / 6.0), 0.0, sin(k * TAU / 6.0)) * 2.3
+			SmokeCloud.wisp(self, Vector3(at.x + out.x, global_position.y + 0.3, at.z + out.z), 1.5)
+	shelled.emit(shell, _bombard_aim)
 
 
-## Tip of the barrel: the model's muzzle bone, or a guess in front of the unit.
+## Tip of the barrel: the Mule Artillery's gun's muzzle (MuleGun), the model's muzzle bone, or a guess in front
+## of the unit.
 func muzzle_position() -> Vector3:
+	if _gun and _gun.posed():
+		return _gun.muzzle().origin
 	if _muzzle_skel:
 		return _muzzle_skel.global_transform * _muzzle_skel.get_bone_global_pose(_muzzle_bone).origin
 	return global_position - global_basis.z * 3.0 + Vector3.UP * stats.height
@@ -2213,6 +2348,14 @@ func _physics_process(delta: float) -> void:
 		ping_cd = maxf(ping_cd - cool, 0.0)
 		if is_pinging():
 			_ping_tick(delta)
+	if has_setup():
+		_setup_tick(delta)
+		if not is_packed():
+			# Its gun set up, or on its way up or down: it stands where it is (others steer round it).
+			if _agent.avoidance_enabled:
+				_agent.velocity = Vector3.ZERO
+			_on_velocity_computed(Vector3.ZERO)
+			return
 	_moving_for += delta
 	if stats.has("gallop_after") and _moving_for >= stats.gallop_after and _moving_for - delta < stats.gallop_after:
 		_agent.max_speed = _speed()  # the walk is over: she may gallop
@@ -2408,6 +2551,8 @@ func _fly(move_to, delta: float) -> void:
 func _on_velocity_computed(safe: Vector3) -> void:
 	if hp <= 0.0 or is_flying() or not _route.is_empty():
 		return
+	if not is_packed():
+		safe = Vector3.ZERO  # a Mule Artillery's gun set up: avoidance doesn't push it about
 	var dt := get_physics_process_delta_time()
 	if stats.get("steer", false):
 		_steer(safe, dt)
@@ -2457,12 +2602,19 @@ func _process(delta: float) -> void:
 		return
 	# Procedural animation until models are rigged.
 	var spd := velocity.length() if not _route.is_empty() else Vector2(velocity.x, velocity.z).length()
+	if has_setup():
+		# A team of donkeys turning on the spot walks round it, the lead pair a long way out.
+		var turn := absf(angle_difference(_last_yaw, rotation.y)) / maxf(delta, 0.0001)
+		_last_yaw = rotation.y
+		spd = maxf(spd, turn * TEAM_SWING)
 	var moving := spd > 0.3
 	_recoil = maxf(_recoil - delta * 6.0, 0.0)
 	_butt = maxf(_butt - delta * 3.0, 0.0)
 	if moving:
 		_anim_t += delta * spd
-	if _anim:
+	if _anim and not is_packed():
+		_gun_clip()  # a Mule Artillery setting its gun up, set up, or packing it up
+	elif _anim:
 		# Rigged model: play its clips, matching the move cycle to ground speed (within anim_scale).
 		# A kangaroo throwing a flash grenade plays its throw, a giraffe pinging its ping; a lioness
 		# runs above run_above (anim_run), stalks while she sneaks, pounces and strikes; a dog digs.
@@ -2513,8 +2665,8 @@ func _process(delta: float) -> void:
 				_model.position.z = -_recoil * 0.35  # lunge into the blow
 			elif has_ram():
 				_model.position.z = -sin(_butt * PI) * 0.5  # head-butt
-			elif has_bombard():
-				_model.position.z = _recoil * 0.25  # the gun kicks the pair back
+			elif has_bombard() and _gun == null:
+				_model.position.z = _recoil * 0.25  # the gun kicks the pair back (a mule's barrel kicks: MuleGun)
 		_:
 			_model.position.y = absf(sin(_anim_t * 2.2)) * 0.08 if moving else lerpf(_model.position.y, 0.0, delta * 8.0)
 			_model.rotation.z = sin(_anim_t * 2.2) * 0.06 if moving else lerpf(_model.rotation.z, 0.0, delta * 8.0)
@@ -2557,6 +2709,25 @@ func _process(delta: float) -> void:
 	if _heal_icon.visible:
 		var under := (0.95 if bush or _tag_icon.visible else 0.0) + (0.95 if _supply_icon.visible else 0.0)
 		_heal_icon.global_position = global_position + Vector3.UP * (stats.height + 1.0 + under + 0.08 * sin(Time.get_ticks_msec() * 0.004 + 1.6))
+
+
+## Mule Artillery with its gun not packed: the Setup clip follows how far the gun has got (forward setting it
+## up, backward packing it up, at the rate that takes setup_time end to end), then the Armed loop while it is
+## set up.
+func _gun_clip() -> void:
+	if is_armed():
+		if _anim.current_animation != stats.anim_armed:
+			_anim.play(stats.anim_armed, 0.2)
+		_anim.speed_scale = 1.0
+		return
+	var length := _anim.get_animation(stats.anim_setup).length
+	var at := gun_setup * length
+	if _anim.current_animation != stats.anim_setup:
+		_anim.play(stats.anim_setup, 0.2)
+		_anim.seek(at, true)
+	elif absf(_anim.current_animation_position - at) > SETUP_DRIFT:
+		_anim.seek(at, true)
+	_anim.speed_scale = length / stats.setup_time * float(_setup_dir)
 
 
 ## The sneak as each side sees it. The defending player sees her see-through (sneak_alpha opaque: the
@@ -2637,7 +2808,7 @@ func _build_model() -> void:
 	if not players.is_empty() and stats.has("anim_move"):
 		_anim = players[0]
 		var loops := [stats.anim_move, stats.anim_idle]
-		for k in ["anim_run", "anim_sneak", "anim_dig"]:
+		for k in ["anim_run", "anim_sneak", "anim_dig", "anim_armed"]:
 			if stats.has(k):
 				loops.append(stats[k])
 		for clip in loops:
@@ -2659,6 +2830,11 @@ func _build_model() -> void:
 			if skel.find_bone("muzzle") >= 0:
 				_muzzle_skel = skel
 				_muzzle_bone = skel.find_bone("muzzle")
+	if has_setup() and _muzzle_skel:
+		# The Mule Artillery's gun: its turret traverses onto the aim, its barrel's tube kicks back on a shot.
+		_gun = MuleGun.new()
+		_gun.traverse = stats.traverse
+		_muzzle_skel.add_child(_gun)
 	if stats.get("flak", false):
 		var skeletons := m.find_children("*", "Skeleton3D", true, false)
 		if not skeletons.is_empty():

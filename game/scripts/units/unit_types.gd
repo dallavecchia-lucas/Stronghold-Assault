@@ -13,7 +13,7 @@ extends RefCounted
 ##   "anti_air"  no basic attack. Passive: locks onto one enemy flyer within aa_range and
 ##               chips at it (aa_dps) until it dies or leaves. Active: cluster bombing (rhino)
 ##               or a missile salvo (elephant).
-##   "siege"     no basic attack and no passive. Active: bombardment (bison).
+##   "siege"     no basic attack and no passive. Active: bombardment (bison, mule).
 ## flak: the anti-air passive comes from the model's two flak cannons (ElephantTurrets): they
 ##   swing up at the flyer and take turns firing shells that burst around it, each only once
 ##   it is on target.
@@ -23,7 +23,13 @@ extends RefCounted
 ##   within bombard_range (flat distance) for bombard_aim_time seconds and fires one shell of
 ##   bombard_damage over bombard_splash, scattered by bombard_spread per metre of range, then stands
 ##   for bombard_hold seconds before carrying on. Reloads in bombard_cooldown. The point can be up
-##   on the gun decks and roofs.
+##   on the gun decks and roofs. shell_size: the shell's radius (m, default 0.4); muzzle_blast: the
+##   flash's size at the muzzle (default 1.6).
+## setup_*: the Mule Artillery's gun has to be set up to fire (setup_time seconds, its anim_setup clip)
+##   and packed up again to move (setup_time again, the clip played backward). It can't move unless its
+##   gun is packed: moving orders while it sets up or is set up are refused, and one given while it packs
+##   up waits till it is packed. Set up (its anim_armed loop), it bombards like the bison (bombard_*),
+##   its gun's turret swinging round onto the aim at `traverse` rad/s (MuleGun) instead of the unit turning.
 ## scouts: rings the outside of the rest of the selection in scout formation (T).
 ## missile_*: missile salvo ability. missile_count homing missiles of missile_damage each, one
 ##   every missile_interval, at an enemy flyer within missile_range (flat distance). Reloads in
@@ -200,12 +206,22 @@ const DATA := {
 		"model": "res://assets/units/war_elephant_sentinel/war_elephant_sentinel_rigged.glb",
 	},
 	"mule": {
-		"name": "Mule Artillery", "cost": 280, "hp": 450.0, "speed": 2.6,
+		"name": "Mule Artillery", "cost": 280, "hp": 450.0, "speed": 1.0,
 		"sight": 28.0,
-		"range": 80.0, "min_range": 20.0, "damage": 110.0, "fire_interval": 5.0, "spread": 0.06,
-		"splash": 5.0, "structure_mult": 2.5, "radius": 1.6, "height": 2.2,
-		"role": "artillery", "anim": "roll", "hotkey": KEY_N,
-		"model": "res://assets/units/cyber_mule_artillery/cyber_mule_artillery.glb",
+		"range": 0.0, "damage": 0.0, "fire_interval": 1.0, "spread": 0.0,
+		"structure_mult": 1.5, "radius": 1.6, "height": 2.2,
+		"role": "siege", "anim": "rigged", "hotkey": KEY_N,
+		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 1.0, "anim_scale": [0.5, 1.6],
+		"anim_setup": "Setup", "anim_armed": "Armed",
+		# Six donkeys towing a siege gun: super slow, and it turns like a wagon.
+		"steer": true, "turn_rate": 0.45,
+		# The gun is set up to fire and packed up to move; set up, one shell every bombard_cooldown, with
+		# nearly twice the bison's reach, twice its punch and a much bigger blast.
+		"setup_time": 7.0, "traverse": 0.7,
+		"bombard_range": 150.0, "bombard_cooldown": 30.0, "bombard_damage": 480.0,
+		"bombard_splash": 11.0, "bombard_spread": 0.008, "bombard_aim_time": 1.0, "bombard_hold": 1.5,
+		"shell_size": 0.6, "muzzle_blast": 2.6,
+		"model": "res://assets/units/cyber_mule_artillery/cyber_mule_artillery_rigged.glb",
 	},
 	"breacher": {
 		"name": "Breaching Ram", "cost": 150, "hp": 420.0, "speed": 5.0,

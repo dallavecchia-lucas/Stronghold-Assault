@@ -75,7 +75,7 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
 **Attacker (RTS)**
 - Fog of war: your army only sees what is round it (each unit as far as its sight, 26–50 m; the Giraffe 75 m; a Serpent Sniper up a tree 83 m; a helipad you hold 26 m round its deck). The stronghold and the land are known, but outside sight they are dimmed, and the defenders' soldiers and squads there aren't shown at all. Nobody picks out a defender in the fog, and you can't order an attack on one, even one in range (so long-range units need a spotter); the gate guns, the mortar and the AA turrets stay on the map. Raiders inside the stronghold hunt as ever. The CPU attacker plays by the same fog.
 - `LMB` click/drag to select, `Shift` to add · `RMB` attack-move, or attack a gate/defender you click on · `Ctrl+RMB` move without stopping
-- Spawn: `Z` Bear Rifleman · `C` Wolf Medic (heals, or sweeps for mines: see below) · `N` Mule Artillery (long-range shells)
+- Spawn: `Z` Bear Rifleman · `C` Wolf Medic (heals, or sweeps for mines: see below) · `N` Mule Artillery (a siege gun that has to be set up: see below)
 - `V` Sky Talon (the hawk): flies over the mountain, and flies like a hawk.
   - It glides most of the time and beats its wings only now and then, a few strokes every few seconds (gliding it sinks a little, less while it circles and soars, and the strokes lift it back up), and all the way up on take-off or climbing over the mountain. It banks into its turns.
   - It never hovers: wherever it has nowhere left to go, it circles. Sent somewhere (or at a target), it circles the spot counterclockwise, the centre off its left wing, like a gunship flying a pylon turn.
@@ -96,6 +96,10 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
   - `G` bombardment: aim, then `LMB` to fire (`RMB` or `G` cancels). The bisons stop, lay the gun and fire one heavy shell at a spot up to 80 m away, twice the rhinos' reach. It hits for 240 within 6 m and reloads in 40 s. They carry on with their order once it has fired.
   - The shells come down where the cursor is, up on the gun decks and the roofs too, so the bisons can wreck the machines (the gate machine guns, the mortar) and the soldiers on them from out in the field. The preview shows each bison's range and the blast where its shell will land.
   - With several bisons selected, the shells cluster round the cursor 9 m apart like the rhinos' bombs, instead of piling onto one spot. Up on a deck or a roof, the spots on that level go first, so the shells spread along the deck instead of dropping off its edge.
+- `N` Mule Artillery (six donkeys in harness, in three pairs, towing a tracked siege gun with a very long barrel): like the Bison Field Gun, no basic attack and no passive, but super slow (1 m/s; it turns like a wagon, the team walking round) and its gun has to be set up before it can fire.
+  - `T` (with no rhino, lioness or dog selected) or the `Guns:` button sets the selected mules' guns up: the team halts and looks up while the barrel rises out of its travel position to 40° (7 s). `T` again disarms them (7 s, the same in reverse, the turret swinging back to the front). It can't move while it sets up, while it is armed or while it disarms: orders to move are refused, except one given while it disarms, which it carries out once disarmed. Changing your mind halfway (`T` again), it goes back the way it came from where it got to.
+  - Armed (the donkeys graze), `G` bombardment as for the bisons (aim, then `LMB`; armed mules and ready bisons fire together): the turret swings round onto the aim (40°/s, any way round, the team standing as it is), and one shell leaves the raised muzzle. One shell every 30 s, out to 150 m (the bisons' 80), 480 within 11 m (the bisons' 240 within 6 m), up on the gun decks and roofs too. Several mules' shells cluster round the cursor 16.5 m apart.
+  - The CPU brings a mule on odd waves from the third: it sets its gun up as soon as the stronghold is in reach and shells the gate guns and the mortar, then the defenders it sees, then the gate and the AA turrets; with nothing in reach for 20 s it disarms and moves on.
 - `K` Hippo Heavy Gunner: heavy, slow, sprays suppressive fire from mounted machine guns.
   - The guns are inaccurate: rounds land around the target and can hit whatever stands next to it. They fire for 8 s in total (resting cools them at the same rate), then overheat and go silent for 2 s.
   - `R` smoke screen: aim, then `LMB` to fire (`RMB` or `R` cancels). The cone shows where the curtain will stand (the green band at its tip). The hippo fires three grenades at once. Each one bursts high up, then drops and bursts twice more on the way down, leaving a tall pillar. Together the pillars make a curtain that blocks line of sight for both sides for 30 s. Cooldown is 90 s. With several hippos selected, the one closest to the cursor fires.
@@ -283,6 +287,15 @@ godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie
 ```
 
 `-- --video --snap=30,45 --snap-out=/tmp/shot` saves just those frames (seconds into the video).
+
+### Mule showcase
+
+`game/scenes/dev/mule_showcase.tscn` works the Mule Artillery the way a player does, in the RTS view, in the south field. A mule walks up the lane, super slow. `T`: the barrel rises (7 s), and an order to move meanwhile changes nothing. `G` and a click on the gate machine gun on the south gun deck, about 90 m off: the turret lays the barrel and the shell leaves the raised muzzle and comes down on the gun. `G` again does nothing while the gun reloads (30 s, cut short here); then the mortar on the roof; then a spot in the field behind it, the turret swinging round while the team stands. Ordered to move while armed, it stays put. `T` disarms it (7 s), and the order to move given meanwhile it carries out once disarmed. The garrison's posts hold fire, and their machines don't get repaired.
+
+```sh
+godot --path game --headless --fixed-fps 30 res://scenes/dev/mule_showcase.tscn -- --test  # prints and checks: MULE SHOWCASE PASS / FAIL
+godot --path game --fixed-fps 30 res://scenes/dev/mule_showcase.tscn  # to watch it
+```
 
 ### Sky Talon showcase
 
@@ -555,6 +568,14 @@ python3 tools/gltf/animate_dog.py \
     --output game/assets/units/battlefield_lifesaver/battlefield_lifesaver_rigged.glb
 ```
 
+The Mule Artillery's export has no rig: six donkeys in three pairs, in harness, towing a tracked siege gun whose barrel reaches out over them, each part its own piece of the mesh. `tools/gltf/rig_mule.py` (numpy alone, using the Infiltrator's rig and IK helpers) keeps the processed static model's mesh and sorts its pieces out: each donkey gets a body, a neck and a head bone (its ears ride the head, its saddle pads the body) and a two-bone leg for every leg it has (the groups of its vertices below the belly: the fore legs are the two frontmost, the rest hind legs; the swing and wheel donkeys were generated with an extra one, which steps as a leg of its own). The harness (the traces along the flanks and between the pairs, the bars across them) goes with the donkey it lies over, the reins with the head, and is blended between the donkeys across the gaps (the last traces into the gun's hitch). The gun: the tracked chassis (`root`); the turret (`turret`, everything on the chassis deck), which the game turns about Y; the cradle (`cradle`: the mantlet, its trunnion hubs, the recuperators and the barrel), elevating about the hubs; and the front of the barrel (`tube`), which the game slides back on a shot (`MuleGun`); `muzzle` marks its tip. It bakes four clips: `Walk` (authored at 1 m/s, the UnitTypes `anim_ref_speed`: each donkey walks a lateral sequence in a step of its own, hooves planted by IK, the body riding as high as its planted legs allow and leaning into the collar, the head nodding with the fore legs), `Idle` (hitched, breathing, heads looking about), `Setup` (not looped, 7 s, the UnitTypes `setup_time`: the team halts and the heads come up, the barrel rises out of its travel position to 40°, overshoots a little and settles while the donkeys watch it go up, then they drop their heads to graze; the game plays it backward to disarm) and `Armed` (grazing under the raised barrel; it starts where `Setup` ends). `--preview DIR` renders the rest pose, frames of each clip and the set-up gun traversed round:
+
+```sh
+python3 tools/gltf/rig_mule.py \
+    --input game/assets/units/cyber_mule_artillery/cyber_mule_artillery.glb \
+    --output game/assets/units/cyber_mule_artillery/cyber_mule_artillery_rigged.glb
+```
+
 Static props (scenery, turrets) skip Blender: they go through [glTF-Transform](https://gltf-transform.dev) to put the pivot at the bottom center and shrink textures to 1024 px, and `game/scripts/match/props.gd` scales them to height at load time:
 
 ```sh
@@ -596,4 +617,4 @@ The game strips the placeholder weapons (`PH_*`) from its mounts and puts the tu
 - `game/assets/` — processed, game-ready versions (Blender cleanup, rigging, texture resizing)
 - `game/scripts/` — `match/` (level, rules), `attacker/` (RTS commander, CPU attacker), `defense/` (stations, defender controller), `units/`, `combat/`, `ui/`
 - `tools/blender/` — asset processing scripts
-- `tools/gltf/` — asset scripts that need no Blender (numpy on the glTF): static props, the Sniper's rifle, the Infiltrator's, the Lioness's and the Sniper's rigs, the Wolf Medic's Dig clip
+- `tools/gltf/` — asset scripts that need no Blender (numpy on the glTF): static props, the Sniper's rifle, the Infiltrator's, the Lioness's, the Sniper's and the Mule Artillery's rigs, the Wolf Medic's Dig clip

@@ -56,18 +56,21 @@ static func _formation(rhinos: Array, target: Vector3) -> Array[Vector3]:
 
 
 ## Where each bison's shell goes when the player aims at one point (same order): as close to it as
-## its range allows, clustered round it like scattered rhinos. The point can be up on a gun deck or
-## a roof: the spots round it stay on that level where they can (cluster() with `space`).
+## its range allows, clustered round it like scattered rhinos, as far apart as the biggest blast among
+## them calls for (Mule Artillery fire with the bisons too). The point can be up on a gun deck or a
+## roof: the spots round it stay on that level where they can (cluster() with `space`).
 static func bombard(bisons: Array, target: Vector3) -> Array[Vector3]:
 	if bisons.is_empty():
 		return []
 	var at: Array[Vector3] = []
 	var reach: Array[float] = []
+	var splash := 0.0
 	for b in bisons:
 		at.append(b.global_position)
 		reach.append(b.stats.bombard_range)
+		splash = maxf(splash, b.stats.bombard_splash)
 	var space: PhysicsDirectSpaceState3D = bisons[0].get_world_3d().direct_space_state
-	return cluster(at, reach, bisons[0].stats.bombard_splash * BOMBARD_SPACING, target, space)
+	return cluster(at, reach, splash * BOMBARD_SPACING, target, space)
 
 
 static func _scattered(rhinos: Array, target: Vector3) -> Array[Vector3]:
