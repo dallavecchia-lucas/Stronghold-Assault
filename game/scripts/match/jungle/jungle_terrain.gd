@@ -4,7 +4,8 @@ extends Node3D
 ## to HALF (past the map's edge, so the rivers run off it), drawn as CHUNK-sized meshes with a
 ## splat-mapped shader (jungle floor, the clearing's grass, mud by the water, the tracks, rock on the
 ## steep faces and the quarry's benches), a HeightMapShape3D for collision and one water plane at
-## JungleLayout.WATER_Y that only shows where the land dips under it (the rivers and the lake).
+## JungleLayout.WATER_Y that only shows where the land dips under it (the rivers and the lake): opaque
+## and glossy, so it mirrors the jungle (screen-space reflections, Forward+).
 ##
 ## The navmesh gets the same ground with the water cut out of it (nav_faces()): the rivers and the
 ## lake are chasms to it, so units only cross on the bridges.
@@ -560,7 +561,7 @@ void fragment() {
 
 const WATER_SHADER := """
 shader_type spatial;
-render_mode blend_mix, depth_draw_always, cull_disabled, specular_schlick_ggx;
+render_mode cull_disabled, specular_schlick_ggx;
 
 uniform sampler2D wave_a : hint_normal, filter_linear_mipmap, repeat_enable;
 uniform sampler2D wave_b : hint_normal, filter_linear_mipmap, repeat_enable;
@@ -578,11 +579,11 @@ void fragment() {
 	NORMAL_MAP = normalize(mix(na, nb, 0.5));
 	NORMAL_MAP_DEPTH = 0.5;
 	float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 4.0);
-	// A jungle river: murky olive-brown water, the sky's sheen at a glancing angle.
-	ALBEDO = pow(mix(vec3(0.26, 0.26, 0.17), vec3(0.42, 0.47, 0.44), fres), vec3(2.2));
+	// A jungle river: dark, murky water (opaque, so it mirrors the banks and the sky: screen-space
+	// reflections skip see-through surfaces), the sky's sheen at a glancing angle.
+	ALBEDO = pow(mix(vec3(0.17, 0.17, 0.11), vec3(0.3, 0.34, 0.32), fres), vec3(2.2));
 	ROUGHNESS = 0.06;
 	METALLIC = 0.0;
 	SPECULAR = 0.6;
-	ALPHA = mix(0.9, 0.97, fres);
 }
 """

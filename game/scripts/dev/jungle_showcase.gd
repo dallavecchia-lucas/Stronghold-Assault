@@ -31,14 +31,14 @@ const SHOTS := {
 	"keep_clearing": [Vector3(210, 120, 330), Vector3(0, 10, 0), 50.0],
 	"rts_view": [Vector3(10, 0, 130), Vector3(0, 0, 0), 55.0],
 	"rts_river": [Vector3(-40, 0, 455), Vector3(0, 0, 0), 55.0],
-	"citadel": [Vector3(-55, 14, 600), Vector3(0, 6, 690), 52.0],
+	"citadel": [Vector3(-30, 13, 628), Vector3(4, 7, 690), 56.0],
 	"bridge_main": [Vector3(-14, 7, 534), Vector3(0, 3, 482), 58.0],
 	"east_bridge": [Vector3(318, 7, 2), Vector3(372, 3, -10), 58.0],
-	"outpost": [Vector3(505, 13, 10), Vector3(560, 4, -40), 55.0],
+	"outpost": [Vector3(522, 13, 2), Vector3(562, 4, -40), 56.0],
 	"quarry": [Vector3(-398, 26, 8), Vector3(-505, 6, -40), 60.0],
 	"prison_cliff": [Vector3(70, 100, -360), Vector3(-20, 22, -610), 50.0],
 	"prison_close": [Vector3(55, 34, -575), Vector3(-20, 38, -650), 58.0],
-	"lake": [Vector3(-585, 9, 205), Vector3(-660, 0, 300), 62.0],
+	"lake": [Vector3(-590, 13, 200), Vector3(-675, 4, 320), 62.0],
 	"jungle_floor": [Vector3(-464, 0, 215), Vector3(-454, 6, 130), 68.0],
 	"canopy": [Vector3(200, 62, -260), Vector3(320, 30, -400), 60.0],
 }
@@ -76,7 +76,7 @@ func _ready() -> void:
 	add_child(commander)
 	cam = Camera3D.new()
 	cam.near = 0.1
-	cam.far = 4000.0
+	cam.far = 30000.0
 	add_child(cam)
 	cam.current = true
 	level.navigation_ready.connect(_start, CONNECT_ONE_SHOT)

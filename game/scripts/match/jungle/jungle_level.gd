@@ -88,10 +88,10 @@ func _build_environment() -> void:
 	var env := Environment.new()
 	var sky_mat := ProceduralSkyMaterial.new()
 	sky_mat.sky_top_color = Color(0.3, 0.46, 0.66)
-	sky_mat.sky_horizon_color = Color(0.7, 0.74, 0.72)
+	sky_mat.sky_horizon_color = Color(0.68, 0.73, 0.72)
 	# Below the horizon the sky is the haze over the far jungle, so the land fades into it.
-	sky_mat.ground_horizon_color = Color(0.56, 0.62, 0.6)
-	sky_mat.ground_bottom_color = Color(0.3, 0.36, 0.3)
+	sky_mat.ground_horizon_color = Color(0.66, 0.71, 0.7)
+	sky_mat.ground_bottom_color = Color(0.5, 0.56, 0.52)
 	sky_mat.sun_angle_max = 25.0
 	var sky := Sky.new()
 	sky.sky_material = sky_mat
@@ -114,10 +114,10 @@ func _build_environment() -> void:
 	env.glow_bloom = 0.04
 	# Humid haze: the far jungle fades blue-grey.
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.6, 0.67, 0.66)
-	env.fog_density = 0.00065
-	env.fog_aerial_perspective = 0.35
-	env.fog_sky_affect = 0.25
+	env.fog_light_color = Color(0.66, 0.71, 0.7)
+	env.fog_density = 0.00045
+	env.fog_aerial_perspective = 0.3
+	env.fog_sky_affect = 0.2
 	env.adjustment_enabled = true
 	env.adjustment_saturation = 1.12
 	env.adjustment_contrast = 1.06
@@ -144,7 +144,7 @@ func _build_ground() -> void:
 	# Past the terrain's edge, flat land under the haze to the horizon.
 	var skirt := MeshInstance3D.new()
 	var pm := PlaneMesh.new()
-	pm.size = Vector2(9000, 9000)
+	pm.size = Vector2(60000, 60000)
 	skirt.mesh = pm
 	skirt.material_override = Mats.flat(Color(0.1, 0.13, 0.07), 0.0, 1.0)
 	skirt.position.y = -0.3
