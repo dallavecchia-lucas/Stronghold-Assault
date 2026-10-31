@@ -13,7 +13,10 @@ extends Node
 ##               it, as many as fit in front of its doorway; the rest call their ram off (RamCharge)
 ##   {"type": "cluster", "units": [ids], "pos": Vector3}   rhinos bomb around pos (RhinoAim)
 ##   {"type": "bombard", "units": [ids], "pos": Vector3}   bisons each fire a shell round pos,
-##               up on the gun decks and roofs too (RhinoAim.bombard)
+##               up on the gun decks and roofs too (RhinoAim.bombard); so do Mule Artillery with
+##               their guns set up
+##   {"type": "setup", "units": [ids], "on": bool}   Mule Artillery set their guns up (on) or pack
+##               them up (AttackerUnit.set_gun): setup_time each way; they can't move unless packed
 ##   {"type": "strafe", "units": [ids], "pos": Vector3, "dir": Vector3}   talons strafe parallel
 ##               lanes centred round pos, flying along dir (TalonAim.strafe)
 ##   {"type": "bomb", "units": [ids], "pos": Vector3}   talons each drop a bomb round pos
@@ -134,6 +137,9 @@ func submit(cmd: Dictionary) -> int:
 			_cluster(cmd.units, cmd.pos)
 		"bombard":
 			_bombard(cmd.units, cmd.pos)
+		"setup":
+			for u in _resolve(cmd.units):
+				u.set_gun(cmd.get("on", true))
 		"strafe":
 			_strafe(cmd.units, cmd.pos, cmd.dir)
 		"bomb":

@@ -10,8 +10,8 @@ extends CanvasLayer
 ## F: aim the selected rhinos' cluster bombing (LMB fire, RMB/F cancel) · T: scout formation
 ##    with no rhino ready, the selected talons' strafe run: press LMB on the middle of the line,
 ##    drag the way to fly it, let go to fire (a click flies it from the talons; RMB/F cancel)
-## G: aim the selected bisons' bombardment (LMB fire, RMB/G cancel)
-##    with no bison ready, the selected talons' bomb strike (LMB fire, RMB/G cancel)
+## G: aim the selected bisons' bombardment (LMB fire, RMB/G cancel), and the Mule Artillery's with their
+##    guns set up; with no bison or mule ready, the selected talons' bomb strike (LMB fire, RMB/G cancel)
 ## R: aim a selected hippo's smoke screen (LMB fire, RMB/R cancel)
 ##    with no hippo ready, the selected kangaroos' flash grenades (LMB fire, RMB/R cancel)
 ## O: aim the selected elephants' missiles: LMB an enemy aircraft (RMB/O cancel)
@@ -21,6 +21,8 @@ extends CanvasLayer
 ## G with no bison or talon skill ready: the selected lionesses' fire blast
 ## T with no rhino selected: lionesses moved together form firing lines, or don't (the HUD's toggle too)
 ## T with no rhino or lioness selected: the selected Wolf Medics switch between healing and minesweeping
+##    (the HUD's button too)
+## T with no rhino, lioness or dog selected: the selected Mule Artillery set their guns up, or pack them up
 ##    (the HUD's button too)
 ## F with no rhino, talon or lioness skill ready: the selected Serpent Snipers' sniper nest, LMB a tree (they
 ##    climb it and the trees round it; RMB/F cancel)
@@ -83,6 +85,7 @@ var _missile_mesh: ImmediateMesh
 var _aim_label: Label
 var _line_button: Button
 var _dog_button: Button
+var _gun_button: Button
 var _fog: FogOverlay
 
 
@@ -224,6 +227,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				toggle_lines()
 			elif not _dogs().is_empty() and not selected.any(func(u): return u.stats.get("scouts", false)):
 				toggle_dog_mode()
+			elif not _mules().is_empty() and not selected.any(func(u): return u.stats.get("scouts", false)):
+				toggle_guns()
 			else:
 				commander.submit({"type": "scout", "units": selected.map(func(u): return u.unit_id)})
 			return
@@ -675,6 +680,23 @@ func toggle_dog_mode() -> void:
 	commander.submit({"type": "dog_mode", "units": dogs.map(func(u): return u.unit_id), "mode": mode})
 
 
+# ---------------------------------------------------------------- Mule Artillery
+
+func _mules() -> Array:
+	_alive_selection()
+	return selected.filter(func(u): return u.has_setup())
+
+
+## T (with no rhino, lioness or dog selected) or the HUD's button: the selected Mule Artillery set their guns
+## up, unless all of them are set up or setting up already: then they pack them up.
+func toggle_guns() -> void:
+	var mules := _mules()
+	if mules.is_empty():
+		return
+	var up := not mules.all(func(u): return u.is_armed() or u.setting_up())
+	commander.submit({"type": "setup", "units": mules.map(func(u): return u.unit_id), "on": up})
+
+
 # ---------------------------------------------------------------- elephant missiles
 
 func _ready_elephants() -> Array:
@@ -819,6 +841,14 @@ func _build_hud() -> void:
 	_dog_button.pressed.connect(toggle_dog_mode)
 	_dog_button.visible = false
 	info.add_child(_dog_button)
+	# Mule Artillery: their guns (packed, set up or on the way) and the switch, while any are selected.
+	_gun_button = UIKit.button("", 13)
+	_gun_button.focus_mode = Control.FOCUS_NONE
+	_gun_button.tooltip_text = "Set the guns up (%d s): armed, they fire (G) but can't move\nDisarm them (%d s) to move again" \
+			% [UnitTypes.DATA.mule.setup_time, UnitTypes.DATA.mule.setup_time]
+	_gun_button.pressed.connect(toggle_guns)
+	_gun_button.visible = false
+	info.add_child(_gun_button)
 
 	# Two rows of unit buttons and the spawn points three to a row: the panel fits the screen (1600 wide).
 	var grid := GridContainer.new()
@@ -857,7 +887,7 @@ func _build_hud() -> void:
 	row.add_child(sp)
 	set_spawn_point(0)
 
-	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nBisons: G bombardment (LMB fire, RMB cancel), onto the gun decks and roofs too\nTalons: F strafe run (press LMB on the target, drag the way to fly, let go) · G bomb strike (LMB fire) · RMB cancels\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nGiraffes: see furthest through the fog · P ping: marks every defender it reaches, even under camo, and reveals infiltrators out of camo\nKangaroos: R flash grenade (LMB fire, RMB cancel) when no hippo's smoke is ready · they resupply units nearby\nLionesses: F sneak (then RMB a defender: they pounce) · G fire blast · T firing lines on/off when moved together\nSerpent Snipers: F sniper nest (LMB a tree: up it they see and shoot further; any move order climbs them down) · G bush trap (LMB a bush: coiled, they strike and crush a defender who comes close)\nWolf Medics: T healing (2 units each) / minesweeping (they find the hidden mines and dig them out; RMB sweeps on the way, Ctrl+RMB doesn't)\nChimps / Rams / Kangaroos: RMB next to a broken gate to send them in\nHelipads (S/E/W Pad): spawn there and +%.1f supply/s each while you hold them · sabotaged, stand ground units by one to retake it" % AttackerBase.INCOME,
+	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nBisons: G bombardment (LMB fire, RMB cancel), onto the gun decks and roofs too\nMule Artillery: T sets the gun up / disarms it (it can't move unless disarmed) · armed, G bombardment (LMB fire): further, harder and wider than the bisons'\nTalons: F strafe run (press LMB on the target, drag the way to fly, let go) · G bomb strike (LMB fire) · RMB cancels\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nGiraffes: see furthest through the fog · P ping: marks every defender it reaches, even under camo, and reveals infiltrators out of camo\nKangaroos: R flash grenade (LMB fire, RMB cancel) when no hippo's smoke is ready · they resupply units nearby\nLionesses: F sneak (then RMB a defender: they pounce) · G fire blast · T firing lines on/off when moved together\nSerpent Snipers: F sniper nest (LMB a tree: up it they see and shoot further; any move order climbs them down) · G bush trap (LMB a bush: coiled, they strike and crush a defender who comes close)\nWolf Medics: T healing (2 units each) / minesweeping (they find the hidden mines and dig them out; RMB sweeps on the way, Ctrl+RMB doesn't)\nChimps / Rams / Kangaroos: RMB next to a broken gate to send them in\nHelipads (S/E/W Pad): spawn there and +%.1f supply/s each while you hold them · sabotaged, stand ground units by one to retake it" % AttackerBase.INCOME,
 			13, Color(0.85, 0.85, 0.85, 0.75))
 	help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	help.grow_vertical = Control.GROW_DIRECTION_BEGIN
@@ -885,13 +915,46 @@ func _process(_delta: float) -> void:
 			_selection_label.text += "  %ds" % ceili(soonest)
 		if rhinos.any(func(u): return commander.is_scouting(u)):
 			_selection_label.text += "\nScout formation [T]"
-	var bisons := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_bombard())
+	var bisons := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_bombard() and not u.has_setup())
 	if not bisons.is_empty():
 		var ready := bisons.filter(func(u): return u.bombard_ready()).size()
 		_selection_label.text += "\nBombardment %d/%d [G]" % [ready, bisons.size()]
 		if ready == 0:
 			var soonest: float = bisons.map(func(u): return u.bombard_cd).min()
 			_selection_label.text += "  %ds" % ceili(soonest)
+	var mules := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_setup())
+	_gun_button.visible = not mules.is_empty()
+	if not mules.is_empty():
+		var armed := mules.filter(func(u): return u.is_armed())
+		var rising := mules.filter(func(u): return u.setting_up())
+		var packing := mules.filter(func(u): return u.packing_up())
+		var packed := mules.size() - armed.size() - rising.size() - packing.size()
+		var state := "MIXED"
+		for s in [[armed, "ARMED"], [rising, "SETTING UP"], [packing, "DISARMING"]]:
+			if s[0].size() == mules.size():
+				state = s[1]
+		if packed == mules.size():
+			state = "PACKED"
+		_gun_button.text = "Guns: %s  [T]" % state
+		var parts := PackedStringArray()
+		if not armed.is_empty():
+			parts.append("%d armed" % armed.size())
+		if not rising.is_empty():
+			parts.append("%d setting up %ds" % [rising.size(), ceili(rising.map(func(u): return u.setup_left()).max())])
+		if not packing.is_empty():
+			parts.append("%d disarming %ds" % [packing.size(), ceili(packing.map(func(u): return u.setup_left()).max())])
+		if packed > 0:
+			parts.append("%d packed" % packed)
+		_selection_label.text += "\nGuns: " + " · ".join(parts)
+		if not armed.is_empty():
+			var ready := armed.filter(func(u): return u.bombard_ready()).size()
+			_selection_label.text += "\nShells %d/%d [G]" % [ready, armed.size()]
+			if ready == 0:
+				var soonest: float = armed.map(func(u): return u.bombard_cd).min()
+				if soonest > 0.0:
+					_selection_label.text += "  %ds" % ceili(soonest)
+		elif packed == mules.size():
+			_selection_label.text += "\nSet the guns up to fire [T]"
 	var talons := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_strafe())
 	if not talons.is_empty():
 		for skill in [["Strafe run", "strafe_cd", "F"], ["Bomb strike", "bomb_cd", "G"]]:
