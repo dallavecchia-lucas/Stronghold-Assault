@@ -127,6 +127,7 @@ extends RefCounted
 ##   (authored at anim_sneak_speed).
 ## steer: only move where the model faces, turning at turn_rate (rad/s), no strafing.
 ## model: path to a processed GLB (front facing +Z, feet at origin).
+## gun: a hand-held gun model (HeldGun) hung on the model's `rifle` bone; its rounds' tracers leave its muzzle.
 
 const ORDER := ["rifleman", "kangaroo", "medic", "talon", "elephant", "mule", "breacher",
 		"giraffe", "chimp", "hippo", "bison_gun", "lioness", "serpent", "rhino"]
@@ -140,7 +141,9 @@ const DATA := {
 		"structure_mult": 0.5, "radius": 0.5, "height": 1.9,
 		"role": "infantry", "anim": "rigged", "hotkey": KEY_Z,
 		"anim_move": "Running", "anim_idle": "Idle", "anim_ref_speed": 4.5,
-		"model": "res://assets/units/cyber_bear_commando/cyber_bear_commando_rigged.glb",
+		# The Prototype C heavy LMG at the hip, on the model's `rifle` bone (tools/gltf/arm_rifle.py).
+		"gun": "res://assets/weapons/prototype_c_lmg/prototype_c_lmg.glb",
+		"model": "res://assets/units/cyber_bear_commando/cyber_bear_commando_armed.glb",
 	},
 	"kangaroo": {
 		"name": "Kangaroo Commando", "cost": 75, "hp": 90.0, "speed": 7.2,

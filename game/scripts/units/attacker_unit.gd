@@ -238,6 +238,8 @@ var _burst_left := 0
 var _burst_cd := 0.0
 var _burst_target: Node3D
 var _next_muzzle := 0
+## The muzzle of the gun in its hands (stats.gun, HeldGun), when it carries one.
+var _gun_muzzle: Node3D
 var _rig: KangarooRig  # set when the model carries the kangaroo's SMGs and throwing paw
 var _held: MeshInstance3D  # the flash grenade in the paw while it winds up
 ## Ping under way: seconds into it (-1: none) and whether the pulse has gone out.
@@ -1099,9 +1101,12 @@ func _fire_at(t: Node3D) -> void:
 				var a := randf() * TAU
 				aim += Vector3(cos(a) * r, randf_range(-0.4, 0.4) * stats.suppress_radius, sin(a) * r)
 			# Shotguns fire a blast of pellets, each on its own line within the cone.
+			var muzzle = _gun_muzzle.global_position if _gun_muzzle else null
 			for _pellet in stats.get("pellets", 1):
 				Combat.fire_hitscan(self, _eye(), aim, stats.spread, stats.damage, team,
-						stats.structure_mult, [get_rid()])
+						stats.structure_mult, [get_rid()], muzzle)
+			if _gun_muzzle:
+				Combat.spawn_impact(self, _gun_muzzle.global_position, false)  # muzzle flash
 
 
 ## Serpent Sniper: one heavy round from the rifle on its back, from its eyes at `t` (its tracer from the muzzle,
@@ -2644,6 +2649,8 @@ func _build_model() -> void:
 				a.set_meta("looped", true)
 		_anim.play(stats.anim_idle)
 		_anim.seek(randf() * _anim.current_animation_length)  # don't move in lockstep
+	if stats.has("gun"):
+		_gun_muzzle = HeldGun.attach(m, stats.gun)
 	if stats.anim == "flight":
 		_flight = TalonFlight.new(self, players[0])
 		m.position.y = -TalonFlight.BODY_HEIGHT  # banks and pitches about the body's centre

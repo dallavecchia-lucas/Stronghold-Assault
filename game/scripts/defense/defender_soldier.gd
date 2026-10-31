@@ -16,6 +16,14 @@ const AI_RANGE := 50.0
 const AI_DAMAGE := 11.0
 const AI_FIRE_INTERVAL := 0.6
 const RESPAWN_TIME := 15.0
+## Where the first-person Shadowline rifle's grip sits in front of the camera. Aimed, it is put away
+## and its smart scope's view (RifleScope) fills the screen instead, a little zoomed in (SCOPE_FOV).
+## The plain view model's are the others.
+const VIEW_HIP := Vector3(0.13, -0.2, -0.25)
+const VIEW_AIM := Vector3(0.13, -0.32, -0.2)
+const SCOPE_FOV := 58.0
+const PLAIN_HIP := Vector3(0.22, -0.22, -0.45)
+const PLAIN_AIM := Vector3(0.0, -0.16, -0.38)
 
 var station_name := "Soldier"
 var station_kind := "soldier"
@@ -50,6 +58,18 @@ const ANIM_IDLE := "Idle"
 const ANIM_RUN := "Running"
 var _viewmodel: Node3D
 var _muzzle: Node3D
+## The muzzle of the rifle in the body's hands (HeldGun), when the model carries one.
+var _body_muzzle: Node3D
+## First-person arms (the model's own, cut down: tools/gltf/fp_arms.py), posed by its Idle clip and
+## lined up every frame so its `rifle` bone lies on the view model's gun.
+var _view_gun: Node3D
+var _view_arms: Node3D
+var _view_skel: Skeleton3D
+var _view_rifle := -1
+## The rifle's smart scope's view, when the model carries the Shadowline.
+var _scope: RifleScope
+var _view_hip := PLAIN_HIP
+var _view_aim := PLAIN_AIM
 var _shape: CollisionShape3D
 
 
@@ -83,6 +103,7 @@ func _ready() -> void:
 			_play(ANIM_IDLE)
 			if _anim.is_playing():
 				_anim.seek(randf() * _anim.current_animation_length)
+		_body_muzzle = HeldGun.attach(m, HeldGun.SHADOWLINE_RIFLE)
 	else:
 		_build_placeholder_body()
 
@@ -96,18 +117,64 @@ func _ready() -> void:
 	_head.add_child(_camera)
 
 	_viewmodel = Node3D.new()
-	_viewmodel.position = Vector3(0.22, -0.22, -0.45)
 	_camera.add_child(_viewmodel)
-	var gun_mat := Mats.flat(Color(0.12, 0.12, 0.13), 0.7, 0.35)
-	_viewmodel.add_child(Mats.box_mesh(Vector3(0.07, 0.11, 0.6), Vector3.ZERO, gun_mat))
-	_viewmodel.add_child(Mats.box_mesh(Vector3(0.05, 0.16, 0.08), Vector3(0, -0.1, 0.08), gun_mat))
-	_viewmodel.add_child(Mats.box_mesh(Vector3(0.06, 0.06, 0.22), Vector3(0, 0.07, -0.05), Mats.flat(Color(0.25, 0.28, 0.32), 0.5, 0.5)))
-	for c in _viewmodel.get_children():
-		(c as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_muzzle = Node3D.new()
-	_muzzle.position = Vector3(0, 0, -0.32)
-	_viewmodel.add_child(_muzzle)
+	if _body_muzzle:
+		# The Shadowline assault rifle the body carries, held out in front: its origin is the pistol
+		# grip, its muzzle +Z (turned to look down -Z with the camera).
+		_view_hip = VIEW_HIP
+		_view_aim = VIEW_AIM
+		var gun := HeldGun.instance(HeldGun.SHADOWLINE_RIFLE)
+		gun.rotation = Vector3(0.0, PI, 0.0)
+		_viewmodel.add_child(gun)
+		for mi in gun.find_children("*", "MeshInstance3D", true, false):
+			(mi as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_muzzle = gun.find_child("muzzle", true, false) as Node3D
+		_view_gun = gun
+		_build_view_arms()
+		_scope = RifleScope.new()
+		add_child(_scope)
+	else:
+		var gun_mat := Mats.flat(Color(0.12, 0.12, 0.13), 0.7, 0.35)
+		_viewmodel.add_child(Mats.box_mesh(Vector3(0.07, 0.11, 0.6), Vector3.ZERO, gun_mat))
+		_viewmodel.add_child(Mats.box_mesh(Vector3(0.05, 0.16, 0.08), Vector3(0, -0.1, 0.08), gun_mat))
+		_viewmodel.add_child(Mats.box_mesh(Vector3(0.06, 0.06, 0.22), Vector3(0, 0.07, -0.05), Mats.flat(Color(0.25, 0.28, 0.32), 0.5, 0.5)))
+		for c in _viewmodel.get_children():
+			(c as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_muzzle = Node3D.new()
+		_muzzle.position = Vector3(0, 0, -0.32)
+		_viewmodel.add_child(_muzzle)
+	_viewmodel.position = _view_hip
 	_viewmodel.visible = false
+
+
+## The armed model's first-person arms: <model>_fp_arms.glb beside <model>_armed.glb.
+func _build_view_arms() -> void:
+	var path := model_path.replace("_armed.glb", "_fp_arms.glb")
+	if not ResourceLoader.exists(path):
+		return
+	_view_arms = (load(path) as PackedScene).instantiate() as Node3D
+	_viewmodel.add_child(_view_arms)
+	for mi in _view_arms.find_children("*", "MeshInstance3D", true, false):
+		(mi as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var skels := _view_arms.find_children("*", "Skeleton3D", true, false)
+	if not skels.is_empty():
+		_view_skel = skels[0]
+		_view_rifle = _view_skel.find_bone("rifle")
+	var players := _view_arms.find_children("*", "AnimationPlayer", true, false)
+	if not players.is_empty():
+		var a := players[0] as AnimationPlayer
+		if a.has_animation(ANIM_IDLE):
+			a.get_animation(ANIM_IDLE).loop_mode = Animation.LOOP_LINEAR
+			a.play(ANIM_IDLE)
+
+
+## Puts the first-person arms where their hands hold the view model's gun.
+func _hold_view_gun() -> void:
+	if _view_arms == null or _view_rifle < 0 or not _viewmodel.visible:
+		return
+	var rel := _view_arms.global_transform.affine_inverse() * _view_skel.global_transform \
+			* _view_skel.get_bone_global_pose(_view_rifle)
+	_view_arms.transform = _view_gun.transform * rel.affine_inverse()
 
 
 # ---------------------------------------------------------------- station interface
@@ -131,6 +198,8 @@ func unpossess() -> void:
 	_body.visible = hp > 0.0
 	_viewmodel.visible = false
 	_camera.fov = 75.0
+	if _scope:
+		_scope.amount = 0.0
 
 
 func wants_captured_mouse() -> bool:
@@ -187,6 +256,8 @@ func toss(v: Vector3) -> void:
 
 func _die() -> void:
 	hp = 0.0
+	if _scope:
+		_scope.amount = 0.0
 	_respawn_cd = RESPAWN_TIME
 	_tossed = false
 	_body.visible = false
@@ -266,8 +337,16 @@ func _player_update(delta: float) -> void:
 		velocity.z = lerpf(velocity.z, dir.z * speed, delta * 3.0)
 
 	var aiming := Input.is_action_pressed("aim")
-	_camera.fov = lerpf(_camera.fov, 50.0 if aiming else 75.0, delta * 12.0)
-	_viewmodel.position = _viewmodel.position.lerp(Vector3(0.0, -0.16, -0.38) if aiming else Vector3(0.22, -0.22, -0.45), delta * 12.0)
+	if _scope:
+		# The smart scope: a slight zoom, the rifle lowered out of sight, the scope's view on the visor.
+		_camera.fov = lerpf(_camera.fov, SCOPE_FOV if aiming else 75.0, delta * 12.0)
+		_scope.amount = move_toward(_scope.amount, 1.0 if aiming else 0.0, delta * 6.0)
+		_viewmodel.visible = _scope.amount < 0.6
+		if _scope.amount > 0.0:
+			_feed_scope()
+	else:
+		_camera.fov = lerpf(_camera.fov, 50.0 if aiming else 75.0, delta * 12.0)
+	_viewmodel.position = _viewmodel.position.lerp(_view_aim if aiming else _view_hip, delta * 12.0)
 	_kick = maxf(_kick - delta * 0.3, 0.0)
 	_viewmodel.position.z += _kick
 
@@ -284,9 +363,32 @@ func _player_update(delta: float) -> void:
 			Combat.fire_hitscan(self, from, aim_at, spread, PLAYER_DAMAGE, team, 0.3, [get_rid()], _muzzle.global_position)
 			Combat.spawn_muzzle_light(self, _muzzle.global_position)
 			_kick = 0.04
+			if _scope:
+				_scope.fired()
 			# recoil climb
 			_pitch = clampf(_pitch + 0.006, -1.45, 1.45)
 			_head.rotation.x = _pitch
+
+
+## The smart scope's readouts: the range to what is under the dot (and whether it is a hostile), the
+## heading and elevation, the magazine, the zoom.
+func _feed_scope() -> void:
+	var from := _camera.global_position
+	var q := PhysicsRayQueryParameters3D.create(from, from - _camera.global_basis.z * RifleScope.SCALE_MAX * 1.5,
+			GameConfig.LAYER_ALL_SOLID, [get_rid()])
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	_scope.range_m = from.distance_to(hit.position) if not hit.is_empty() else -1.0
+	_scope.target = ""
+	if not hit.is_empty():
+		var d := Combat.find_damageable(hit.collider)
+		if d is AttackerUnit and (d as AttackerUnit).team != team:
+			_scope.target = str((d as AttackerUnit).stats.get("name", "Hostile"))
+	_scope.heading = fposmod(-rad_to_deg(global_rotation.y), 360.0)
+	_scope.elevation = rad_to_deg(_pitch)
+	_scope.ammo = ammo
+	_scope.mag = MAG_SIZE
+	_scope.reload = 1.0 - _reloading / RELOAD_TIME if _reloading > 0.0 else 0.0
+	_scope.zoom = tan(deg_to_rad(37.5)) / tan(deg_to_rad(_camera.fov * 0.5))
 
 
 func _start_reload() -> void:
@@ -313,7 +415,10 @@ func _ai_update(delta: float) -> void:
 		if ammo <= 0:
 			_start_reload()
 		var eye := global_position + Vector3.UP * 1.6
-		Combat.fire_hitscan(self, eye, Combat.aim_point(_target), 0.05, AI_DAMAGE, team, 0.3, [get_rid()])
+		var muzzle = _body_muzzle.global_position if _body_muzzle else null
+		Combat.fire_hitscan(self, eye, Combat.aim_point(_target), 0.05, AI_DAMAGE, team, 0.3, [get_rid()], muzzle)
+		if _body_muzzle:
+			Combat.spawn_impact(self, _body_muzzle.global_position, false)  # muzzle flash
 
 
 func _find_target() -> Node3D:
@@ -357,6 +462,7 @@ func _play(clip: String) -> void:
 
 
 func _process(_delta: float) -> void:
+	_hold_view_gun()
 	if _anim == null or hp <= 0.0:
 		return
 	var spd := Vector2(velocity.x, velocity.z).length()

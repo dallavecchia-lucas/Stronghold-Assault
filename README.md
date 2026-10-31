@@ -370,6 +370,46 @@ python3 tools/video/cut_showcase.py infil.avi infil.log media/infiltrator_showca
 
 `-- --snap=t1,t2 --snap-out=/tmp/shot` saves just those frames (seconds into the run).
 
+### Weapons showcase
+
+The infantry's guns (`game/scripts/combat/held_gun.gd`) hang on a `rifle` bone in their models, which `tools/gltf/arm_rifle.py` adds and poses the arms round in the Idle and Running clips:
+
+- The garrison's **Cyber Orc Sentinel** (the rifleman on the east deck, post 6) carries the **Shadowline** assault rifle (`game/assets/weapons/shadowline_rifle/`), butt in the shoulder. Taken over, it is the first-person view model too, held in the Orc Sentinel's own gauntlets (`cyber_orc_sentinel_fp_arms.glb`: its arms cut out of the model by `tools/gltf/fp_arms.py`, posed bladed with the rifle straight ahead and lined up on the view model's rifle every frame). `RMB` doesn't look down the sight: the rifle's smart scope sends its picture to the visor (`game/scripts/ui/rifle_scope.gd`). The view zooms in a little and the rifle drops out of sight; the feed is graded cool with fine scan lines, a rolling band, a vignette, grain and slight colour fringing. Over it, in thin glowing lines (JetBrains Mono for the text, `game/assets/fonts/jetbrains_mono/`, Apache-2.0): a ring-and-posts reticle with stadia ticks, a tick bezel and turning arc segments (the posts kick out on each shot; red corners close on a hostile under the dot and name it); top left, a compass ring turning with the heading, a red delta spinning in it, the heading and elevation; bottom left, signal bars, the link and the magazine (a reload bar while reloading); right, a 0-800 m rangefinder scale with a red sweep running up and down it and a marker on the range to whatever is under the dot. Opening it, the panels slide in, the text types out and a scan beam runs down the screen. The other riflemen are as before.
+- The **Bear Rifleman** carries the **Prototype C** heavy LMG (`game/assets/weapons/prototype_c_lmg/`) at the hip, right paw on the grip and left over the carry handle.
+
+Their rounds' tracers and muzzle flashes come from the guns' muzzles.
+
+```sh
+godot --path game --headless res://scenes/dev/weapons_showcase.tscn  # prints and checks: WEAPONS SHOWCASE PASS / FAIL
+godot --path game --rendering-driver opengl3 --resolution 1600x900 res://scenes/dev/weapons_showcase.tscn -- --shots=/tmp/guns  # defender_fps, defender_scope(_2), defender_infantry, bear_infantry (.png)
+```
+
+Rebuilding the guns and the armed models:
+
+```sh
+python3 tools/gltf/process_rifle.py --input assets_src/weapons/shadowline_rifle/shadowline_rifle_meshy.glb \
+    --output game/assets/weapons/shadowline_rifle/shadowline_rifle.glb --muzzle=-x --length 0.9 --grip 0.15,-0.02,0 \
+    --point muzzle=-0.48,0.06,0 --point eye=0.33,0.15,0 --point butt=0.47,0.0,0 --point support=-0.08,-0.01,0
+python3 tools/gltf/process_rifle.py --input assets_src/weapons/prototype_c_lmg/prototype_c_lmg_meshy.glb \
+    --output game/assets/weapons/prototype_c_lmg/prototype_c_lmg.glb --muzzle=-x --length 0.95 --grip 0.15,-0.02,0 \
+    --point muzzle=-0.47,0.065,0 --point eye=0.32,0.14,0 --point butt=0.47,0.0,0 --point support=-0.1,-0.03,0 --point handle=-0.02,0.165,0
+python3 tools/gltf/arm_rifle.py --input game/assets/defenders/cyber_orc_sentinel/cyber_orc_sentinel.glb \
+    --gun game/assets/weapons/shadowline_rifle/shadowline_rifle.glb \
+    --output game/assets/defenders/cyber_orc_sentinel/cyber_orc_sentinel_armed.glb --fit [--preview out.png]
+python3 tools/gltf/arm_rifle.py --input game/assets/units/cyber_bear_commando/cyber_bear_commando_rigged.glb \
+    --gun game/assets/weapons/prototype_c_lmg/prototype_c_lmg.glb \
+    --output game/assets/units/cyber_bear_commando/cyber_bear_commando_armed.glb \
+    --support handle --pocket 0.2,-0.3,0.05 --cant 14 --pitch 3,12 --fit
+# The first-person arms: the rifle straight ahead, the chest bladed, the left hand on the fore-end's side.
+python3 tools/gltf/arm_rifle.py --input game/assets/defenders/cyber_orc_sentinel/cyber_orc_sentinel.glb \
+    --gun game/assets/weapons/shadowline_rifle/shadowline_rifle.glb --output /tmp/orc_fp_pose.glb \
+    --cant 0 --pitch 0,0 --pocket 0.08,-0.03,0.08 --chest-yaw 40 --support side --pole-l 0.9,-0.45,-0.2
+python3 tools/gltf/fp_arms.py --input /tmp/orc_fp_pose.glb \
+    --output game/assets/defenders/cyber_orc_sentinel/cyber_orc_sentinel_fp_arms.glb --from ForeArm --upper 0.1
+```
+
+`--view=x,y,z` on the showcase tries another hip place for the first-person rifle (`DefenderSoldier.VIEW_HIP`).
+
 ## Asset pipeline
 
 Meshy exports go in `assets_src/`, then get processed with Blender (headless):
