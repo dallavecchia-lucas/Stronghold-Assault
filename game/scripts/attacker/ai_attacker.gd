@@ -9,7 +9,8 @@ extends Node
 ## heal; it can't see the defenders' mines any more than a player can, but one going off under its army
 ## tells it a minefield is there: the dogs near the blast sweep for mines until they find no more (_dog_modes).
 ## Its Serpent Snipers snipe from the trees in reach of the gate they go for, and lie in wait round bushes where
-## the army saw the defenders out on the field (_serpent_skills).
+## the army saw the defenders out on the field (_serpent_skills). Its Mule Artillery set their guns up as soon as
+## the stronghold is in reach and shell it whenever they have reloaded (_mule_guns).
 ## Uses the same command interface as the human RTS player.
 
 var commander: AttackerCommander
@@ -51,6 +52,10 @@ const TRAP_LOOK := 10.0
 const NEST_IDLE := 20.0
 const TRAP_IDLE := 40.0
 const SKILL_REST := 45.0
+## Mule Artillery aim at targets within GUN_SPARE of their reach; one with nothing in reach for GUN_IDLE
+## seconds disarms and goes on with the army.
+const GUN_SPARE := 0.95
+const GUN_IDLE := 20.0
 
 ## Helipad -> ids of the units sent to retake it.
 var _retakers := {}
@@ -65,6 +70,8 @@ var _sightings: Array = []
 ## or coil again.
 var _skill_idle := {}
 var _skill_rest := {}
+## Mule Artillery id -> seconds armed with nothing in reach.
+var _gun_idle := {}
 
 
 func _process(delta: float) -> void:
@@ -103,6 +110,7 @@ func _think() -> void:
 	_lioness_hunts()
 	_serpent_skills()
 	_dog_modes()
+	_mule_guns()
 
 
 func _plan_wave() -> void:
@@ -148,12 +156,13 @@ func _launch_wave() -> void:
 				continue
 			if u.has_ram():
 				siege.append(id)
-			elif u.role == "artillery":
+			elif u.role == "artillery" or u.has_setup():
 				artillery.append(id)
 			else:
 				infantry.append(id)
 		# Infantry, medics and flyers push up to the gate and suppress the walls, rams go
-		# for the gate, artillery shells it from range.
+		# for the gate, artillery shells it from range (the Mule Artillery stop and set their
+		# guns up once it is in reach: _mule_guns).
 		var out: Vector3 = LevelBuilder.SIDES[_wave_side].dir
 		commander.submit({"type": "move", "units": infantry, "pos": out * (LevelBuilder.FACE_DIST + 14.0), "attack": true})
 		commander.submit({"type": "attack", "units": siege + artillery, "target": gate.get_path()})
@@ -390,6 +399,47 @@ func _dog_modes() -> void:
 			_sweep_idle.erase(u.unit_id)
 
 
+## Mule Artillery: one with something to shell in its gun's reach stops and sets its gun up (it walks on with the
+## wave until then); armed, it shells it whenever it has reloaded: the machines on the decks and roofs (the gate
+## guns, the mortar) first, then the defenders the army sees, then the gate, then the AA turrets. Armed with
+## nothing in reach for GUN_IDLE seconds, it disarms and goes on with the army (it sets off once disarmed).
+func _mule_guns() -> void:
+	for u in commander.units.values():
+		if not u.has_setup() or not u.is_controllable() or u.unit_id in _staging or u.setting_up() or u.packing_up():
+			continue
+		var id: int = u.unit_id
+		var t := _gun_target(u)
+		if u.is_packed():
+			if t != null:
+				commander.submit({"type": "setup", "units": [id], "on": true})
+				_gun_idle[id] = 0.0
+			continue
+		if t != null:
+			_gun_idle[id] = 0.0
+			if u.bombard_ready():
+				commander.submit({"type": "bombard", "units": [id], "pos": t.global_position})
+			continue
+		_gun_idle[id] = _gun_idle.get(id, 0.0) + 1.0
+		if _gun_idle[id] >= GUN_IDLE:
+			_gun_idle.erase(id)
+			commander.submit({"type": "setup", "units": [id], "on": false})
+			_send_on([id])
+
+
+## What a Mule Artillery shells: the nearest of the first kind of target in its reach (GUN_SPARE of it) that the
+## army sees, in the order _mule_guns gives; null with none.
+func _gun_target(u: AttackerUnit) -> Node3D:
+	var gates := level.gates.values()
+	for pick in [func(d): return d.get("station_kind") in ["mg", "artillery"],
+			func(d): return d.get("station_kind") in ["soldier", "sniper"],
+			func(d): return d in gates,
+			func(d): return d.get("station_kind") == "aa"]:
+		var t := _in_reach(u, u.stats.bombard_range, pick, GUN_SPARE)
+		if t != null:
+			return t
+	return null
+
+
 ## The nearest live defender `pick` takes (or gate) within `reach` of `u` (flat), with room to spare
 ## (within `spare` of it). Only what the army sees: the CPU plays by the fog of war (AttackerVision).
 func _in_reach(u: AttackerUnit, reach: float, pick: Callable, spare := 0.85) -> Node3D:
@@ -430,8 +480,9 @@ func _retake_bases() -> void:
 		var cands := []
 		for id in commander.units:
 			var u: AttackerUnit = commander.units[id]
-			if id in sent or id in _staging or u.is_flying() or not u.is_controllable() or u.in_tree() or u.in_bush():
-				continue
+			if id in sent or id in _staging or u.is_flying() or not u.is_controllable() or u.in_tree() or u.in_bush() \
+					or u.has_setup():
+				continue  # (the Mule Artillery are far too slow for it)
 			cands.append([b.edge_distance(u.global_position), id])
 		cands.sort_custom(func(x, y): return x[0] < y[0])
 		var more: Array = cands.slice(0, RETAKERS - sent.size()).map(func(c): return c[1])
