@@ -374,7 +374,7 @@ python3 tools/video/cut_showcase.py infil.avi infil.log media/infiltrator_showca
 
 The infantry's guns (`game/scripts/combat/held_gun.gd`) hang on a `rifle` bone in their models, which `tools/gltf/arm_rifle.py` adds and poses the arms round in the Idle and Running clips:
 
-- The garrison's **Cyber Orc Sentinel** (the rifleman on the east deck, post 6) carries the **Shadowline** assault rifle (`game/assets/weapons/shadowline_rifle/`), butt in the shoulder. Taken over, it is the first-person view model too (`RMB` brings the scope up under the crosshair). The other riflemen are as before.
+- The garrison's **Cyber Orc Sentinel** (the rifleman on the east deck, post 6) carries the **Shadowline** assault rifle (`game/assets/weapons/shadowline_rifle/`), butt in the shoulder. Taken over, it is the first-person view model too, held in the Orc Sentinel's own gauntlets (`cyber_orc_sentinel_fp_arms.glb`: its arms cut out of the model by `tools/gltf/fp_arms.py`, posed bladed with the rifle straight ahead and lined up on the view model's rifle every frame); `RMB` brings the scope up under the crosshair. The other riflemen are as before.
 - The **Bear Rifleman** carries the **Prototype C** heavy LMG (`game/assets/weapons/prototype_c_lmg/`) at the hip, right paw on the grip and left over the carry handle.
 
 Their rounds' tracers and muzzle flashes come from the guns' muzzles.
@@ -400,7 +400,15 @@ python3 tools/gltf/arm_rifle.py --input game/assets/units/cyber_bear_commando/cy
     --gun game/assets/weapons/prototype_c_lmg/prototype_c_lmg.glb \
     --output game/assets/units/cyber_bear_commando/cyber_bear_commando_armed.glb \
     --support handle --pocket 0.2,-0.3,0.05 --cant 14 --pitch 3,12 --fit
+# The first-person arms: the rifle straight ahead, the chest bladed, the left hand on the fore-end's side.
+python3 tools/gltf/arm_rifle.py --input game/assets/defenders/cyber_orc_sentinel/cyber_orc_sentinel.glb \
+    --gun game/assets/weapons/shadowline_rifle/shadowline_rifle.glb --output /tmp/orc_fp_pose.glb \
+    --cant 0 --pitch 0,0 --pocket 0.08,-0.03,0.08 --chest-yaw 40 --support side --pole-l 0.9,-0.45,-0.2
+python3 tools/gltf/fp_arms.py --input /tmp/orc_fp_pose.glb \
+    --output game/assets/defenders/cyber_orc_sentinel/cyber_orc_sentinel_fp_arms.glb --from ForeArm --upper 0.1
 ```
+
+`--view=x,y,z` on the showcase tries another hip place for the first-person rifle (`DefenderSoldier.VIEW_HIP`).
 
 ## Asset pipeline
 

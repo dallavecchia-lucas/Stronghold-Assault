@@ -51,6 +51,7 @@ GRIP_RAKE = math.radians(26.0)
 FOREGRIP_WRIST = np.array([0.026, -0.004, -0.07])
 CRADLE_WRIST = np.array([0.045, -0.035, -0.03])
 HANDLE_WRIST = np.array([0.05, 0.03, -0.02])
+SIDE_WRIST = np.array([0.055, -0.035, -0.05])
 TRIGGER_CURL = {"Thumb": (25, 30, 20), "Index": (18, 32, 20), "Middle": (65, 85, 55), "Ring": (68, 85, 55), "Pinky": (70, 85, 55)}
 GRIP_CURL = {"Thumb": (25, 30, 20), "Index": (60, 80, 50), "Middle": (65, 85, 55), "Ring": (68, 85, 55), "Pinky": (70, 85, 55)}
 CRADLE_CURL = {"Thumb": (10, 15, 10), "Index": (35, 55, 35), "Middle": (38, 58, 35), "Ring": (40, 60, 38), "Pinky": (45, 60, 40)}
@@ -77,8 +78,11 @@ def parse_args():
     p.add_argument("--input", required=True)
     p.add_argument("--gun", required=True)
     p.add_argument("--output", required=True)
-    p.add_argument("--support", choices=("cradle", "grip", "handle"), default="cradle",
+    p.add_argument("--support", choices=("cradle", "grip", "handle", "side"), default="cradle",
                    help="how the support hand holds the gun at its `support` marker (or `handle`)")
+    p.add_argument("--chest-yaw", type=float, default=0.0,
+                   help="degrees the chest turns to her right (bladed, the left shoulder forward); re-keys the spine")
+    p.add_argument("--pole-l", default="", help="x,y,z: which way the left elbow points (model space)")
     p.add_argument("--fit", action="store_true", help="search the butt's place and the cant for the hands' reach")
     p.add_argument("--pocket", default="", help="x,y,z: the butt from the right shoulder joint (1.7 m body), instead of POCKET")
     p.add_argument("--cant", type=float, default=math.degrees(CANT_IN), help="degrees the gun turns in across the body")
@@ -129,12 +133,21 @@ def sample_clip(js, binary, anim):
     return out, n
 
 
+# The spine's shares of --chest-yaw.
+TWIST = {P + "Spine": 0.3, P + "Spine1": 0.35, P + "Spine2": 0.35}
+CHEST_YAW = 0.0
+
+
 def set_frame(pose, rig, frames, f):
     pose.reset()
     for node, mats in frames.items():
         name = rig.nodes[node].get("name")
         if name:
             pose.basis[name] = np.linalg.inv(rig.local[node]) @ mats[f]
+    if CHEST_YAW:
+        # Bladed: the chest turned to her right, the left shoulder forward (the first-person arms).
+        for name, share in TWIST.items():
+            pose.turn(name, Y, CHEST_YAW * share)
 
 
 # ---------------------------------------------------------------- the carry
@@ -181,6 +194,10 @@ class Carry:
         if self.support_grip == "grip":
             hand_l = frame_from(Y, self.palm["L"], fingers_r, r @ -X)
             wrist_l = at(self.marks["support"], FOREGRIP_WRIST)
+        elif self.support_grip == "side":
+            # On the fore-end's left side: the palm against it, the fingers up and over the top.
+            hand_l = frame_from(Y, self.palm["L"], r @ unit(Z * 0.45 + Y * 0.75 - X * 0.3), r @ -X)
+            wrist_l = at(self.marks["support"], SIDE_WRIST)
         elif self.support_grip == "handle":
             # Over the carry handle: palm down on it, the fingers across it to her right, wrapping under.
             hand_l = frame_from(Y, self.palm["L"], r @ unit(-X + Z * 0.35), r @ -Y)
@@ -207,7 +224,7 @@ class Carry:
 
     def curl(self, pose):
         rig = self.rig
-        for s, curls in (("R", TRIGGER_CURL), ("L", {"grip": GRIP_CURL, "handle": GRIP_CURL}.get(self.support_grip, CRADLE_CURL))):
+        for s, curls in (("R", TRIGGER_CURL), ("L", {"grip": GRIP_CURL, "handle": GRIP_CURL, "side": CRADLE_CURL}.get(self.support_grip, CRADLE_CURL))):
             for f, angles in curls.items():
                 for k, a in enumerate(angles):
                     name = bone(s, "Hand%s%d" % (f, k + 1))
@@ -273,7 +290,11 @@ def main():
     carry = Carry(rig, marks, args.support, height, pocket, math.radians(args.cant))
     if args.fit:
         fit(carry, rig, pose, js, binary)
-    arms = arm_bones(rig)
+    if args.pole_l:
+        POLES["L"] = unit([float(v) for v in args.pole_l.split(",")])
+    global CHEST_YAW
+    CHEST_YAW = -math.radians(args.chest_yaw)
+    arms = arm_bones(rig) + (list(TWIST) if CHEST_YAW else [])
     arm_nodes = {rig.index[n] for n in arms}
     skin = js["skins"][0]
 

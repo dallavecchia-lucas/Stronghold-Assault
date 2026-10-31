@@ -22,6 +22,8 @@ var commander: AttackerCommander
 var cam: Camera3D
 var shots_dir := ""
 var aim := false
+## --view=x,y,z: tries the first-person gun's hip place (DefenderSoldier.VIEW_HIP) for the shot.
+var view_at = null
 var defenders: Array[DefenderSoldier] = []
 var bears: Array[AttackerUnit] = []
 var fps_soldier: DefenderSoldier
@@ -36,6 +38,9 @@ func _ready() -> void:
 			shots_dir = arg.get_slice("=", 1)
 		elif arg == "--aim":
 			aim = true
+		elif arg.begins_with("--view="):
+			var v := arg.get_slice("=", 1).split(",")
+			view_at = Vector3(float(v[0]), float(v[1]), float(v[2]))
 	level = LevelBuilder.new()
 	add_child(level)
 	level.build()
@@ -138,6 +143,8 @@ func _shot_fps() -> void:
 	var soldier := fps_soldier
 	soldier.process_mode = Node.PROCESS_MODE_INHERIT
 	soldier.possess()
+	if view_at != null:
+		soldier._view_hip = view_at
 	var to := field_at + Vector3.UP * 1.0 - soldier.global_position
 	soldier.rotation.y = atan2(-to.x, -to.z)
 	var head := soldier.get_camera().get_parent() as Node3D

@@ -18,8 +18,8 @@ const AI_FIRE_INTERVAL := 0.6
 const RESPAWN_TIME := 15.0
 ## Where the first-person Shadowline rifle's grip sits in front of the camera: at the hip, and aimed
 ## (the scope just under the crosshair). The plain view model's are the others.
-const VIEW_HIP := Vector3(0.19, -0.2, -0.56)
-const VIEW_AIM := Vector3(0.0, -0.215, -0.42)
+const VIEW_HIP := Vector3(0.13, -0.2, -0.25)
+const VIEW_AIM := Vector3(0.0, -0.2, -0.32)
 const PLAIN_HIP := Vector3(0.22, -0.22, -0.45)
 const PLAIN_AIM := Vector3(0.0, -0.16, -0.38)
 
@@ -58,6 +58,12 @@ var _viewmodel: Node3D
 var _muzzle: Node3D
 ## The muzzle of the rifle in the body's hands (HeldGun), when the model carries one.
 var _body_muzzle: Node3D
+## First-person arms (the model's own, cut down: tools/gltf/fp_arms.py), posed by its Idle clip and
+## lined up every frame so its `rifle` bone lies on the view model's gun.
+var _view_gun: Node3D
+var _view_arms: Node3D
+var _view_skel: Skeleton3D
+var _view_rifle := -1
 var _view_hip := PLAIN_HIP
 var _view_aim := PLAIN_AIM
 var _shape: CollisionShape3D
@@ -119,6 +125,8 @@ func _ready() -> void:
 		for mi in gun.find_children("*", "MeshInstance3D", true, false):
 			(mi as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_muzzle = gun.find_child("muzzle", true, false) as Node3D
+		_view_gun = gun
+		_build_view_arms()
 	else:
 		var gun_mat := Mats.flat(Color(0.12, 0.12, 0.13), 0.7, 0.35)
 		_viewmodel.add_child(Mats.box_mesh(Vector3(0.07, 0.11, 0.6), Vector3.ZERO, gun_mat))
@@ -131,6 +139,36 @@ func _ready() -> void:
 		_viewmodel.add_child(_muzzle)
 	_viewmodel.position = _view_hip
 	_viewmodel.visible = false
+
+
+## The armed model's first-person arms: <model>_fp_arms.glb beside <model>_armed.glb.
+func _build_view_arms() -> void:
+	var path := model_path.replace("_armed.glb", "_fp_arms.glb")
+	if not ResourceLoader.exists(path):
+		return
+	_view_arms = (load(path) as PackedScene).instantiate() as Node3D
+	_viewmodel.add_child(_view_arms)
+	for mi in _view_arms.find_children("*", "MeshInstance3D", true, false):
+		(mi as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var skels := _view_arms.find_children("*", "Skeleton3D", true, false)
+	if not skels.is_empty():
+		_view_skel = skels[0]
+		_view_rifle = _view_skel.find_bone("rifle")
+	var players := _view_arms.find_children("*", "AnimationPlayer", true, false)
+	if not players.is_empty():
+		var a := players[0] as AnimationPlayer
+		if a.has_animation(ANIM_IDLE):
+			a.get_animation(ANIM_IDLE).loop_mode = Animation.LOOP_LINEAR
+			a.play(ANIM_IDLE)
+
+
+## Puts the first-person arms where their hands hold the view model's gun.
+func _hold_view_gun() -> void:
+	if _view_arms == null or _view_rifle < 0 or not _viewmodel.visible:
+		return
+	var rel := _view_arms.global_transform.affine_inverse() * _view_skel.global_transform \
+			* _view_skel.get_bone_global_pose(_view_rifle)
+	_view_arms.transform = _view_gun.transform * rel.affine_inverse()
 
 
 # ---------------------------------------------------------------- station interface
@@ -383,6 +421,7 @@ func _play(clip: String) -> void:
 
 
 func _process(_delta: float) -> void:
+	_hold_view_gun()
 	if _anim == null or hp <= 0.0:
 		return
 	var spd := Vector2(velocity.x, velocity.z).length()
