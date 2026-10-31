@@ -16,6 +16,12 @@ const AI_RANGE := 50.0
 const AI_DAMAGE := 11.0
 const AI_FIRE_INTERVAL := 0.6
 const RESPAWN_TIME := 15.0
+## Where the first-person Shadowline rifle's grip sits in front of the camera: at the hip, and aimed
+## (the scope just under the crosshair). The plain view model's are the others.
+const VIEW_HIP := Vector3(0.19, -0.2, -0.56)
+const VIEW_AIM := Vector3(0.0, -0.215, -0.42)
+const PLAIN_HIP := Vector3(0.22, -0.22, -0.45)
+const PLAIN_AIM := Vector3(0.0, -0.16, -0.38)
 
 var station_name := "Soldier"
 var station_kind := "soldier"
@@ -50,6 +56,10 @@ const ANIM_IDLE := "Idle"
 const ANIM_RUN := "Running"
 var _viewmodel: Node3D
 var _muzzle: Node3D
+## The muzzle of the rifle in the body's hands (HeldGun), when the model carries one.
+var _body_muzzle: Node3D
+var _view_hip := PLAIN_HIP
+var _view_aim := PLAIN_AIM
 var _shape: CollisionShape3D
 
 
@@ -83,6 +93,7 @@ func _ready() -> void:
 			_play(ANIM_IDLE)
 			if _anim.is_playing():
 				_anim.seek(randf() * _anim.current_animation_length)
+		_body_muzzle = HeldGun.attach(m, HeldGun.SHADOWLINE_RIFLE)
 	else:
 		_build_placeholder_body()
 
@@ -96,17 +107,29 @@ func _ready() -> void:
 	_head.add_child(_camera)
 
 	_viewmodel = Node3D.new()
-	_viewmodel.position = Vector3(0.22, -0.22, -0.45)
 	_camera.add_child(_viewmodel)
-	var gun_mat := Mats.flat(Color(0.12, 0.12, 0.13), 0.7, 0.35)
-	_viewmodel.add_child(Mats.box_mesh(Vector3(0.07, 0.11, 0.6), Vector3.ZERO, gun_mat))
-	_viewmodel.add_child(Mats.box_mesh(Vector3(0.05, 0.16, 0.08), Vector3(0, -0.1, 0.08), gun_mat))
-	_viewmodel.add_child(Mats.box_mesh(Vector3(0.06, 0.06, 0.22), Vector3(0, 0.07, -0.05), Mats.flat(Color(0.25, 0.28, 0.32), 0.5, 0.5)))
-	for c in _viewmodel.get_children():
-		(c as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_muzzle = Node3D.new()
-	_muzzle.position = Vector3(0, 0, -0.32)
-	_viewmodel.add_child(_muzzle)
+	if _body_muzzle:
+		# The Shadowline assault rifle the body carries, held out in front: its origin is the pistol
+		# grip, its muzzle +Z (turned to look down -Z with the camera).
+		_view_hip = VIEW_HIP
+		_view_aim = VIEW_AIM
+		var gun := HeldGun.instance(HeldGun.SHADOWLINE_RIFLE)
+		gun.rotation = Vector3(0.0, PI, 0.0)
+		_viewmodel.add_child(gun)
+		for mi in gun.find_children("*", "MeshInstance3D", true, false):
+			(mi as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_muzzle = gun.find_child("muzzle", true, false) as Node3D
+	else:
+		var gun_mat := Mats.flat(Color(0.12, 0.12, 0.13), 0.7, 0.35)
+		_viewmodel.add_child(Mats.box_mesh(Vector3(0.07, 0.11, 0.6), Vector3.ZERO, gun_mat))
+		_viewmodel.add_child(Mats.box_mesh(Vector3(0.05, 0.16, 0.08), Vector3(0, -0.1, 0.08), gun_mat))
+		_viewmodel.add_child(Mats.box_mesh(Vector3(0.06, 0.06, 0.22), Vector3(0, 0.07, -0.05), Mats.flat(Color(0.25, 0.28, 0.32), 0.5, 0.5)))
+		for c in _viewmodel.get_children():
+			(c as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_muzzle = Node3D.new()
+		_muzzle.position = Vector3(0, 0, -0.32)
+		_viewmodel.add_child(_muzzle)
+	_viewmodel.position = _view_hip
 	_viewmodel.visible = false
 
 
@@ -267,7 +290,7 @@ func _player_update(delta: float) -> void:
 
 	var aiming := Input.is_action_pressed("aim")
 	_camera.fov = lerpf(_camera.fov, 50.0 if aiming else 75.0, delta * 12.0)
-	_viewmodel.position = _viewmodel.position.lerp(Vector3(0.0, -0.16, -0.38) if aiming else Vector3(0.22, -0.22, -0.45), delta * 12.0)
+	_viewmodel.position = _viewmodel.position.lerp(_view_aim if aiming else _view_hip, delta * 12.0)
 	_kick = maxf(_kick - delta * 0.3, 0.0)
 	_viewmodel.position.z += _kick
 
@@ -313,7 +336,10 @@ func _ai_update(delta: float) -> void:
 		if ammo <= 0:
 			_start_reload()
 		var eye := global_position + Vector3.UP * 1.6
-		Combat.fire_hitscan(self, eye, Combat.aim_point(_target), 0.05, AI_DAMAGE, team, 0.3, [get_rid()])
+		var muzzle = _body_muzzle.global_position if _body_muzzle else null
+		Combat.fire_hitscan(self, eye, Combat.aim_point(_target), 0.05, AI_DAMAGE, team, 0.3, [get_rid()], muzzle)
+		if _body_muzzle:
+			Combat.spawn_impact(self, _body_muzzle.global_position, false)  # muzzle flash
 
 
 func _find_target() -> Node3D:

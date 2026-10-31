@@ -37,14 +37,15 @@ const DOOR_SIZE := Vector3(3.0, 2.8, 0.4)
 const GATE_BAY := 3
 
 ## Defender garrison models, one per rifle post (rigged, with Idle/Running clips; the Heavy Gunner
-## walks instead of running).
+## walks instead of running). The Cyber Orc Sentinel holds the Shadowline assault rifle
+## (tools/gltf/arm_rifle.py; DefenderSoldier hangs it on its `rifle` bone and takes it into first person).
 const DEFENDER_MODELS := [
 	"res://assets/defenders/armored_sentinel/armored_sentinel.glb",
 	"res://assets/defenders/harpy_vanguard/harpy_vanguard.glb",
 	"res://assets/defenders/crimson_warden/crimson_warden.glb",
 	"res://assets/defenders/grey_veil_warden/grey_veil_warden.glb",
 	"res://assets/defenders/heavy_gunner/heavy_gunner_rigged.glb",
-	"res://assets/defenders/cyber_orc_sentinel/cyber_orc_sentinel.glb",
+	"res://assets/defenders/cyber_orc_sentinel/cyber_orc_sentinel_armed.glb",
 ]
 
 ## side name -> outward direction and the bunker face (stronghold.glb node suffix) on that side
