@@ -374,14 +374,14 @@ python3 tools/video/cut_showcase.py infil.avi infil.log media/infiltrator_showca
 
 The infantry's guns (`game/scripts/combat/held_gun.gd`) hang on a `rifle` bone in their models, which `tools/gltf/arm_rifle.py` adds and poses the arms round in the Idle and Running clips:
 
-- The garrison's **Cyber Orc Sentinel** (the rifleman on the east deck, post 6) carries the **Shadowline** assault rifle (`game/assets/weapons/shadowline_rifle/`), butt in the shoulder. Taken over, it is the first-person view model too, held in the Orc Sentinel's own gauntlets (`cyber_orc_sentinel_fp_arms.glb`: its arms cut out of the model by `tools/gltf/fp_arms.py`, posed bladed with the rifle straight ahead and lined up on the view model's rifle every frame); `RMB` brings the scope up under the crosshair. The other riflemen are as before.
+- The garrison's **Cyber Orc Sentinel** (the rifleman on the east deck, post 6) carries the **Shadowline** assault rifle (`game/assets/weapons/shadowline_rifle/`), butt in the shoulder. Taken over, it is the first-person view model too, held in the Orc Sentinel's own gauntlets (`cyber_orc_sentinel_fp_arms.glb`: its arms cut out of the model by `tools/gltf/fp_arms.py`, posed bladed with the rifle straight ahead and lined up on the view model's rifle every frame). `RMB` doesn't look down the sight: the rifle's smart scope sends its picture to the visor (`game/scripts/ui/rifle_scope.gd`). A slight zoom, the rifle lowered out of sight, and over the screen a faint cyan tint with fine scan lines, a cyan ring-and-posts reticle, blue corner brackets, a red delta turning in the top-left one, red signal bars in the bottom-left one and a red range bar on the right with a tick running up and down it. The other riflemen are as before.
 - The **Bear Rifleman** carries the **Prototype C** heavy LMG (`game/assets/weapons/prototype_c_lmg/`) at the hip, right paw on the grip and left over the carry handle.
 
 Their rounds' tracers and muzzle flashes come from the guns' muzzles.
 
 ```sh
 godot --path game --headless res://scenes/dev/weapons_showcase.tscn  # prints and checks: WEAPONS SHOWCASE PASS / FAIL
-godot --path game --rendering-driver opengl3 --resolution 1600x900 res://scenes/dev/weapons_showcase.tscn -- --shots=/tmp/guns  # defender_fps, defender_infantry, bear_infantry (.png)
+godot --path game --rendering-driver opengl3 --resolution 1600x900 res://scenes/dev/weapons_showcase.tscn -- --shots=/tmp/guns  # defender_fps, defender_scope(_2), defender_infantry, bear_infantry (.png)
 ```
 
 Rebuilding the guns and the armed models:

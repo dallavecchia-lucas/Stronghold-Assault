@@ -16,10 +16,12 @@ const AI_RANGE := 50.0
 const AI_DAMAGE := 11.0
 const AI_FIRE_INTERVAL := 0.6
 const RESPAWN_TIME := 15.0
-## Where the first-person Shadowline rifle's grip sits in front of the camera: at the hip, and aimed
-## (the scope just under the crosshair). The plain view model's are the others.
+## Where the first-person Shadowline rifle's grip sits in front of the camera. Aimed, it is put away
+## and its smart scope's view (RifleScope) fills the screen instead, a little zoomed in (SCOPE_FOV).
+## The plain view model's are the others.
 const VIEW_HIP := Vector3(0.13, -0.2, -0.25)
-const VIEW_AIM := Vector3(0.0, -0.2, -0.32)
+const VIEW_AIM := Vector3(0.13, -0.32, -0.2)
+const SCOPE_FOV := 58.0
 const PLAIN_HIP := Vector3(0.22, -0.22, -0.45)
 const PLAIN_AIM := Vector3(0.0, -0.16, -0.38)
 
@@ -64,6 +66,8 @@ var _view_gun: Node3D
 var _view_arms: Node3D
 var _view_skel: Skeleton3D
 var _view_rifle := -1
+## The rifle's smart scope's view, when the model carries the Shadowline.
+var _scope: RifleScope
 var _view_hip := PLAIN_HIP
 var _view_aim := PLAIN_AIM
 var _shape: CollisionShape3D
@@ -127,6 +131,8 @@ func _ready() -> void:
 		_muzzle = gun.find_child("muzzle", true, false) as Node3D
 		_view_gun = gun
 		_build_view_arms()
+		_scope = RifleScope.new()
+		add_child(_scope)
 	else:
 		var gun_mat := Mats.flat(Color(0.12, 0.12, 0.13), 0.7, 0.35)
 		_viewmodel.add_child(Mats.box_mesh(Vector3(0.07, 0.11, 0.6), Vector3.ZERO, gun_mat))
@@ -192,6 +198,8 @@ func unpossess() -> void:
 	_body.visible = hp > 0.0
 	_viewmodel.visible = false
 	_camera.fov = 75.0
+	if _scope:
+		_scope.amount = 0.0
 
 
 func wants_captured_mouse() -> bool:
@@ -248,6 +256,8 @@ func toss(v: Vector3) -> void:
 
 func _die() -> void:
 	hp = 0.0
+	if _scope:
+		_scope.amount = 0.0
 	_respawn_cd = RESPAWN_TIME
 	_tossed = false
 	_body.visible = false
@@ -327,7 +337,13 @@ func _player_update(delta: float) -> void:
 		velocity.z = lerpf(velocity.z, dir.z * speed, delta * 3.0)
 
 	var aiming := Input.is_action_pressed("aim")
-	_camera.fov = lerpf(_camera.fov, 50.0 if aiming else 75.0, delta * 12.0)
+	if _scope:
+		# The smart scope: a slight zoom, the rifle lowered out of sight, the scope's view on the visor.
+		_camera.fov = lerpf(_camera.fov, SCOPE_FOV if aiming else 75.0, delta * 12.0)
+		_scope.amount = move_toward(_scope.amount, 1.0 if aiming else 0.0, delta * 6.0)
+		_viewmodel.visible = _scope.amount < 0.6
+	else:
+		_camera.fov = lerpf(_camera.fov, 50.0 if aiming else 75.0, delta * 12.0)
 	_viewmodel.position = _viewmodel.position.lerp(_view_aim if aiming else _view_hip, delta * 12.0)
 	_kick = maxf(_kick - delta * 0.3, 0.0)
 	_viewmodel.position.z += _kick

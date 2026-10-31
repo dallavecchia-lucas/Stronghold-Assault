@@ -2,13 +2,15 @@ extends Node3D
 ## Stills of the infantry's guns (HeldGun) on the real map:
 ##   1 defender_fps       the garrison's Cyber Orc Sentinel taken over on its deck, the Shadowline assault
 ##                        rifle in first person, Bear Riflemen out in the field below
+##   1b defender_scope,   the same, RMB held: the rifle's smart scope's view (RifleScope), twice
+##      defender_scope_2  0.6 s apart (the delta turning, the tick running along the range bar)
 ##   2 defender_infantry  Cyber Orc Sentinels with the Shadowline lined up in the south field
 ##   3 bear_infantry      a squad of Bear Riflemen with the Prototype C heavy LMG
 ##
 ##   godot --path game --rendering-driver opengl3 --resolution 1600x900 \
-##       res://scenes/dev/weapons_showcase.tscn -- --shots=DIR [--aim]
+##       res://scenes/dev/weapons_showcase.tscn -- --shots=DIR
 ##
-## --aim takes the first-person shot aimed down the scope. Without --shots it only checks that every
+## Without --shots it only checks that every
 ## model carries its gun (WEAPONS SHOWCASE PASS / FAIL) and quits.
 
 ## Where the lineups stand (south field), and where the bears the rifleman looks out at stand.
@@ -21,7 +23,6 @@ var level: LevelBuilder
 var commander: AttackerCommander
 var cam: Camera3D
 var shots_dir := ""
-var aim := false
 ## --view=x,y,z: tries the first-person gun's hip place (DefenderSoldier.VIEW_HIP) for the shot.
 var view_at = null
 var defenders: Array[DefenderSoldier] = []
@@ -36,8 +37,6 @@ func _ready() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--shots="):
 			shots_dir = arg.get_slice("=", 1)
-		elif arg == "--aim":
-			aim = true
 		elif arg.begins_with("--view="):
 			var v := arg.get_slice("=", 1).split(",")
 			view_at = Vector3(float(v[0]), float(v[1]), float(v[2]))
@@ -150,11 +149,16 @@ func _shot_fps() -> void:
 	var head := soldier.get_camera().get_parent() as Node3D
 	var eye := soldier.global_position + Vector3.UP * 1.6
 	head.rotation.x = atan2((field_at + Vector3.UP * 1.0 - eye).y, Vector2(to.x, to.z).length())
-	if aim:
-		Input.action_press("aim")
 	for k in 40:
 		await get_tree().process_frame
 	await _save("defender_fps")
+	Input.action_press("aim")
+	for k in 40:
+		await get_tree().process_frame
+	await _save("defender_scope")
+	for k in 36:
+		await get_tree().process_frame
+	await _save("defender_scope_2")
 	Input.action_release("aim")
 	soldier.unpossess()
 	soldier.process_mode = Node.PROCESS_MODE_DISABLED
