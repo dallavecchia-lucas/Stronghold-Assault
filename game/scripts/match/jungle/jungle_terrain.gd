@@ -252,7 +252,8 @@ func _height_row(j: int) -> void:
 		if flat < 1.0:
 			var relief := na[i] / 255.0
 			var fine := nb[i] / 255.0
-			var roll := relief * 2.8 + fine * 0.7
+			# Level ground under the prison and its yard.
+			var roll := (relief * 2.8 + fine * 0.7) * smoothstep(70.0, 125.0, p.distance_to(L.PRISON))
 			# Ridges.
 			var hills := 0.0
 			for r in rg_c.size():
@@ -518,6 +519,7 @@ float tri(vec3 p, vec3 n, float scale) {
 void fragment() {
 	vec4 s = texture(splat, (wpos.xz - map_origin) / map_size);
 	float n1 = texture(detail, wpos.xz * 0.09).r;
+	float n0 = texture(detail, wpos.xz * 0.55 + vec2(0.37, 0.11)).r;
 	float n2 = texture(detail, wpos.xz * 0.021).r;
 	float m = texture(macro, wpos.xz * 0.0025).r;
 	float m2 = texture(macro, wpos.xz * 0.011 + vec2(0.3, 0.7)).r;
@@ -526,8 +528,10 @@ void fragment() {
 	vec3 moss = mix(vec3(0.12, 0.18, 0.06), vec3(0.24, 0.3, 0.1), n2);
 	vec3 col = mix(litter, moss, smoothstep(0.35, 0.65, m2 * 0.7 + n2 * 0.3));
 	// The clearing: cropped grass, patchy.
-	vec3 grass = mix(vec3(0.2, 0.3, 0.09), vec3(0.36, 0.44, 0.16), n1 * 0.6 + n2 * 0.4);
-	grass = mix(grass, vec3(0.42, 0.38, 0.2), smoothstep(0.62, 0.8, m) * 0.6);
+	vec3 grass = mix(vec3(0.19, 0.26, 0.09), vec3(0.33, 0.38, 0.15), n1 * 0.5 + n2 * 0.3 + n0 * 0.2);
+	// Worn, sun-dried patches and bare earth here and there.
+	grass = mix(grass, vec3(0.4, 0.36, 0.2), smoothstep(0.6, 0.78, m) * 0.6);
+	grass = mix(grass, vec3(0.36, 0.27, 0.17), smoothstep(0.66, 0.74, m2 * 0.6 + n0 * 0.4) * 0.7);
 	col = mix(col, grass, s.g);
 	// Tracks: packed red-brown earth with ruts.
 	vec3 track = mix(vec3(0.33, 0.22, 0.13), vec3(0.48, 0.35, 0.22), n1);
@@ -545,7 +549,7 @@ void fragment() {
 	rock = mix(rock, vec3(0.62, 0.6, 0.54), s.a * 0.5);
 	rock = mix(rock, vec3(0.2, 0.26, 0.1), smoothstep(0.55, 0.75, n2) * (1.0 - s.a) * 0.6);
 	col = mix(col, rock, rockw);
-	col *= 0.85 + 0.3 * m;
+	col *= (0.85 + 0.3 * m) * (0.9 + 0.2 * n0);
 	// The colours above are picked in sRGB.
 	ALBEDO = pow(col, vec3(2.2));
 	ROUGHNESS = mix(0.95, 0.55, s.r * wet);
@@ -574,10 +578,11 @@ void fragment() {
 	NORMAL_MAP = normalize(mix(na, nb, 0.5));
 	NORMAL_MAP_DEPTH = 0.5;
 	float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 4.0);
-	ALBEDO = pow(mix(vec3(0.1, 0.17, 0.13), vec3(0.28, 0.36, 0.34), fres), vec3(2.2));
+	// A jungle river: murky olive-brown water, the sky's sheen at a glancing angle.
+	ALBEDO = pow(mix(vec3(0.26, 0.26, 0.17), vec3(0.42, 0.47, 0.44), fres), vec3(2.2));
 	ROUGHNESS = 0.06;
 	METALLIC = 0.0;
 	SPECULAR = 0.6;
-	ALPHA = mix(0.82, 0.96, fres);
+	ALPHA = mix(0.9, 0.97, fres);
 }
 """

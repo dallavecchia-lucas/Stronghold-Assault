@@ -12,6 +12,10 @@ extends RefCounted
 ## misses between cells.
 
 const CELL := 5.0
+## On a bigger map (the Jungle Keep) the cells grow so the grid stays about as many cells across, and
+## the grid isn't laid out again for every burnt tree that falls: at most every RELAYOUT seconds.
+const BIG_CELL := 12.0
+const RELAYOUT := 30.0
 ## An attacker weighs on the cells within THREAT_RADIUS of it: entering one costs up to
 ## THREAT_WEIGHT times more next to it, fading out with distance (squared). Flyers count
 ## FLYER_SHARE as much (they see far, but move fast and high).
@@ -23,6 +27,8 @@ static var _grid: AStarGrid2D
 static var _iteration := -1
 static var _n := 0
 static var _origin := Vector2.ZERO
+static var _cell_m := CELL
+static var _laid_at := -INF
 
 
 ## How hard attackers press on `p`: 0 with none within THREAT_RADIUS, about 1 next to one (more
@@ -49,7 +55,7 @@ static func plan(world: World3D, from: Vector3, to: Vector3, units: Array) -> Pa
 	if not _lay_out(world):
 		return out
 	_grid.fill_weight_scale_region(_grid.region, 1.0)
-	var r := int(ceil(THREAT_RADIUS / CELL))
+	var r := int(ceil(THREAT_RADIUS / _cell_m))
 	for u in units:
 		var p: Vector3 = u.global_position
 		var c := _cell(p)
@@ -85,32 +91,46 @@ static func _lay_out(world: World3D) -> bool:
 		return false
 	if _grid != null and iteration == _iteration:
 		return true
+	var now := Time.get_ticks_msec() / 1000.0
+	var big := LevelBuilder.map_half > LevelBuilder.MAP_HALF
+	if _grid != null and big and now - _laid_at < RELAYOUT:
+		return true
 	_iteration = iteration
-	_n = int(ceil(LevelBuilder.map_half * 2.0 / CELL))
+	_laid_at = now
+	_cell_m = BIG_CELL if big else CELL
+	_n = int(ceil(LevelBuilder.map_half * 2.0 / _cell_m))
 	_origin = Vector2(-LevelBuilder.map_half, -LevelBuilder.map_half)
 	_grid = AStarGrid2D.new()
 	_grid.region = Rect2i(0, 0, _n, _n)
-	_grid.cell_size = Vector2(CELL, CELL)
+	_grid.cell_size = Vector2(_cell_m, _cell_m)
 	_grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES
 	_grid.update()
+	var terrain: JungleTerrain = LevelBuilder.terrain as JungleTerrain
+	var bases: Array = (Engine.get_main_loop() as SceneTree).get_nodes_in_group("attacker_bases") if terrain else []
 	for i in _n:
 		for j in _n:
 			var c := _centre(Vector2i(i, j))
 			var solid := LevelBuilder.base_distance(c) <= 1.0
-			if not solid:
-				var p := NavigationServer3D.map_get_closest_point(map, c + Vector3.UP * 0.5)
-				solid = Vector2(p.x - c.x, p.z - c.z).length() > CELL * 0.5 or LevelBuilder.above_ground(p) > 1.5
+			if not solid and terrain and LevelBuilder.base_distance(c) > 40.0:
+				# The Jungle Keep's ground says where the water and the steep faces are without asking the
+				# navmesh (thousands of queries on a map this size): the rest is open but the helipads' decks.
+				solid = terrain.wet(c.x, c.z) or terrain.normal_at(c.x, c.z).y < 0.75
+				for b in bases:
+					solid = solid or b.edge_distance(c) <= 0.0
+			elif not solid:
+				var p := LevelBuilder.nav_closest(map, c + Vector3.UP * 0.5)
+				solid = Vector2(p.x - c.x, p.z - c.z).length() > _cell_m * 0.5 or LevelBuilder.above_ground(p) > 1.5
 			_grid.set_point_solid(Vector2i(i, j), solid)
 	return true
 
 
 static func _cell(p: Vector3) -> Vector2i:
-	return Vector2i(clampi(int(floor((p.x - _origin.x) / CELL)), 0, _n - 1),
-			clampi(int(floor((p.z - _origin.y) / CELL)), 0, _n - 1))
+	return Vector2i(clampi(int(floor((p.x - _origin.x) / _cell_m)), 0, _n - 1),
+			clampi(int(floor((p.z - _origin.y) / _cell_m)), 0, _n - 1))
 
 
 static func _centre(c: Vector2i) -> Vector3:
-	var p := Vector3(_origin.x + (c.x + 0.5) * CELL, 0.0, _origin.y + (c.y + 0.5) * CELL)
+	var p := Vector3(_origin.x + (c.x + 0.5) * _cell_m, 0.0, _origin.y + (c.y + 0.5) * _cell_m)
 	p.y = LevelBuilder.ground_height(p)
 	return p
 

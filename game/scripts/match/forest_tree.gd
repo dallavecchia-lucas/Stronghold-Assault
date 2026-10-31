@@ -418,7 +418,7 @@ func _landed() -> void:
 		fx.flame(p, Vector3(randf_range(-2, 2), randf_range(2.0, 4.5), randf_range(-2, 2)), randf_range(0.25, 0.5), 0.15, 0.35, -6.0, 0.5)
 	fell.emit(self)
 	var level := _level()
-	if level:
+	if level and level.nav_region.is_ancestor_of(self):
 		level.clear_obstacle(global_position)
 
 

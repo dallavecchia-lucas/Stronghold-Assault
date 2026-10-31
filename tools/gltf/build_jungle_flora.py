@@ -150,7 +150,7 @@ def bark_texture(kind, rng, size=512):
         n = fractal(size, 4, 5, rng, (1, 2))
         y = np.arange(size)[:, None] / size
         rings = 0.5 + 0.5 * np.cos(y * math.pi * 2 * 14 + n * 2.0)
-        t = np.clip(n * 0.6 + rings * 0.5, 0, 1)
+        t = np.clip(n * 0.75 + rings * 0.22 + 0.1, 0, 1)
         img = colorize(t, [(0.0, (62, 54, 44)), (0.5, (112, 102, 86)), (0.8, (140, 130, 112)), (1.0, (160, 150, 132))])
         return img
     if kind == "bamboo":
@@ -664,7 +664,7 @@ def build_kapok(rng, far=False):
             clumps.append((sub[-1] + UP * 1.0, (rng.uniform(4.5, 6.0), rng.uniform(2.6, 3.4))))
     clumps.append((crown_c + UP * 2.0, (8.0, 3.5)))
     for c, r in clumps:
-        clump(leaves, rng, c, r, 9 if far else 32, (7.5, 10.0) if far else (3.8, 5.6), crown_c, crown_r)
+        clump(leaves, rng, c, r, 14 if far else 32, (7.0, 9.5) if far else (3.8, 5.6), crown_c, crown_r)
     if not far:
         vine = m.surface("vine", ("vine",), alpha=True, roughness=0.8, double=True)
         for k in range(9):
@@ -744,8 +744,14 @@ def build_canopy(rng, variant="a", far=False):
                 tube(bark, sub, np.linspace(0.2, 0.06, len(sub)), 4, 0.3)
             clumps.append((sub[-1], (rng.uniform(3.0, 4.0), rng.uniform(1.8, 2.4))))
     clumps.append((crown_c + UP * crown_r[1] * 0.5, (crown_r[0] * 0.45, crown_r[1] * 0.55)))
+    # Epiphytes and suckers: smaller clumps hugging the trunk below the crown.
+    for k in range(2 if far else 3):
+        y = fork * rng.uniform(0.45, 0.9)
+        a = rng.uniform(0, 2 * math.pi)
+        c = np.array([math.cos(a) * 1.4, y, math.sin(a) * 1.4]) + lean * (y / fork) ** 2
+        clumps.append((c, (rng.uniform(2.2, 3.2), rng.uniform(1.6, 2.4))))
     for c, r in clumps:
-        clump(leaves, rng, c, r, 9 if far else 30, (6.5, 8.5) if far else (3.0, 4.4), crown_c, crown_r)
+        clump(leaves, rng, c, r, 14 if far else 30, (5.8, 7.8) if far else (3.0, 4.4), crown_c, crown_r)
     return m
 
 

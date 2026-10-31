@@ -410,9 +410,9 @@ func _step_up(motion: Vector3, tall: bool) -> bool:
 			# Only up onto walkable ground: the navmesh just ahead is higher than here (a ramp's
 			# low side), not the top of a railing or a wall end it doesn't cover.
 			var map := get_world_3d().navigation_map
-			var here := NavigationServer3D.map_get_closest_point(map, global_position + Vector3.UP * 0.5)
+			var here := LevelBuilder.nav_closest(map, global_position + Vector3.UP * 0.5)
 			var to := global_position + motion * 1.5 + up
-			var there := NavigationServer3D.map_get_closest_point(map, to)
+			var there := LevelBuilder.nav_closest(map, to)
 			if Vector2(there.x - to.x, there.z - to.z).length() > 0.35 or there.y < here.y + 0.2:
 				return false
 		global_position += up + motion

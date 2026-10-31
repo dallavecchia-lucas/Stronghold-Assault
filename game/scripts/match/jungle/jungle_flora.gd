@@ -26,10 +26,12 @@ const OUTER := 870.0
 ## Sniper lies up it (share of its height)].
 const KINDS := {
 	"kapok": ["kapok", "kapok_far", Vector2(40, 56), 44.0, 0.0, true, true, 0.034, 0.8],
-	"canopy_a": ["canopy_a", "canopy_a_far", Vector2(24, 34), 16.0, 0.0, true, true, 0.028, 0.9],
+	"canopy_a": ["canopy_a", "canopy_a_far", Vector2(24, 34), 14.0, 0.0, true, true, 0.028, 0.9],
 	"canopy_b": ["canopy_b", "canopy_a_far", Vector2(28, 38), 16.0, 0.0, true, true, 0.026, 0.9],
 	"palm": ["palm", "palm_far", Vector2(11, 22), 15.0, 0.0, true, true, 0.02, 0.92],
 	"bamboo": ["bamboo", "", Vector2(9, 14), 20.0, 0.0, true, true, 0.08, 0.85],
+	"under_a": ["canopy_a_far", "", Vector2(7.0, 14.0), 12.0, 380.0, true, false, 0.0, 0.0],
+	"under_b": ["canopy_b_far", "", Vector2(8.0, 15.0), 12.0, 380.0, true, false, 0.0, 0.0],
 	"banana": ["banana", "", Vector2(3.0, 6.0), 9.0, 220.0, true, false, 0.0, 0.0],
 	"tree_fern": ["tree_fern", "", Vector2(4.0, 7.5), 9.5, 240.0, true, false, 0.0, 0.0],
 	"elephant_ear": ["elephant_ear", "", Vector2(1.4, 2.6), 6.0, 150.0, false, false, 0.0, 0.0],
@@ -38,6 +40,8 @@ const KINDS := {
 }
 ## The Meshy bushes (Props.BUSHES) as ground-cover shrubs and Serpent Sniper traps (LevelBuilder.BUSH_WIDTH).
 const BUSH_CELL := 13.0
+## The prison's grounds are cleared this far round it (m).
+const PRISON_CLEAR := 115.0
 const BUSH_VIS := 260.0
 
 static var current: JungleFlora
@@ -80,7 +84,7 @@ func build() -> void:
 	var records := []
 	for kind in ["kapok", "canopy_a", "palm", "bamboo"]:
 		records.append_array(_scatter_trees(kind))
-	for kind in ["banana", "tree_fern", "elephant_ear", "fern", "grass"]:
+	for kind in ["under_a", "under_b", "banana", "tree_fern", "elephant_ear", "fern", "grass"]:
 		_scatter_plants(kind)
 	var bush_records := _scatter_bushes()
 	_build_batches()
@@ -124,7 +128,7 @@ func _build_room() -> void:
 			if w > 0.0:
 				for f in flat_c.size():
 					w *= smoothstep(flat_r[f] * 0.75, flat_r[f] * 1.05, p.distance_to(flat_c[f]))
-				w *= smoothstep(70.0, 95.0, p.distance_to(prison))
+				w *= smoothstep(PRISON_CLEAR, PRISON_CLEAR + 30.0, p.distance_to(prison))
 				for b in br_a.size():
 					var ab := br_b[b] - br_a[b]
 					var t := clampf((p - br_a[b]).dot(ab) / ab.length_squared(), 0.0, 1.0)
@@ -256,6 +260,9 @@ func _scatter_plants(kind: String) -> void:
 			var p := _jitter(cell, i, j)
 			var prob := 0.0
 			match kind:
+				"under_a", "under_b":
+					# The mid-storey: young trees filling the space under the canopy, thickest at the jungle's edge.
+					prob = (0.28 * _room(p, 5.0) + 0.3 * _edge(p) * _room(p, 5.0)) * (1.0 if (_patch.get_noise_2dv(p * 1.7) > 0.0) == (kind == "under_a") else 0.0) * 2.0
 				"banana":
 					var room := _room(p, 4.0)
 					prob = 0.3 * room + 0.25 * _edge(p) * _room(p, 4.0)
@@ -268,9 +275,9 @@ func _scatter_plants(kind: String) -> void:
 					prob = 0.55 * _room(p, 2.5) * (0.6 + 0.4 * _patch.get_noise_2dv(p * 2.0))
 				"grass":
 					# Thick in the clearing's rough edges and by the tracks and the water, thinner under the trees.
-					var clearing := smoothstep(JungleLayout.CLEARING_R - 120.0, JungleLayout.CLEARING_R - 20.0, p.length())
-					var mountain := maxf(absf(p.x), absf(p.y)) > LevelBuilder.MOUNTAIN_HALF + 12.0
-					prob = 0.15 * _room(p, 1.5) + (0.55 * clearing if mountain and _room(p, 0.0) < 0.6 and _site_free(p) else 0.0)
+					var clearing := 0.16 + 0.45 * smoothstep(JungleLayout.CLEARING_R - 140.0, JungleLayout.CLEARING_R - 20.0, p.length())
+					var mountain := maxf(absf(p.x), absf(p.y)) > LevelBuilder.MOUNTAIN_HALF + 6.0
+					prob = 0.15 * _room(p, 1.5) + (clearing if mountain and _room(p, 0.0) < 0.6 and _site_free(p) else 0.0)
 			if _rng.randf() >= prob:
 				continue
 			var g := _ground(p, 35.0)
@@ -302,6 +309,9 @@ func _scatter_bushes() -> Array:
 		for i in cells:
 			var p := _jitter(BUSH_CELL, i, j)
 			var prob := 0.42 * _room(p, 4.0) + 0.3 * _edge(p) * _room(p, 4.0)
+			# A few shrubs out in the clearing's outer half, off the tracks and the mountain's foot.
+			if _room(p, 0.0) <= 0.0 and p.length() > JungleLayout.CLEARING_R * 0.55 and maxf(absf(p.x), absf(p.y)) > LevelBuilder.MOUNTAIN_HALF + 20.0 and _site_free(p):
+				prob = 0.06
 			if _rng.randf() >= prob:
 				continue
 			var g := _ground(p, 30.0)
@@ -361,13 +371,21 @@ func _is_tree_path(path: String) -> bool:
 	return false
 
 
-## The ForestTree proxies for the trees on the map (under the navigation region: their trunks are
-## baked into the navmesh).
+## The ForestTree proxies for the trees on the map. Only the emergent giants' trunks (BAKED_KINDS,
+## buttresses and all) are baked into the navmesh, under the navigation region; the rest only collide
+## (units slide round them): every hole cut in the navmesh costs every navmesh query on the map.
+const BAKED_KINDS := ["kapok"]
+
+
 func _make_proxies(records: Array) -> void:
-	var parent := Node3D.new()
-	parent.name = "JungleTrees"
-	level.nav_region.add_child(parent)
+	var baked := Node3D.new()
+	baked.name = "JungleTrees"
+	level.nav_region.add_child(baked)
+	var loose := Node3D.new()
+	loose.name = "JungleTreesUnbaked"
+	level.add_child(loose)
 	for rec in records:
+		var parent: Node3D = baked if rec.kind in BAKED_KINDS else loose
 		var s: Array = KINDS[rec.kind]
 		var h: float = rec.h
 		var proxies := []

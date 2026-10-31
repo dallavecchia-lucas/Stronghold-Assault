@@ -321,7 +321,7 @@ static func _walkable(map: RID, gx: int, gy: int, y: float) -> bool:
 	var v = _walk.get(key)
 	if v == null:
 		var p := Vector3(gx * CELL, y + 0.5, gy * CELL)
-		var c := NavigationServer3D.map_get_closest_point(map, p)
+		var c := LevelBuilder.nav_closest(map, p)
 		v = Vector2(c.x - p.x, c.z - p.z).length() < CELL * 0.6 and absf(c.y - y) < 3.0
 		_walk[key] = v
 	return v
@@ -329,7 +329,7 @@ static func _walkable(map: RID, gx: int, gy: int, y: float) -> bool:
 
 ## `p` put down on the navmesh (its height there).
 static func _ground(grid: Dictionary, p: Vector3) -> Vector3:
-	var c := NavigationServer3D.map_get_closest_point(grid.map, Vector3(p.x, grid.y + 0.5, p.z))
+	var c := LevelBuilder.nav_closest(grid.map, Vector3(p.x, grid.y + 0.5, p.z))
 	return Vector3(p.x, c.y, p.z)
 
 

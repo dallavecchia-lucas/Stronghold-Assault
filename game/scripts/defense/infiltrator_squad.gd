@@ -510,7 +510,7 @@ func _pick_spot() -> Vector3:
 	var best := Vector3.INF
 	var best_cost := INF
 	for s in op.spots_around(SPOT_OUT):
-		var p := NavigationServer3D.map_get_closest_point(map, s + Vector3.UP * 0.5)
+		var p := LevelBuilder.nav_closest(map, s + Vector3.UP * 0.5)
 		if _flat(p, s) > 2.0 or op.edge_distance(p) > AttackerBase.SABOTAGE_REACH * 0.7:
 			continue
 		var cost := SneakRoute.threat_at(p, units) * 100.0 + _flat(leader.global_position, p) * 0.05

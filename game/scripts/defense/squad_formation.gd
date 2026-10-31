@@ -92,7 +92,7 @@ func solve(leader: Vector3, heading: float, followers: Array, delta: float, velo
 	if n == 0:
 		return out
 	_heading = heading
-	var start := NavigationServer3D.map_get_closest_point(nav_map, leader + Vector3.UP * 0.5)
+	var start := LevelBuilder.nav_closest(nav_map, leader + Vector3.UP * 0.5)
 	var shapes := [Mode.WEDGE, Mode.SQUEEZED, Mode.SQUEEZED, Mode.PAIRS, Mode.FILE]
 	var squeeze := [1.0, SQUEEZE[0], SQUEEZE[1], 0.0, 0.0]
 	var found := Mode.FILE
@@ -155,7 +155,7 @@ func _room_ahead(leader: Vector3, heading: float, velocity: Vector3, n: int) -> 
 		return Mode.WEDGE
 	var dir := (v.normalized() + Basis(Vector3.UP, heading) * Vector3.FORWARD * 0.5).normalized()
 	var to := leader + dir * maxf(v.length() * LOOK_AHEAD, LOOK_AHEAD_MIN)
-	var ahead := NavigationServer3D.map_get_closest_point(nav_map, to + Vector3.UP * 0.5)
+	var ahead := LevelBuilder.nav_closest(nav_map, to + Vector3.UP * 0.5)
 	if _flat(ahead, to) > SNAP:
 		return Mode.FILE  # walking into a wall: whatever is there, it is narrow
 	for squeeze in [1.0, SQUEEZE[0], SQUEEZE[1]]:
@@ -324,13 +324,13 @@ static func _side(dir: Vector3) -> Vector3:
 ## leader without a detour, or it crowds another spot. `room` asks for that much clear ground beyond
 ## the spot along `side` (both ways).
 func _spot(want: Vector3, leader: Vector3, start: Vector3, taken: Array[Vector3], room: float, side := Vector3.ZERO):
-	var c := NavigationServer3D.map_get_closest_point(nav_map, want + Vector3.UP * 0.5)
+	var c := LevelBuilder.nav_closest(nav_map, want + Vector3.UP * 0.5)
 	if _flat(c, want) > SNAP or absf(c.y - start.y) > 1.6:
 		return null
 	if room > 0.0:
 		for s in [side, -side]:
 			var probe: Vector3 = c + s * room
-			var pc := NavigationServer3D.map_get_closest_point(nav_map, probe + Vector3.UP * 0.5)
+			var pc := LevelBuilder.nav_closest(nav_map, probe + Vector3.UP * 0.5)
 			if _flat(pc, probe) > 0.12:
 				return null
 	if _flat(c, leader) < MIN_GAP:
@@ -338,7 +338,7 @@ func _spot(want: Vector3, leader: Vector3, start: Vector3, taken: Array[Vector3]
 	for t in taken:
 		if _flat(c, t) < MIN_GAP:
 			return null
-	var path := NavigationServer3D.map_get_path(nav_map, start, c, true, nav_layers)
+	var path := LevelBuilder.nav_path(nav_map, start, c, true, nav_layers)
 	if path.is_empty() or path[-1].distance_to(c) > 0.4:
 		return null
 	var length := 0.0
@@ -356,11 +356,11 @@ static func _flat(a: Vector3, b: Vector3) -> float:
 ## True if `spot` is on the same ground as the trail point `on` beside it, a straight step across
 ## (not down on the floor beside a ramp the trail goes up).
 func _beside(on: Vector3, spot: Vector3) -> bool:
-	var a := NavigationServer3D.map_get_closest_point(nav_map, on + Vector3.UP * 0.5)
-	var b := NavigationServer3D.map_get_closest_point(nav_map, spot + Vector3.UP * 0.5)
+	var a := LevelBuilder.nav_closest(nav_map, on + Vector3.UP * 0.5)
+	var b := LevelBuilder.nav_closest(nav_map, spot + Vector3.UP * 0.5)
 	if absf(a.y - b.y) > 0.35:
 		return false
-	var path := NavigationServer3D.map_get_path(nav_map, a, b, true, nav_layers)
+	var path := LevelBuilder.nav_path(nav_map, a, b, true, nav_layers)
 	var length := 0.0
 	for i in range(1, path.size()):
 		length += path[i].distance_to(path[i - 1])
@@ -373,11 +373,11 @@ func _beside(on: Vector3, spot: Vector3) -> bool:
 func _column_assigned(spots: Array[Vector3], followers: Array, leader: Vector3, shape: Mode, keep_order: bool) -> Array[Vector3]:
 	var n := spots.size()
 	# Walking to the leader, on the navmesh: one boxed in beside a ramp is further back than it looks.
-	var start := NavigationServer3D.map_get_closest_point(nav_map, leader + Vector3.UP * 0.5)
+	var start := LevelBuilder.nav_closest(nav_map, leader + Vector3.UP * 0.5)
 	var key := []
 	for p in followers:
-		var from := NavigationServer3D.map_get_closest_point(nav_map, p + Vector3.UP * 0.5)
-		var path := NavigationServer3D.map_get_path(nav_map, from, start, true, nav_layers)
+		var from := LevelBuilder.nav_closest(nav_map, p + Vector3.UP * 0.5)
+		var path := LevelBuilder.nav_path(nav_map, from, start, true, nav_layers)
 		var length := _flat(p, from)
 		for i in range(1, path.size()):
 			length += path[i].distance_to(path[i - 1])

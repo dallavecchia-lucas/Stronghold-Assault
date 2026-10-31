@@ -309,7 +309,7 @@ func _physics_process(delta: float) -> void:
 		var map := get_world_3d().navigation_map
 		formation.nav_map = map
 		_nav_ready = NavigationServer3D.map_get_iteration_id(map) > 0 \
-				and NavigationServer3D.map_get_closest_point(map, home.origin + Vector3.UP) != Vector3.ZERO
+				and LevelBuilder.nav_closest(map, home.origin + Vector3.UP) != Vector3.ZERO
 	if possessed:
 		_player_control(delta)
 	else:
@@ -542,7 +542,7 @@ func _walk_trail(f: SquadTrooper, back_to: float, side: float, backs: Dictionary
 		# needs no such check (the leader walked it), and mustn't get one: through a gate it runs
 		# across the hole the door's plug leaves in the navmesh.
 		var beside: Vector3 = p + at[1] * side
-		var c := NavigationServer3D.map_get_closest_point(get_world_3d().navigation_map, beside + Vector3.UP * 0.5)
+		var c := LevelBuilder.nav_closest(get_world_3d().navigation_map, beside + Vector3.UP * 0.5)
 		p = c if _flat(c, beside) < 0.6 else p
 	f.trail_point = p
 	f.trail_speed = speed
@@ -568,10 +568,10 @@ func _walled_off(f: SquadTrooper, spot: Vector3) -> bool:
 ## True if `f` can walk about straight onto the trail at `back` (no wall or ledge in between).
 func _straight_onto(f: SquadTrooper, back: float) -> bool:
 	var map := get_world_3d().navigation_map
-	var from := NavigationServer3D.map_get_closest_point(map, f.global_position + Vector3.UP * 0.5)
+	var from := LevelBuilder.nav_closest(map, f.global_position + Vector3.UP * 0.5)
 	var at: Array = formation.along(back, leader.global_position)
-	var to := NavigationServer3D.map_get_closest_point(map, at[0] + Vector3.UP * 0.5)
-	var path := NavigationServer3D.map_get_path(map, from, to, true, formation.nav_layers)
+	var to := LevelBuilder.nav_closest(map, at[0] + Vector3.UP * 0.5)
+	var path := LevelBuilder.nav_path(map, from, to, true, formation.nav_layers)
 	var length := 0.0
 	for i in range(1, path.size()):
 		length += path[i].distance_to(path[i - 1])

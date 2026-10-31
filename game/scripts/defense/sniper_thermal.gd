@@ -33,6 +33,25 @@ var _showing := false
 var _env: Environment
 var _hot: ShaderMaterial
 var _foliage: StandardMaterial3D
+## The plant batches' MultiMeshes under thermal sight -> their own meshes; and per plant mesh its thermal
+## copy (each surface see-through, cut out by its texture's alpha), made once.
+var _batch_meshes := {}
+static var _thermal_meshes := {}
+static var _thermal_mats := {}
+const LEAF_SHADER := """
+shader_type spatial;
+render_mode unshaded, cull_disabled, depth_draw_never, shadows_disabled;
+uniform sampler2D tex : source_color, filter_linear_mipmap;
+uniform vec4 tint : source_color;
+void fragment() {
+	float a = texture(tex, UV).a;
+	if (a < 0.5) {
+		discard;
+	}
+	ALBEDO = tint.rgb;
+	ALPHA = tint.a;
+}
+"""
 ## MeshInstance3D -> the material_override it had before.
 var _overridden := {}
 var _trees := {}
@@ -83,6 +102,9 @@ func _stop() -> void:
 	for mi in _overridden:
 		if is_instance_valid(mi):
 			(mi as GeometryInstance3D).material_override = _overridden[mi]
+	for mm in _batch_meshes:
+		(mm as MultiMesh).mesh = _batch_meshes[mm]
+	_batch_meshes.clear()
 	_overridden.clear()
 	_trees.clear()
 
@@ -95,11 +117,13 @@ func _scan() -> void:
 			if not _overridden.has(mi):
 				_overridden[mi] = mi.material_override
 				mi.material_override = _hot
-	# The Jungle Keep's plants are drawn in shared batches (JungleFlora): they all go see-through.
-	for mi in get_tree().get_nodes_in_group("flora_batches"):
-		if not _overridden.has(mi):
-			_overridden[mi] = mi.material_override
-			mi.material_override = _foliage
+	# The Jungle Keep's plants are drawn in shared batches (JungleFlora): they all go see-through, the
+	# leaves keeping their cut-out shapes.
+	for mmi in get_tree().get_nodes_in_group("flora_batches"):
+		var mm: MultiMesh = (mmi as MultiMeshInstance3D).multimesh
+		if mm and not _batch_meshes.has(mm):
+			_batch_meshes[mm] = mm.mesh
+			mm.mesh = _thermal_mesh(mm.mesh)
 	for t in ForestTree.standing:
 		if not _trees.has(t) and not t.is_proxy():
 			_trees[t] = true
@@ -115,6 +139,28 @@ func _scan() -> void:
 					if _overridden.has(mi):
 						mi.material_override = _overridden[mi]
 						_overridden.erase(mi)
+
+
+## A copy of plant mesh `mesh` for thermal sight: every surface faint and see-through like _foliage,
+## leaves still cut out by their textures.
+func _thermal_mesh(mesh: Mesh) -> Mesh:
+	if _thermal_meshes.has(mesh):
+		return _thermal_meshes[mesh]
+	var copy := mesh.duplicate() as Mesh
+	for k in copy.get_surface_count():
+		var src := mesh.surface_get_material(k) as BaseMaterial3D
+		var tex: Texture2D = src.albedo_texture if src else null
+		if not _thermal_mats.has(tex):
+			var m := ShaderMaterial.new()
+			var sh := Shader.new()
+			sh.code = LEAF_SHADER
+			m.shader = sh
+			m.set_shader_parameter("tex", tex if tex else PlaceholderTexture2D.new())
+			m.set_shader_parameter("tint", _foliage.albedo_color)
+			_thermal_mats[tex] = m
+		copy.surface_set_material(k, _thermal_mats[tex])
+	_thermal_meshes[mesh] = copy
+	return copy
 
 
 func _build() -> void:

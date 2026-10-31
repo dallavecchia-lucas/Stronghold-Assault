@@ -23,6 +23,11 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
 
 **The map.** The stronghold is a mountain with a bunker dug into each of its four faces (`game/assets/stronghold/stronghold.glb`). The Keep is the reactor in the core hall under the peak. Attackers come from the south, east and west. Each of those faces has a blast-door gate on its middle ground tunnel; every other tunnel is welded shut. Once a gate is down, only Chimps, Breaching Rams and Kangaroo Commandos can get inside; everyone else fights from outside. Inside, they can also climb the stair shafts to the gun decks and the ladders to the roofs. Forest groves stand off to the sides of the attack lanes; they burn (the Flame Squads), and a burnt forest never grows back. Out by each lane stands one of the attackers' Forward Helipad Bases (south, east and west: see the Attacker section), the Infiltrator Squads' targets. The defenders hold the gun decks and roofs: a machine gun over each gate, riflemen along the decks, the mortar on the south roof and two AA turrets on every roof. The guns can't fire into the doorway right below them; the mortar covers it.
 
+**Maps.** The menu has a map picker (`--map=jungle|classic` on the command line). Both have the same stronghold; around it:
+
+- **Jungle Keep** (the default; `game/scripts/match/jungle/`). A 1.6 km square of jungle, everything at its real size. The stronghold stands in a 270 m clearing in the middle. A 42 m river crosses the whole map south of it, west to east; a tributary comes down out of the north-west into a lake and on into it, and another river runs down the east side of the clearing from the north edge. Steel through-truss bridges cross at the four bridge sites (three over the big river, one over the east river toward the Outpost); the rivers and the lake are impassable, so every crossing is a bridge. The attackers' main spawn is the **Mobile Command Citadel** (a deployed headquarters, 19.5 m tall, about 50 m across) at the south edge; their forward spawns are the **Quarry** helipad west of the Keep (below a hillside quarry's benches) and the **Outpost** helipad east of it, across the east river. The **prison** (a concrete fortress 42 m to the top of its watchtower, about 90 by 80 m) stands to the north on a plateau behind a 24 m cliff that faces the Keep; the plateau slopes down to the jungle round the cliff's ends. Four wooded ridges (22-44 m) rise near the corners and south-east of the Keep. Dirt tracks link the sites. The jungle: emergent kapok giants (40-56 m, buttress roots, lianas) over a broadleaf canopy (24-38 m), palms along the rivers and the clearing's edge, bamboo stands, bananas, tree ferns, elephant ears, ferns, grass and shrubs, about 200,000 plants in all. The whole jungle counts as forest (Chimps are faster in it, the Sniper can't make units out in it without thermal sight, whose view sees through every plant), its 7,700 trees burn and Serpent Snipers nest in them; the shrubs are bush traps. Units path round the emergent giants and brush past the slimmer trunks; they walk through the undergrowth. The army walks a long way (550-650 m from the citadel to a gate), so the defenders hold for 15 minutes here. The RTS camera zooms out further, and flyers keep above the canopy.
+- **Classic Field** (`LevelBuilder`): the 400 m open field described above, with its groves, lanes and the three edge spawns.
+
 **Defender (first person)**
 - `1`–`9`: take over a post (machine guns, mortar, riflemen) · `G`: the Gunner Squad · `Tab`: jump to the post with the most enemies nearby · `B`: buy an AA Squad · `N`: buy a Flame Squad · `M`: buy an Infiltrator Squad · `K`: buy a Sniper · `F1`–`F6`: take command of a bought squad or Sniper
 - Rifleman: `WASD` move, `Shift` sprint, `Space` jump, `LMB` fire, `RMB` aim, `R` reload
@@ -138,7 +143,7 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
   - `G` bush trap (when no bison, talon or lioness skill is ready): `LMB` a bush (`RMB` or `G` cancels). It pushes its rifle in under the bush, hidden there (the bushes are 2.8–3.3 m across), and coils round the bush (8 s), and lies in wait: it never shoots while coiled. A defender on the ground who comes within 4 m of the bush (a soldier or squad trooper, not an infiltrator keeping her low profile) it strikes, darting out and winding round its prey like an anaconda. Held in its coils, the defender can't move or fight and loses health steadily until it dies 15 s later. The squeeze can't be called off (the snake takes no orders until it is done); then it lets go and coils round its bush again. Meanwhile it can be shot: killed before the 15 s are up, it lets its prey go with the health it has left. Any order uncoils it (8 s), and it picks its rifle up before it goes. Coiled round a bush it is 70% see-through on the defender's side, with no shadow and no health bar, like a sneaking lioness; on yours it looks as ever, with a tall-grass-and-snake-head icon over it once it is all coiled.
   - The CPU brings Serpent Snipers from its third wave on. They climb a tree near their way from which the gate is in their reach and snipe from the crown; otherwise they lie in wait round a bush where the army saw the defenders out on the field lately. They come down (uncoil) and go on once nothing has come their way for a while.
 - Sniper tags: a unit the defenders' Sniper hits is tagged for 20 s (she keeps up to five tagged at a time). A red aim icon hangs over it on your screen too; defenders hit it 20% harder; and a tagged lioness can't sneak (`F` leaves her out, and the selection panel says why). The tag runs out, or goes with the unit. Her rounds' tracers and white trails show where she is shooting from. A forest hides your units from her: left to herself she never picks one in among the trees, and the player driving her makes them out clearly only with her thermal sight (15 s of it, then a minute to recharge).
-- Forward Helipad Bases (`S Pad`, `E Pad`, `W Pad`): a deck on stilts with a helipad and the camp round it, one out by each attack lane. While you hold one it is a forward spawn point (its button on the spawn row) and brings in +1.5 supply/s. It can't be shot down, but the defenders' Infiltrator Squads sabotage it: then you lose control of it (no spawning there, no supply; it smokes and a dashed ring marks where to stand) until you retake it: ground units within 10 m of its deck for 15 s (sooner the more there are, up to four), with no defender that close (CONTESTED). The CPU attacker spawns its waves at the side's helipad while it holds it and sends the nearest units to retake a sabotaged one.
+- Forward Helipad Bases (`S Pad`, `E Pad`, `W Pad` on the classic field; `Quarry` and `Outpost` on the Jungle Keep, whose main spawn is `Main`, the citadel): a deck on stilts with a helipad and the camp round it, one out by each attack lane. While you hold one it is a forward spawn point (its button on the spawn row) and brings in +1.5 supply/s. It can't be shot down, but the defenders' Infiltrator Squads sabotage it: then you lose control of it (no spawning there, no supply; it smokes and a dashed ring marks where to stand) until you retake it: ground units within 10 m of its deck for 15 s (sooner the more there are, up to four), with no defender that close (CONTESTED). The CPU attacker spawns its waves at the side's helipad while it holds it and sends the nearest units to retake a sabotaged one.
 - `Tab` cycles spawn point (a sabotaged helipad is skipped) · `Ctrl+1`–`5` save a group, `1`–`5` recall it
 - Camera: `WASD`/arrows/screen edge to pan, `Q`/`E` or middle mouse to rotate, wheel to zoom
 - `Esc` pauses (both sides)
@@ -167,6 +172,7 @@ Plays a scripted match at 4× speed with no window and prints a report (useful a
 ```sh
 godot --path game --headless -- --autotest=defender --duration=120
 godot --path game --headless -- --autotest=attacker --duration=120
+godot --path game --headless -- --autotest=attacker --duration=120 --map=classic   # the classic field (default: the Jungle Keep)
 ```
 
 ### Sniper showcase
@@ -364,6 +370,25 @@ python3 tools/video/cut_showcase.py dog.avi dog.log media/dog_showcase.mp4
 ```
 
 The test checks that no dog ever comes within a mine's reach (2.05 m) of a live mine but the one it digs, that every dig takes 6 s, that the picks are on the edge of what is left of the field, and that only the mine being dug shows to the attacker. `-- --video` cuts in the cameras (round the dog standing, low across the field on the defender's side, close by the first dog to dig), marks the hidden mines for the viewer (red: the player never sees them) with a counter of how many are left, plays most of the sweep 4x faster and cuts the waits.
+
+### Jungle Keep showcase
+
+Checks the Jungle Keep's navmesh: a path from the citadel to every gate and from each helipad to the gate facing it, none of them through the water (they cross on the bridges), the citadel's to the south gate over the middle bridge. With `--shots` it then takes stills round the map, units standing about for scale:
+
+```sh
+godot --path game --headless res://scenes/dev/jungle_showcase.tscn   # prints and checks: JUNGLE SHOWCASE PASS / FAIL
+godot --path game --resolution 1600x900 res://scenes/dev/jungle_showcase.tscn -- --shots=/tmp/jungle [--only=citadel,bridge_main]
+# map_top, map_oblique, keep_clearing, rts_view, citadel, bridge_main, east_bridge, outpost, quarry,
+# prison_cliff, prison_close, lake, jungle_floor, canopy (.png)
+```
+
+How it is built (`game/scripts/match/jungle/`):
+
+- `JungleLayout`: where everything is (the rivers' centrelines, the lake, the ridges, the plateau and its cliff, the quarry, the sites, the bridge sites, the tracks).
+- `JungleTerrain`: the ground as a height grid every 2 m out to 880 m (past the map's edge), worked out on the worker threads from the layout, drawn in 100 m chunks with a splat-mapped shader (jungle floor, the clearing's grass, mud by the water, the tracks, rock on the steep faces and the quarry), collided with as a `HeightMapShape3D`. One water plane at -1.8 m shows only where the land dips under it.
+- `JungleFlora`: the plants, scattered by kind and drawn in `MultiMesh` batches per 150 m chunk with visibility ranges; trees switch to a light `_far` model past 300 m. The trees are `ForestTree` proxies (collision, the navmesh, burning, Serpent nests) with no model of their own until they catch fire; the shrubs are `Bush` proxies.
+- `TrussBridge`: a Pratt through-truss on concrete abutments (a pier mid-river on the long spans), its deck flush with the banks.
+- `JungleLevel` (a `LevelBuilder`): the environment, the sites and the navmesh, baked in 200 m tiles on the worker threads (the static colliders parsed once, the ground added with the water cut out of it, only the emergent giants' trunks cut out of it: every polygon costs every navmesh query); a giant that falls rebakes only its tile. The squads' navmesh queries go through `LevelBuilder.nav_closest` / `nav_path`, which on the tiles look only round the point asked about (Godot's map-wide closest-point query goes over every polygon on the map).
 
 ### Infiltrator showcase
 
@@ -594,13 +619,28 @@ npx @gltf-transform/cli weld t3.glb game/assets/environment/majestic_oak/majesti
 | orbital_sentry_gun | east/west gate machine guns; unmanned gun-deck mounts |
 | arctic_sentinel_cannon | mortar on the south roof |
 | sentinel_spire | roof (AA) mounts |
-| forward_helipad_base | the attackers' Forward Helipad Bases (`AttackerBase`, 9.8 m to the mast tips) |
+| forward_helipad_base | the attackers' Forward Helipad Bases (`AttackerBase`, 14.7 m to the mast tips: the pad's touchdown square about 17 m across, room for a transport helicopter, the deck 39 by 30 m) |
+| violet_fortress | the Jungle Keep's prison (`JungleLevel`, 42 m to the top of the watchtower) |
+| mobile_command_citadel | the Jungle Keep's main spawn, the Mobile Command Citadel (`JungleLevel`, 19.5 m to the top of its masts) |
 
-Without Node.js at hand, `tools/gltf/process_prop.py` does the same (pivot at the bottom centre, textures fitted to 1024 px and re-encoded as JPEG at 85) on numpy and Pillow; it is how the helipad was processed:
+Without Node.js at hand, `tools/gltf/process_prop.py` does the same (pivot at the bottom centre, textures fitted to 1024 px and re-encoded as JPEG at 85) on numpy and Pillow; it is how the helipad, the prison and the citadel were processed (the last two with `--size 2048`: they are big):
 
 ```sh
 python3 tools/gltf/process_prop.py --input assets_src/structures/forward_helipad_base/forward_helipad_base_meshy.glb \
     --output game/assets/structures/forward_helipad_base/forward_helipad_base.glb
+```
+
+```sh
+python3 tools/gltf/process_prop.py --input assets_src/structures/violet_fortress/violet_fortress_meshy.glb \
+    --output game/assets/structures/violet_fortress/violet_fortress.glb --size 2048
+python3 tools/gltf/process_prop.py --input assets_src/structures/mobile_command_citadel/mobile_command_citadel_meshy.glb \
+    --output game/assets/structures/mobile_command_citadel/mobile_command_citadel.glb --size 2048
+```
+
+The Jungle Keep's plants are generated by `tools/gltf/build_jungle_flora.py` (numpy and Pillow, no Blender): each a mesh at its real size with its origin at the foot of the trunk, leaves as alpha-cut double-sided cards with textures it draws (leaf sprays, palm and fern fronds, torn banana leaves, elephant ears, grass, bamboo sprays) and tileable fractal barks. A crown is clumps of cards on ellipsoid shells at the branches' ends, their normals leaning out of the crown so it shades as one mass. kapok (48 m nominal), canopy_a (30 m), canopy_b (34 m), palm (18 m), bamboo (13 m), banana, tree_fern, fern, elephant_ear and grass; the trees also come as `_far` models with a quarter of the cards:
+
+```sh
+python3 tools/gltf/build_jungle_flora.py --out game/assets/environment/jungle [--only palm,fern] [--seed 7]
 ```
 
 The stronghold itself is generated by `tools/blender/build_stronghold.py`. Rebuild it with Blender 5.2, or the `bpy` 5.2 pip package (Python 3.13):
@@ -615,6 +655,6 @@ The game strips the placeholder weapons (`PH_*`) from its mounts and puts the tu
 
 - `assets_src/` — raw exports from Meshy (untouched originals)
 - `game/assets/` — processed, game-ready versions (Blender cleanup, rigging, texture resizing)
-- `game/scripts/` — `match/` (level, rules), `attacker/` (RTS commander, CPU attacker), `defense/` (stations, defender controller), `units/`, `combat/`, `ui/`
+- `game/scripts/` — `match/` (level, rules; `match/jungle/` the Jungle Keep), `attacker/` (RTS commander, CPU attacker), `defense/` (stations, defender controller), `units/`, `combat/`, `ui/`
 - `tools/blender/` — asset processing scripts
-- `tools/gltf/` — asset scripts that need no Blender (numpy on the glTF): static props, the Sniper's rifle, the Infiltrator's, the Lioness's, the Sniper's and the Mule Artillery's rigs, the Wolf Medic's Dig clip
+- `tools/gltf/` — asset scripts that need no Blender (numpy on the glTF): static props, the Jungle Keep's plants, the Sniper's rifle, the Infiltrator's, the Lioness's, the Sniper's and the Mule Artillery's rigs, the Wolf Medic's Dig clip

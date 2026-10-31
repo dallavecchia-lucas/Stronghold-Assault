@@ -676,7 +676,7 @@ func _pick_spot(elsewhere := false) -> void:
 	var best := Vector3.INF
 	var best_cost := INF
 	for s in (near_spots if not near_spots.is_empty() else spots):
-		var p := NavigationServer3D.map_get_closest_point(map, s[0] + Vector3.UP * 0.5)
+		var p := LevelBuilder.nav_closest(map, s[0] + Vector3.UP * 0.5)
 		if _flat(p, s[0]) > 4.0 or (elsewhere and _spot != Vector3.INF and _flat(p, _spot) < 1.0):
 			continue
 		var mined := 0

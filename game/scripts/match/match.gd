@@ -21,11 +21,11 @@ var _autotest_t := 0.0
 
 
 func _ready() -> void:
-	time_left = GameConfig.match_duration
 	level = JungleLevel.new() if GameConfig.map == "jungle" else LevelBuilder.new()
 	level.name = "Level"
 	add_child(level)
 	level.build()
+	time_left = level.match_time()
 
 	var units_root := Node3D.new()
 	units_root.name = "Units"

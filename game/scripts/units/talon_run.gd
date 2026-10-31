@@ -238,6 +238,9 @@ func _ahead(u: AttackerUnit) -> float:
 
 
 static func _top(space: PhysicsDirectSpaceState3D, p: Vector3) -> float:
+	var floor_y := LevelBuilder.flight_floor(p)
+	if not is_nan(floor_y):
+		return floor_y
 	var q := PhysicsRayQueryParameters3D.create(Vector3(p.x, 200.0, p.z), Vector3(p.x, -5.0, p.z), GameConfig.LAYER_WORLD)
 	var hit := space.intersect_ray(q)
 	return maxf(hit.position.y, 0.0) if not hit.is_empty() else 0.0

@@ -9,6 +9,7 @@ extends Node3D
 ##   map_oblique      over the citadel looking north across the map
 ##   keep_clearing    the stronghold in its clearing, the jungle closing in
 ##   rts_view         the RTS camera over the south gate
+##   rts_river        the RTS camera over the river and the middle bridge, the jungle either side
 ##   citadel          the Mobile Command Citadel, the main spawn, with the army for scale
 ##   bridge_main      the middle bridge over the river, an elephant crossing
 ##   east_bridge      the east river's bridge, toward the Outpost
@@ -17,7 +18,7 @@ extends Node3D
 ##   prison_cliff     the prison on its plateau, the cliff in front
 ##   prison_close     the prison's walls and towers, a soldier at the gate for scale
 ##   lake             the north-west river's lake
-##   jungle_floor     in the jungle at eye height
+##   jungle_floor     on the track to the Quarry, in the jungle at eye height
 ##   canopy           over the canopy, the emergent giants above it
 ##
 ## The checks: a path on the navmesh from the main spawn to every gate, and from each helipad to the gate
@@ -28,16 +29,17 @@ const SHOTS := {
 	"map_top": [Vector3(0, 2100, 1), Vector3(0, 0, 0), 46.0],
 	"map_oblique": [Vector3(0, 380, 980), Vector3(0, 0, -150), 50.0],
 	"keep_clearing": [Vector3(210, 120, 330), Vector3(0, 10, 0), 50.0],
-	"rts_view": [Vector3(0, 0, 0), Vector3(0, 0, 0), 55.0],
+	"rts_view": [Vector3(10, 0, 130), Vector3(0, 0, 0), 55.0],
+	"rts_river": [Vector3(-40, 0, 455), Vector3(0, 0, 0), 55.0],
 	"citadel": [Vector3(-55, 14, 600), Vector3(0, 6, 690), 52.0],
-	"bridge_main": [Vector3(-42, 9, 432), Vector3(0, 2, 482), 55.0],
-	"east_bridge": [Vector3(322, 16, 30), Vector3(372, 2, -10), 55.0],
+	"bridge_main": [Vector3(-14, 7, 534), Vector3(0, 3, 482), 58.0],
+	"east_bridge": [Vector3(318, 7, 2), Vector3(372, 3, -10), 58.0],
 	"outpost": [Vector3(505, 13, 10), Vector3(560, 4, -40), 55.0],
-	"quarry": [Vector3(-385, 20, 15), Vector3(-480, 4, -40), 58.0],
-	"prison_cliff": [Vector3(10, 45, -330), Vector3(-15, 18, -600), 52.0],
-	"prison_close": [Vector3(30, 30, -555), Vector3(-20, 32, -650), 55.0],
-	"lake": [Vector3(-560, 22, 170), Vector3(-650, -1, 270), 58.0],
-	"jungle_floor": [Vector3(-330, 0, 120), Vector3(-350, 6, 60), 70.0],
+	"quarry": [Vector3(-398, 26, 8), Vector3(-505, 6, -40), 60.0],
+	"prison_cliff": [Vector3(70, 100, -360), Vector3(-20, 22, -610), 50.0],
+	"prison_close": [Vector3(55, 34, -575), Vector3(-20, 38, -650), 58.0],
+	"lake": [Vector3(-585, 9, 205), Vector3(-660, 0, 300), 62.0],
+	"jungle_floor": [Vector3(-464, 0, 215), Vector3(-454, 6, 130), 68.0],
 	"canopy": [Vector3(200, 62, -260), Vector3(320, 30, -400), 60.0],
 }
 
@@ -199,11 +201,11 @@ func _shot(name: String) -> void:
 	var env := (level.find_children("*", "WorldEnvironment", true, false)[0] as WorldEnvironment).environment
 	env.fog_enabled = name != "map_top"
 	cam.fov = s[2]
-	if name == "rts_view":
-		# The game's RTS camera: pitched 58 degrees down, 90 m out, over the south field.
-		var focus := Vector3(10, 0, 130)
+	if name.begins_with("rts_"):
+		# The game's RTS camera: pitched 58 degrees down, 90-130 m out (the shot's first point is where it looks).
+		var focus: Vector3 = s[0]
 		var pitch := deg_to_rad(-58.0)
-		var zoom := 90.0
+		var zoom := 90.0 if name == "rts_view" else 130.0
 		cam.position = focus + Vector3(0, -sin(pitch) * zoom, cos(pitch) * zoom)
 		cam.rotation = Vector3(pitch, 0, 0)
 	else:
@@ -213,7 +215,7 @@ func _shot(name: String) -> void:
 			at.y = level.ground.height_at(at.x, at.z) + 1.7
 		cam.position = at
 		cam.look_at(s[1])
-	for k in 6:
+	for k in 3:
 		await get_tree().process_frame
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png("%s/%s.png" % [shots_dir, name])

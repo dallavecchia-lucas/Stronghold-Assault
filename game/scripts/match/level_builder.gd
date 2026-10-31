@@ -133,6 +133,36 @@ static var jungle := false
 static var terrain: Object = null
 
 
+## A level whose navmesh is in tiles (JungleLevel), for nav_closest() and nav_path(); null: one region.
+static var tiles_level: Object = null
+static var _path_query := NavigationPathQueryParameters3D.new()
+static var _path_result := NavigationPathQueryResult3D.new()
+
+
+## The point on the navmesh closest to `p`. On a tiled navmesh it looks only in the tile under `p` (and
+## a neighbour that could be closer): a query over the whole map goes through every polygon on it.
+static func nav_closest(map: RID, p: Vector3) -> Vector3:
+	if tiles_level:
+		return tiles_level.tile_closest(map, p)
+	return NavigationServer3D.map_get_closest_point(map, p)
+
+
+## A path from `a` to `b` on the navmesh (NavigationServer3D.map_get_path). On a tiled navmesh it is
+## searched only over the tiles round the two ends, for the short walks the squads check.
+static func nav_path(map: RID, a: Vector3, b: Vector3, optimize: bool, layers := 1) -> PackedVector3Array:
+	if tiles_level == null:
+		return NavigationServer3D.map_get_path(map, a, b, optimize, layers)
+	_path_query.map = map
+	_path_query.start_position = a
+	_path_query.target_position = b
+	_path_query.navigation_layers = layers
+	_path_query.path_postprocessing = NavigationPathQueryParameters3D.PATH_POSTPROCESSING_CORRIDORFUNNEL if optimize \
+			else NavigationPathQueryParameters3D.PATH_POSTPROCESSING_EDGECENTERED
+	_path_query.included_regions = tiles_level.tiles_round(a, b)
+	NavigationServer3D.query_path(_path_query, _path_result)
+	return _path_result.path
+
+
 ## The ground's height under `p` (0 on the flat classic map).
 static func ground_height(p: Vector3) -> float:
 	return terrain.height_at(p.x, p.z) if terrain else 0.0
@@ -143,10 +173,23 @@ static func above_ground(p: Vector3) -> float:
 	return p.y - ground_height(p)
 
 
+## How high the land and what stands on it reach under `p`, for flyers to keep clear of, where the map
+## knows it without a ray: the Jungle Keep's ground, and over the jungle its canopy (CANOPY_TOP). NAN
+## where a ray has to find it (the classic map, and round the stronghold's mountain).
+const CANOPY_TOP := 36.0
+
+
+static func flight_floor(p: Vector3) -> float:
+	if terrain == null or base_distance(p) < 20.0:
+		return NAN
+	return maxf(ground_height(p), 0.0) + (CANOPY_TOP if JungleFlora.in_jungle(p) else 0.0)
+
+
 func build() -> void:
 	map_half = MAP_HALF
 	jungle = false
 	terrain = null
+	tiles_level = null
 	_build_all()
 
 
@@ -616,6 +659,11 @@ static func _dist_to_segment(p: Vector3, a: Vector3, b: Vector3) -> float:
 func rally_point(idx: int) -> Vector3:
 	var at: Vector3 = spawn_points[idx]
 	return at if spawn_bases[idx] != null else at * 0.72
+
+
+## How long the defenders have to hold (s).
+func match_time() -> float:
+	return GameConfig.match_duration
 
 
 ## Where the RTS camera starts.

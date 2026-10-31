@@ -53,6 +53,7 @@ var _baked := {}  # Vector2i -> NavigationMesh, the first bake's tiles until the
 func build() -> void:
 	map_half = JungleLayout.MAP_HALF
 	jungle = true
+	tiles_level = self
 	edge_spawns = {"south": 0, "east": 0, "west": 0}
 	_build_all()
 	terrain = ground
@@ -88,8 +89,9 @@ func _build_environment() -> void:
 	var sky_mat := ProceduralSkyMaterial.new()
 	sky_mat.sky_top_color = Color(0.3, 0.46, 0.66)
 	sky_mat.sky_horizon_color = Color(0.7, 0.74, 0.72)
-	sky_mat.ground_horizon_color = Color(0.46, 0.5, 0.42)
-	sky_mat.ground_bottom_color = Color(0.12, 0.15, 0.1)
+	# Below the horizon the sky is the haze over the far jungle, so the land fades into it.
+	sky_mat.ground_horizon_color = Color(0.56, 0.62, 0.6)
+	sky_mat.ground_bottom_color = Color(0.3, 0.36, 0.3)
 	sky_mat.sun_angle_max = 25.0
 	var sky := Sky.new()
 	sky.sky_material = sky_mat
@@ -102,15 +104,20 @@ func _build_environment() -> void:
 	env.ssao_enabled = true
 	env.ssao_radius = 2.0
 	env.ssao_intensity = 2.0
+	# The rivers and the lake mirror the jungle and the sky (Forward+).
+	env.ssr_enabled = true
+	env.ssr_max_steps = 48
+	env.ssr_fade_in = 0.2
+	env.ssr_fade_out = 2.0
 	env.glow_enabled = true
 	env.glow_intensity = 0.5
 	env.glow_bloom = 0.04
 	# Humid haze: the far jungle fades blue-grey.
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.64, 0.7, 0.68)
-	env.fog_density = 0.0014
-	env.fog_aerial_perspective = 0.55
-	env.fog_sky_affect = 0.35
+	env.fog_light_color = Color(0.6, 0.67, 0.66)
+	env.fog_density = 0.00065
+	env.fog_aerial_perspective = 0.35
+	env.fog_sky_affect = 0.25
 	env.adjustment_enabled = true
 	env.adjustment_saturation = 1.12
 	env.adjustment_contrast = 1.06
@@ -177,6 +184,15 @@ func rally_point(idx: int) -> Vector3:
 		return spawn_points[idx]
 	# Out in front of the citadel, short of the river.
 	return spawn_points[idx] + Vector3(0, 0, -30)
+
+
+## The army walks a long way here (550-650 m from the citadel to a gate): the defenders hold for
+## JUNGLE_TIME rather than the classic map's ten minutes.
+const JUNGLE_TIME := 900.0
+
+
+func match_time() -> float:
+	return maxf(GameConfig.match_duration, JUNGLE_TIME) if GameConfig.autotest == "" else GameConfig.match_duration
 
 
 func camera_home() -> Vector3:
@@ -343,6 +359,9 @@ func _make_nav_template() -> NavigationMesh:
 	nm.agent_max_slope = 40.0
 	nm.edge_max_error = 1.0
 	nm.border_size = NAV_BORDER
+	# Big open regions merged into few polygons (navmesh queries go over every polygon on the map).
+	nm.region_min_size = 8.0
+	nm.region_merge_size = 400.0
 	return nm
 
 
@@ -357,6 +376,46 @@ func _tile_of(p: Vector3) -> Vector2i:
 
 func _tiles_across() -> int:
 	return int(map_half * 2.0 / NAV_TILE)
+
+
+## The tile itself first, then its neighbours.
+const _TILE_ORDER: Array[Vector2i] = [Vector2i(0, 0), Vector2i(-1, 0), Vector2i(1, 0), Vector2i(0, -1), Vector2i(0, 1),
+		Vector2i(-1, -1), Vector2i(1, -1), Vector2i(-1, 1), Vector2i(1, 1)]
+
+
+## The navmesh point closest to `p` (LevelBuilder.nav_closest): in the tile under it, or a neighbouring
+## tile whose edge is nearer than what that found.
+func tile_closest(map: RID, p: Vector3) -> Vector3:
+	var home := _tile_of(p)
+	var best := Vector3.INF
+	var best_d := INF
+	for off in _TILE_ORDER:
+		var t := home + off
+		if not _tiles.has(t) or (_tiles[t] as NavigationRegion3D).navigation_mesh == null:
+			continue
+		if t != home:
+			var r := _tile_rect(t)
+			var edge := Vector2(maxf(maxf(r.position.x - p.x, p.x - r.end.x), 0.0), maxf(maxf(r.position.y - p.z, p.z - r.end.y), 0.0)).length()
+			if edge >= best_d:
+				continue
+		var q := NavigationServer3D.region_get_closest_point((_tiles[t] as NavigationRegion3D).get_rid(), p)
+		var d := q.distance_to(p)
+		if d < best_d:
+			best_d = d
+			best = q
+	return best if best != Vector3.INF else NavigationServer3D.map_get_closest_point(map, p)
+
+
+## The tiles round `a` and `b` (the box over both, NAV_TILE * 0.25 bigger), for LevelBuilder.nav_path.
+func tiles_round(a: Vector3, b: Vector3) -> Array[RID]:
+	var m := NAV_TILE * 0.25
+	var t0 := _tile_of(Vector3(minf(a.x, b.x) - m, 0, minf(a.z, b.z) - m))
+	var t1 := _tile_of(Vector3(maxf(a.x, b.x) + m, 0, maxf(a.z, b.z) + m))
+	var out: Array[RID] = []
+	for j in range(t0.y, t1.y + 1):
+		for i in range(t0.x, t1.x + 1):
+			out.append((_tiles[Vector2i(i, j)] as NavigationRegion3D).get_rid())
+	return out
 
 
 ## Rebakes every tile (the first time), or the tiles marked dirty since.
