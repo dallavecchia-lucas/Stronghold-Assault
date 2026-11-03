@@ -28,6 +28,13 @@ extends CanvasLayer
 ##    climb it and the trees round it; RMB/F cancel)
 ## G with no bison, talon or lioness skill ready: the selected Serpent Snipers' bush trap, LMB a bush (they coil
 ##    round it and the bushes round it; RMB/G cancel)
+## Shift+B (or the HUD's BRIDGE button): drop a folding bridge across a river (the Jungle Keep): a cyan see-through
+##    preview of it follows the cursor, snapped across the river nearest it (red where it can't go, and why); LMB
+##    drops it (it comes down out of the sky and unfolds), RMB/Shift+B cancel. 30 a match (AttackerCommander).
+## RMB a hippo or an elephant with riders selected: they hop onto its back (two to a carrier); sent across the water
+##    the riders get onto the carriers moved with them by themselves. Space with no ram selected: the selected
+##    carriers let their riders off.
+## A defender on a bridge sets off its alarm: the banner at the top (click it to look) for as long as one is on it.
 ## The fog of war (AttackerVision) dims the land the army doesn't see (FogOverlay); defenders in it
 ## can't be ordered at.
 
@@ -39,6 +46,9 @@ const BOMBARD_KEY := KEY_G
 const MISSILE_KEY := KEY_O
 const RAM_KEY := KEY_SPACE
 const PING_KEY := KEY_P
+## With Shift: the bridge.
+const BRIDGE_KEY := KEY_B
+const BRIDGE_OK := Color(0.25, 0.95, 1.0)
 const SMOKE_FILL := Color(0.2, 0.9, 0.6, 0.35)
 const SMOKE_LINE := Color(0.3, 1.0, 0.7)
 const MISSILE_LINE := Color(1.0, 0.35, 0.3)
@@ -87,6 +97,16 @@ var _line_button: Button
 var _dog_button: Button
 var _gun_button: Button
 var _fog: FogOverlay
+## The bridge's preview (cyan where it can go, red where it can't), the plan under the cursor, the HUD's button,
+## and the alarm banner (the bridges with defenders on them).
+var _bridge_ghost := {}
+var _bridge_ok_mat: StandardMaterial3D
+var _bridge_bad_mat: StandardMaterial3D
+var _bridge_plan := {}
+var _bridge_button: Button
+var _alarm_banner: Button
+var _alarms: Array = []
+var _alarm_beep: AudioStreamPlayer
 
 
 func _ready() -> void:
@@ -106,7 +126,9 @@ func _ready() -> void:
 	_build_aim_preview()
 	_build_smoke_preview()
 	_build_missile_preview()
+	_build_bridge_preview()
 	_build_hud()
+	commander.bridge_alarm.connect(_on_bridge_alarm)
 	if AttackerVision.instance:
 		_fog = FogOverlay.new()
 		_fog.vision = AttackerVision.instance
@@ -154,6 +176,9 @@ func _unhandled_input(event: InputEvent) -> void:
 					# Elephants that didn't fire stay ready for the next target: keep aiming.
 					if _fire_missiles(event.position) and not _ready_elephants().is_empty():
 						return
+				"bridge":
+					if not drop_bridge(event.position):
+						return  # it can't go there: still placing
 		if event.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT]:
 			_set_aiming("")
 			return
@@ -217,9 +242,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.physical_keycode == MISSILE_KEY:
 			_set_aiming("missile" if _aiming != "missile" and not _ready_elephants().is_empty() else "")
 			return
+		if event.physical_keycode == BRIDGE_KEY and event.shift_pressed:
+			toggle_bridge()
+			return
 		if event.physical_keycode == RAM_KEY:
 			_alive_selection()
-			commander.submit({"type": "ram", "units": selected.map(func(u): return u.unit_id)})
+			if selected.any(func(u): return u.has_ram()):
+				commander.submit({"type": "ram", "units": selected.map(func(u): return u.unit_id)})
+			else:
+				commander.submit({"type": "unload", "units": selected.map(func(u): return u.unit_id)})
 			return
 		if event.physical_keycode == PING_KEY:
 			_alive_selection()
@@ -307,6 +338,19 @@ func _issue_order(pos: Vector2, force_move: bool) -> void:
 	if hit.is_empty():
 		return
 	var target = Combat.find_damageable(hit.collider)
+	if target == null:
+		# A friendly unit (on its own layer): a carrier the riders in the selection board.
+		var own := _ray(pos, GameConfig.LAYER_ATTACKERS)
+		target = Combat.find_damageable(own.collider) if not own.is_empty() else null
+		if target is AttackerUnit and target.can_carry() and selected.any(func(u): return u != target and u.can_ride()):
+			var riders := selected.filter(func(u): return u != target and u.can_ride())
+			commander.submit({"type": "board", "units": riders.map(func(u): return u.unit_id), "carrier": target.get_path()})
+			var rest := selected.filter(func(u): return u != target and not u.can_ride())
+			if not rest.is_empty():
+				commander.submit({"type": "move", "units": rest.map(func(u): return u.unit_id), "pos": target.global_position, "attack": not force_move})
+			_ping(target.global_position, BRIDGE_OK)
+			return
+		target = Combat.find_damageable(hit.collider)
 	if target and not AttackerVision.sees_node(target):
 		target = null  # hidden in the fog of war: an attack-move there
 	if target and target.team != GameConfig.TEAM_ATTACKER and target.is_alive() and not force_move:
@@ -330,7 +374,11 @@ func _set_aiming(mode: String) -> void:
 	_aim_preview.visible = mode in ["cluster", "bombard", "strafe", "bomb", "flash", "nest", "trap"]
 	_smoke_preview.visible = mode == "smoke"
 	_missile_preview.visible = mode == "missile"
-	_aim_label.visible = mode in ["missile", "nest", "trap"]
+	_aim_label.visible = mode in ["missile", "nest", "trap", "bridge"]
+	if _bridge_ghost.has("root"):
+		_bridge_ghost.root.visible = mode == "bridge"
+	if _bridge_button:
+		_bridge_button.button_pressed = mode == "bridge"
 
 
 func _fire_cluster(screen_pos: Vector2) -> void:
@@ -753,6 +801,95 @@ func _update_missile_preview() -> void:
 		_aim_label.text = "Out of range"
 
 
+# ---------------------------------------------------------------- folding bridges
+
+func _build_bridge_preview() -> void:
+	if not RiverCrossing.active():
+		return
+	_bridge_ok_mat = FoldingBridge.ghost_material(true)
+	_bridge_bad_mat = FoldingBridge.ghost_material(false)
+	_bridge_ghost = FoldingBridge.build_model(FoldingBridge.REF_LENGTH, _bridge_ok_mat)
+	_bridge_ghost.root.visible = false
+	level.add_child(_bridge_ghost.root)
+
+
+## Bridge placing on or off (Shift+B, the HUD's button).
+func toggle_bridge() -> void:
+	if _aiming == "bridge" or commander.bridges_left <= 0 or not RiverCrossing.active():
+		_set_aiming("")
+	else:
+		_set_aiming("bridge")
+
+
+## The bridge under the cursor at `screen_pos`: FoldingBridge.plan of the ground there.
+func bridge_plan(screen_pos: Vector2) -> Dictionary:
+	var hit := _ray(screen_pos, GameConfig.LAYER_WORLD)
+	if hit.is_empty():
+		return {"ok": false, "reason": "Point at a river"}
+	return FoldingBridge.plan(hit.position)
+
+
+## Drops a bridge where the preview at `screen_pos` shows it; false if it can't go there.
+func drop_bridge(screen_pos: Vector2) -> bool:
+	var plan := bridge_plan(screen_pos)
+	if not plan.ok:
+		return false
+	var id := commander.submit({"type": "bridge", "pos": plan.xform.origin})
+	if id == 0:
+		return false
+	_ping(plan.xform.origin, BRIDGE_OK)
+	return true
+
+
+## The cyan preview at the bridge the cursor points at (red, and why, where it can't go).
+func _update_bridge_preview() -> void:
+	if commander.bridges_left <= 0:
+		_set_aiming("")
+		return
+	var mouse := get_viewport().get_mouse_position()
+	_bridge_plan = bridge_plan(mouse)
+	_aim_label.position = mouse + Vector2(22, 14)
+	var ghost: Node3D = _bridge_ghost.root
+	ghost.visible = _bridge_plan.has("xform")
+	if ghost.visible:
+		ghost.global_transform = _bridge_plan.xform
+		FoldingBridge.layout(_bridge_ghost, _bridge_plan.length, 0.0)
+		var mat := _bridge_ok_mat if _bridge_plan.ok else _bridge_bad_mat
+		for mi: MeshInstance3D in _bridge_ghost.meshes:
+			mi.material_override = mat
+	if _bridge_plan.ok:
+		_aim_label.text = "Bridge (%d m): LMB to drop it · %d left" % [roundi(_bridge_plan.length), commander.bridges_left]
+		_aim_label.add_theme_color_override("font_color", BRIDGE_OK)
+	else:
+		_aim_label.text = "Bridge: %s" % _bridge_plan.reason
+		_aim_label.add_theme_color_override("font_color", UIKit.DANGER)
+
+
+func _on_bridge_alarm(bridge: FoldingBridge, on: bool) -> void:
+	_alarms.erase(bridge)
+	if on:
+		_alarms.append(bridge)
+		_ping(bridge.global_position, UIKit.DANGER)
+		if not _alarm_beep.playing:
+			_alarm_beep.play()
+			get_tree().create_timer(1.6).timeout.connect(_alarm_beep.stop)
+
+
+func _update_alarm_banner() -> void:
+	_alarms = _alarms.filter(func(b): return is_instance_valid(b) and b.alarm_on)
+	_alarm_banner.visible = not _alarms.is_empty()
+	if _alarm_banner.visible:
+		var b: FoldingBridge = _alarms[-1]
+		var n: int = b.intruders.size()
+		_alarm_banner.text = "  ALARM: %d %s CROSSING BRIDGE %d  " % [n, "ENEMY" if n == 1 else "ENEMIES", b.bridge_id]
+		_alarm_banner.modulate.a = 1.0 if fmod(Time.get_ticks_msec() * 0.001 * FoldingBridge.ALARM_RATE, 1.0) < 0.6 else 0.7
+
+
+func _look_at_alarm() -> void:
+	if not _alarms.is_empty():
+		camera_rig.focus(_alarms[-1].global_position)
+
+
 func spawn(type_id: String) -> void:
 	commander.submit({"type": "spawn", "unit": type_id, "spawn": spawn_index})
 
@@ -891,17 +1028,44 @@ func _build_hud() -> void:
 	row.add_child(sp)
 	set_spawn_point(0)
 
-	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nBisons: G bombardment (LMB fire, RMB cancel), onto the gun decks and roofs too\nMule Artillery: T sets the gun up / disarms it (it can't move unless disarmed) · armed, G bombardment (LMB fire): further, harder and wider than the bisons'\nTalons: F strafe run (press LMB on the target, drag the way to fly, let go) · G bomb strike (LMB fire) · RMB cancels\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nGiraffes: see furthest through the fog · P ping: marks every defender it reaches, even under camo, and reveals infiltrators out of camo\nKangaroos: R flash grenade (LMB fire, RMB cancel) when no hippo's smoke is ready · they resupply units nearby\nLionesses: F sneak (then RMB a defender: they pounce) · G fire blast · T firing lines on/off when moved together\nSerpent Snipers: F sniper nest (LMB a tree: up it they see and shoot further; any move order climbs them down) · G bush trap (LMB a bush: coiled, they strike and crush a defender who comes close)\nWolf Medics: T healing (2 units each) / minesweeping (they find the hidden mines and dig them out; RMB sweeps on the way, Ctrl+RMB doesn't)\nChimps / Rams / Kangaroos: RMB next to a broken gate to send them in\nHelipads (S/E/W Pad): spawn there and +%.1f supply/s each while you hold them · sabotaged, stand ground units by one to retake it" % AttackerBase.INCOME,
+	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nBisons: G bombardment (LMB fire, RMB cancel), onto the gun decks and roofs too\nMule Artillery: T sets the gun up / disarms it (it can't move unless disarmed) · armed, G bombardment (LMB fire): further, harder and wider than the bisons'\nTalons: F strafe run (press LMB on the target, drag the way to fly, let go) · G bomb strike (LMB fire) · RMB cancels\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nGiraffes: see furthest through the fog · P ping: marks every defender it reaches, even under camo, and reveals infiltrators out of camo\nKangaroos: R flash grenade (LMB fire, RMB cancel) when no hippo's smoke is ready · they resupply units nearby\nLionesses: F sneak (then RMB a defender: they pounce) · G fire blast · T firing lines on/off when moved together\nSerpent Snipers: F sniper nest (LMB a tree: up it they see and shoot further; any move order climbs them down) · G bush trap (LMB a bush: coiled, they strike and crush a defender who comes close)\nWolf Medics: T healing (2 units each) / minesweeping (they find the hidden mines and dig them out; RMB sweeps on the way, Ctrl+RMB doesn't)\nChimps / Rams / Kangaroos: RMB next to a broken gate to send them in\nRivers: Shift+B drop a bridge (LMB, RMB cancel; 30 a match) · bears, snakes, hippos, elephants swim · the rest but mules, bisons, giraffes, rhinos ride hippos/elephants (RMB one, or send them across with it; Space lets them off)\nHelipads (S/E/W Pad): spawn there and +%.1f supply/s each while you hold them · sabotaged, stand ground units by one to retake it" % AttackerBase.INCOME,
 			13, Color(0.85, 0.85, 0.85, 0.75))
 	help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	help.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	help.position = Vector2(14, help.position.y - 240)
+	help.position = Vector2(14, help.position.y - 256)
 	root.add_child(help)
 
 	_aim_label = UIKit.label("", 15, MISSILE_LINE)
 	_aim_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_aim_label.visible = false
 	root.add_child(_aim_label)
+
+	# Folding bridges (the Jungle Keep's rivers): how many are left, and the button to drop one.
+	if RiverCrossing.active():
+		_bridge_button = UIKit.button("", 14)
+		_bridge_button.toggle_mode = true
+		_bridge_button.focus_mode = Control.FOCUS_NONE
+		_bridge_button.custom_minimum_size = Vector2(150, 34)
+		_bridge_button.tooltip_text = "Airdrop a folding bridge across a river: everyone can cross it (the defenders too: its alarm goes off)\nBears, snakes, hippos and elephants swim; the rest but the Mule Artillery, bisons, giraffes and rhinos ride across on hippos and elephants (2 each)"
+		_bridge_button.pressed.connect(toggle_bridge)
+		info.add_child(_bridge_button)
+	# Defenders on a bridge: a banner at the top while the alarm goes off (click it to look).
+	_alarm_banner = UIKit.button("", 20)
+	_alarm_banner.focus_mode = Control.FOCUS_NONE
+	_alarm_banner.add_theme_color_override("font_color", Color.WHITE)
+	var alarm_style := UIKit.panel_style(Color(0.7, 0.06, 0.04, 0.88))
+	for st in ["normal", "hover", "pressed"]:
+		_alarm_banner.add_theme_stylebox_override(st, alarm_style)
+	_alarm_banner.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	_alarm_banner.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_alarm_banner.position.y += 70
+	_alarm_banner.visible = false
+	_alarm_banner.pressed.connect(_look_at_alarm)
+	root.add_child(_alarm_banner)
+	_alarm_beep = AudioStreamPlayer.new()
+	_alarm_beep.stream = FoldingBridge._siren_stream()
+	_alarm_beep.volume_db = -14.0
+	add_child(_alarm_beep)
 
 
 func _process(_delta: float) -> void:
@@ -991,6 +1155,15 @@ func _process(_delta: float) -> void:
 			var soonest: float = kangaroos.map(func(u): return u.flash_cd).min()
 			if soonest > 0.0:
 				_selection_label.text += "  %ds" % ceili(soonest)
+	var carriers := selected.filter(func(u): return is_instance_valid(u) and u.can_carry())
+	if not carriers.is_empty():
+		var seats: int = carriers.reduce(func(n, u): return n + u.stats.seats.size(), 0)
+		var aboard: int = carriers.reduce(func(n, u): return n + u.riders.size(), 0)
+		_selection_label.text += "\nRiders %d/%d · RMB a carrier to board · Space lets them off" % [aboard, seats]
+	var crossing := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.is_crossing())
+	if not crossing.is_empty():
+		var riding := crossing.filter(func(u): return u.is_riding()).size()
+		_selection_label.text += "\nCrossing %d (%d swimming, %d riding) · can't fight or use skills" % [crossing.size(), crossing.size() - riding, riding]
 	var supplied := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.resupply > 0.0)
 	if not supplied.is_empty():
 		_selection_label.text += "\nResupplied %d · skills back %d%% sooner" % [supplied.size(), roundi(supplied[0].resupply * 100.0)]
@@ -1102,6 +1275,12 @@ func _process(_delta: float) -> void:
 		_update_nest_preview()
 	elif _aiming == "trap":
 		_update_trap_preview()
+	elif _aiming == "bridge":
+		_update_bridge_preview()
+	if _bridge_button:
+		_bridge_button.text = "BRIDGE  %d left  [Shift+B]" % commander.bridges_left
+		_bridge_button.disabled = commander.bridges_left <= 0
+	_update_alarm_banner()
 	for type_id in _spawn_buttons:
 		_spawn_buttons[type_id].disabled = not commander.can_afford(type_id)
 	# A sabotaged helipad spawns nothing until it is retaken.

@@ -132,6 +132,12 @@ extends RefCounted
 ##   played within run_scale) taking over above run_above m/s; anim_sneak: the clip while sneaking
 ##   (authored at anim_sneak_speed).
 ## steer: only move where the model faces, turning at turn_rate (rad/s), no strafing.
+## swim_*: swims across the Jungle Keep's rivers and its lake (RiverCrossing): bears, snakes, hippos and elephants.
+##   swim_speed m/s in the water, its feet swim_sink m under the surface. Swimming it can't attack or use skills.
+## seats: carries riders across the water (hippos and elephants): one spot each on its back (unit frame, -Z
+##   forward), at most two. rides: hops onto a carrier's back to cross (AttackerUnit.can_ride); every unit
+##   that neither swims, flies nor carries does, but the Mule Artillery, bisons, giraffes and rhinos
+##   (no_ride): those cross by a bridge or not at all. Riding it can't attack or use skills either.
 ## model: path to a processed GLB (front facing +Z, feet at origin).
 ## gun: a hand-held gun model (HeldGun) hung on the model's `rifle` bone; its rounds' tracers leave its muzzle.
 
@@ -146,6 +152,7 @@ const DATA := {
 		"range": 30.0, "damage": 8.0, "fire_interval": 0.55, "spread": 0.035,
 		"structure_mult": 0.5, "radius": 0.5, "height": 1.9,
 		"role": "infantry", "anim": "rigged", "hotkey": KEY_Z,
+		"swim_speed": 2.2, "swim_sink": 1.25,
 		"anim_move": "Running", "anim_idle": "Idle", "anim_ref_speed": 4.5,
 		# The Prototype C heavy LMG at the hip, on the model's `rifle` bone (tools/gltf/arm_rifle.py).
 		"gun": "res://assets/weapons/prototype_c_lmg/prototype_c_lmg.glb",
@@ -198,6 +205,9 @@ const DATA := {
 		"range": 0.0, "damage": 0.0, "fire_interval": 0.2, "spread": 0.0,
 		"structure_mult": 1.5, "radius": 1.6, "height": 3.8,
 		"role": "anti_air", "anim": "rigged", "hotkey": KEY_B,
+		# Carries two riders on its back across the water, behind its cannons.
+		"swim_speed": 2.0, "swim_sink": 1.9,
+		"seats": [Vector3(-0.45, 3.05, 0.85), Vector3(0.45, 3.05, 0.85)],
 		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 2.2,
 		# The real anti-air unit: one elephant's flak is worth about five rhinos.
 		"aa_range": 26.0, "aa_dps": 30.0, "flak": true,
@@ -211,6 +221,7 @@ const DATA := {
 		"range": 0.0, "damage": 0.0, "fire_interval": 1.0, "spread": 0.0,
 		"structure_mult": 1.5, "radius": 1.6, "height": 2.2,
 		"role": "siege", "anim": "rigged", "hotkey": KEY_N,
+		"no_ride": true,
 		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 1.0, "anim_scale": [0.5, 1.6],
 		"anim_setup": "Setup", "anim_armed": "Armed",
 		# Six donkeys towing a siege gun: super slow, and it turns like a wagon.
@@ -253,6 +264,7 @@ const DATA := {
 		"range": 30.0, "damage": 6.0, "fire_interval": 0.6, "spread": 0.04,
 		"structure_mult": 0.3, "radius": 0.8, "height": 4.5,
 		"role": "infantry", "anim": "rigged", "hotkey": KEY_H,
+		"no_ride": true,
 		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 3.0,
 		# The radar dish on its back: a sonar ping round it (GiraffePing).
 		"ping_cooldown": 45.0, "ping_radius": 60.0, "ping_speed": 40.0, "ping_mark": 7.0,
@@ -265,6 +277,7 @@ const DATA := {
 		"range": 0.0, "damage": 0.0, "fire_interval": 1.0, "spread": 0.0,
 		"structure_mult": 1.5, "radius": 1.6, "height": 2.4,
 		"role": "siege", "anim": "rigged", "hotkey": KEY_L,
+		"no_ride": true,
 		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 1.85,
 		# One heavy shell at a time, from twice the rhinos' reach: onto the gun decks and roofs.
 		"bombard_range": 80.0, "bombard_cooldown": 40.0, "bombard_damage": 240.0,
@@ -300,6 +313,7 @@ const DATA := {
 		"role": "infantry", "anim": "rigged", "hotkey": KEY_U,
 		"anim_move": "Slither", "anim_idle": "Idle", "anim_ref_speed": 2.4,
 		"steer": true, "turn_rate": 2.5,
+		"swim_speed": 2.8, "swim_sink": 0.55,
 		"nest_time": 8.0, "nest_sight": 1.8, "nest_range": 1.6,
 		"trap_time": 8.0, "trap_reach": 4.0, "squeeze_time": 15.0, "sneak_alpha": 0.3,
 		"model": "res://assets/units/serpent_sniper/serpent_sniper_rigged.glb",
@@ -310,6 +324,7 @@ const DATA := {
 		"range": 0.0, "damage": 0.0, "fire_interval": 0.25, "spread": 0.0,
 		"structure_mult": 1.2, "radius": 1.3, "height": 2.4,
 		"role": "anti_air", "anim": "rigged", "hotkey": KEY_I,
+		"no_ride": true,
 		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 2.6,
 		# Weak on its own on purpose: it takes about five rhinos to bring a flyer down quickly.
 		"aa_range": 18.0, "aa_dps": 6.0, "scouts": true,
@@ -323,6 +338,9 @@ const DATA := {
 		"range": 26.0, "damage": 8.0, "fire_interval": 0.12, "spread": 0.02,
 		"structure_mult": 1.0, "radius": 1.4, "height": 2.6,
 		"role": "infantry", "anim": "rigged", "hotkey": KEY_K,
+		# Carries two riders on its back across the water.
+		"swim_speed": 2.4, "swim_sink": 1.55,
+		"seats": [Vector3(-0.42, 2.35, 0.75), Vector3(0.42, 2.35, 0.75)],
 		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 2.4,
 		# Mounted machine guns: inaccurate suppressive fire that sprays around the target.
 		"suppress_radius": 2.2, "overheat_time": 8.0, "overheat_cooldown": 2.0,

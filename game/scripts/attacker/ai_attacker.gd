@@ -11,6 +11,11 @@ extends Node
 ## Its Serpent Snipers snipe from the trees in reach of the gate they go for, and lie in wait round bushes where
 ## the army saw the defenders out on the field (_serpent_skills). Its Mule Artillery set their guns up as soon as
 ## the stronghold is in reach and shell it whenever they have reloaded (_mule_guns).
+## On the Jungle Keep it keeps a bridge standing on each way to the stronghold that crosses a river (BRIDGE_SPOTS:
+## over the main river in front of the citadel, over the east river by the Outpost), dropping another when one is
+## brought down while it has any left (_bridges); its move orders ferry the riders across on its hippos and
+## elephants like a player's do. Defenders on one of its bridges (the alarm): the ground units nearest it go and
+## fight them (_bridge_alarms).
 ## Uses the same command interface as the human RTS player.
 
 var commander: AttackerCommander
@@ -73,6 +78,17 @@ var _skill_rest := {}
 ## Mule Artillery id -> seconds armed with nothing in reach.
 var _gun_idle := {}
 
+## Where it keeps a bridge standing (the river nearest each, within BRIDGE_NEAR of it), trying BRIDGE_SHIFT m up and
+## down the river where one can't go just there; and the ground units it sends at defenders on a bridge (up to
+## ALARM_UNITS, within ALARM_REACH), once every ALARM_EVERY s a bridge.
+const BRIDGE_SPOTS := [Vector3(-70, 0, 478), Vector3(70, 0, 478), Vector3(372, 0, -60), Vector3(370, 0, 90)]
+const BRIDGE_NEAR := 60.0
+const BRIDGE_SHIFT := [0.0, 18.0, -18.0, 36.0, -36.0, 54.0, -54.0]
+const ALARM_UNITS := 5
+const ALARM_REACH := 180.0
+const ALARM_EVERY := 6.0
+var _alarm_sent := {}
+
 
 func _process(delta: float) -> void:
 	_first_wave_delay -= delta
@@ -110,6 +126,46 @@ func _think() -> void:
 	_serpent_skills()
 	_dog_modes()
 	_mule_guns()
+	_bridges()
+	_bridge_alarms()
+
+
+## Keeps a bridge standing at each of BRIDGE_SPOTS while it has any left: one dropped a think at most.
+func _bridges() -> void:
+	if not RiverCrossing.active() or commander.bridges_left <= 0:
+		return
+	for spot: Vector3 in BRIDGE_SPOTS:
+		var standing := commander.bridges.any(func(b): return is_instance_valid(b) \
+				and Vector2(b.global_position.x - spot.x, b.global_position.z - spot.z).length() < BRIDGE_NEAR)
+		if standing:
+			continue
+		var river := RiverCrossing.nearest_river(Vector2(spot.x, spot.z))
+		if river.is_empty():
+			continue
+		for shift in BRIDGE_SHIFT:
+			var at: Vector2 = river.point + river.dir * shift
+			if commander.submit({"type": "bridge", "pos": Vector3(at.x, 0.0, at.y)}) != 0:
+				return
+		return
+
+
+## Defenders on one of its bridges: the nearest ground units that fight go for them.
+func _bridge_alarms() -> void:
+	for b in commander.bridges:
+		if not is_instance_valid(b) or not b.alarm_on or b.intruders.is_empty():
+			continue
+		if _clock - float(_alarm_sent.get(b.bridge_id, -INF)) < ALARM_EVERY:
+			continue
+		_alarm_sent[b.bridge_id] = _clock
+		var near := []
+		for u in commander.units.values():
+			if u.is_controllable() and not u.is_flying() and u.has_basic_attack() and not u.is_crossing() \
+					and u.global_position.distance_to(b.global_position) < ALARM_REACH:
+				near.append([u.global_position.distance_to(b.global_position), u.unit_id])
+		near.sort_custom(func(a, c): return a[0] < c[0])
+		if not near.is_empty():
+			commander.submit({"type": "move", "units": near.slice(0, ALARM_UNITS).map(func(e): return e[1]),
+					"pos": b.intruders[0].global_position, "attack": true})
 
 
 func _plan_wave() -> void:

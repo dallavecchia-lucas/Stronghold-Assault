@@ -29,6 +29,16 @@ extends CharacterBody3D
 ## Both run on its rig (SerpentRig), which lays the body along the skill's way; the clips take over again once
 ## it is down or uncoiled, where it stood when it began.
 ##
+## The Jungle Keep's water (RiverCrossing): bears, snakes, hippos and elephants swim it (their agents take the swim
+## links; across one they follow a route of their own, down the bank, afloat in the deep water, up the far bank:
+## swim_route). The others but for the Mule Artillery, bisons, giraffes and rhinos (no_ride) ride across on a hippo's
+## or an elephant's back, two to a carrier:
+##   {"type": "board", "carrier": AttackerUnit, "then": order or null}   it goes up to the carrier and hops onto its
+##            back (mount); `then` is what it does once it gets off again (AttackerCommander's ferry hands these out).
+## A carrier with riders on the way to it waits for them (_ferry_wait); with riders on its back it lets them off
+## once it has stopped on dry land after a swim (unload), or when told to. Swimming or riding a unit can't attack or
+## use its skills (is_crossing). A carrier that dies out on the water takes its riders down with it (drown).
+##
 ## The Mule Artillery (UnitTypes setup_*) sets its gun up to fire and packs it up to move (set_gun): setup_time
 ## seconds each way (its Setup clip, played backward to pack up), and it can't move unless the gun is packed.
 ## Set up, it bombards like the bison, but stays put: its gun's turret swings round onto the aim (MuleGun).
@@ -125,6 +135,14 @@ const NEST_ICON_SIZE := 0.0019
 const TEAM_SWING := 2.0
 ## Its Setup clip is put back where the gun has got to once it drifts this far off (s).
 const SETUP_DRIFT := 0.1
+## Riders: how close to its carrier one hops on (m, past the two radii), how long the hop takes (s) and how high it
+## goes (m); a carrier waits FERRY_WAIT s at most for the riders on their way to it.
+const BOARD_REACH := 1.4
+const HOP_TIME := 0.55
+const HOP_HIGH := 1.4
+const FERRY_WAIT := 40.0
+## Ripples off a swimmer every WAKE_EVERY s.
+const WAKE_EVERY := 0.32
 
 static var _supply_tex: ImageTexture
 static var _bush_tex: ImageTexture
@@ -341,6 +359,23 @@ var _anim_t := 0.0
 ## Navigation link being crossed (LevelBuilder): points still to climb or walk through.
 var _route: Array[Vector3] = []
 var _route_breach_in := false
+## On a swim link's route (RiverCrossing): swimming across.
+var _route_swim := false
+var _wake_cd := 0.0
+## Riding: the carrier it is on (null on foot), and what it does once it is off again; the hop up onto its back.
+var carrier: AttackerUnit = null
+var _then = null
+var _hop_t := 1.0
+var _hop_from := Vector3.ZERO
+## Carrying: the riders on its back, the ones on their way to it (it waits for them), how long it has waited, and
+## whether it has swum since they got on.
+var riders: Array[AttackerUnit] = []
+var _ferry_wait: Array = []
+var _ferry_t := 0.0
+var _crossed := false
+var _walk_mask := 0
+## The point of its path it makes for, at or after the agent's own (_next_waypoint).
+var _wp := 0
 var _in_forest := false
 var _recoil := 0.0
 var _desired_velocity := Vector3.ZERO
@@ -365,6 +400,48 @@ func fits_inside() -> bool:
 	return stats.get("infiltrator", false)
 
 
+## Bears, snakes, hippos and elephants swim across the water (RiverCrossing).
+func swims() -> bool:
+	return stats.has("swim_speed")
+
+
+## Hippos and elephants carry riders across the water on their backs.
+func can_carry() -> bool:
+	return stats.has("seats") and is_alive()
+
+
+## Places left on its back (riders on it and on their way to it count).
+func seats_free() -> int:
+	if not can_carry():
+		return 0
+	return stats.seats.size() - riders.size() - _ferry_wait.filter(func(u): return is_instance_valid(u) and u.carrier != self).size()
+
+
+## Hops onto a carrier to get across the water: everyone who neither swims, flies nor carries, but the Mule Artillery,
+## bisons, giraffes and rhinos (no_ride).
+func can_ride() -> bool:
+	return not swims() and not is_flying() and not stats.has("seats") and not stats.get("no_ride", false)
+
+
+func is_riding() -> bool:
+	return carrier != null
+
+
+## Swimming across (on a swim link's route).
+func is_swimming() -> bool:
+	return _route_swim and not _route.is_empty()
+
+
+## Swimming or riding: it can't attack or use its skills.
+func is_crossing() -> bool:
+	return carrier != null or is_swimming()
+
+
+## Out in the water (its feet well under the surface).
+func in_water() -> bool:
+	return RiverCrossing.swimming_at(global_position, 0.3)
+
+
 ## Raiders inside the stronghold are on their own.
 func is_controllable() -> bool:
 	return is_alive() and not raiding
@@ -380,7 +457,7 @@ func has_cluster_bomb() -> bool:
 
 
 func cluster_ready() -> bool:
-	return has_cluster_bomb() and cluster_cd <= 0.0
+	return has_cluster_bomb() and cluster_cd <= 0.0 and not is_crossing()
 
 
 func has_smoke() -> bool:
@@ -388,7 +465,7 @@ func has_smoke() -> bool:
 
 
 func smoke_ready() -> bool:
-	return has_smoke() and smoke_cd <= 0.0
+	return has_smoke() and smoke_cd <= 0.0 and not is_crossing()
 
 
 func is_overheated() -> bool:
@@ -400,7 +477,7 @@ func has_missiles() -> bool:
 
 
 func missiles_ready() -> bool:
-	return has_missiles() and missile_cd <= 0.0 and is_alive()
+	return has_missiles() and missile_cd <= 0.0 and is_alive() and not is_crossing()
 
 
 ## Damage of one salvo if every missile hits.
@@ -419,7 +496,7 @@ func has_bombard() -> bool:
 
 ## A Mule Artillery fires only with its gun set up.
 func bombard_ready() -> bool:
-	return has_bombard() and bombard_cd <= 0.0 and is_alive() and (not has_setup() or is_armed())
+	return has_bombard() and bombard_cd <= 0.0 and is_alive() and (not has_setup() or is_armed()) and not is_crossing()
 
 
 ## Mule Artillery: its gun is set up to fire and packed up to move (set_gun).
@@ -480,7 +557,7 @@ func has_strafe() -> bool:
 
 
 func strafe_ready() -> bool:
-	return has_strafe() and strafe_cd <= 0.0 and is_alive() and not on_run()
+	return has_strafe() and strafe_cd <= 0.0 and is_alive() and not on_run() and not is_crossing()
 
 
 func has_bomb() -> bool:
@@ -488,7 +565,7 @@ func has_bomb() -> bool:
 
 
 func bomb_ready() -> bool:
-	return has_bomb() and bomb_cd <= 0.0 and is_alive() and not on_run()
+	return has_bomb() and bomb_cd <= 0.0 and is_alive() and not on_run() and not is_crossing()
 
 
 ## Flying a strafe run or a bomb strike (TalonRun): it flies it through, whatever its orders.
@@ -506,7 +583,7 @@ func has_ram() -> bool:
 
 
 func ram_ready() -> bool:
-	return has_ram() and ram_cd <= 0.0 and is_alive()
+	return has_ram() and ram_cd <= 0.0 and is_alive() and not is_crossing()
 
 
 func is_ramming() -> bool:
@@ -527,7 +604,7 @@ func has_flash() -> bool:
 
 
 func flash_ready() -> bool:
-	return has_flash() and flash_cd <= 0.0 and is_alive() and not is_throwing()
+	return has_flash() and flash_cd <= 0.0 and is_alive() and not is_throwing() and not is_crossing()
 
 
 ## Up on its hind feet throwing a flash grenade: it stands until it is done.
@@ -545,7 +622,7 @@ func has_ping() -> bool:
 
 
 func ping_ready() -> bool:
-	return has_ping() and ping_cd <= 0.0 and is_alive() and not is_pinging()
+	return has_ping() and ping_cd <= 0.0 and is_alive() and not is_pinging() and not is_crossing()
 
 
 ## Standing with its neck up and its dish sweeping, sending a ping: it stands until it is done.
@@ -559,7 +636,7 @@ func has_sneak() -> bool:
 
 ## A tagged lioness can't sneak (tag).
 func sneak_ready() -> bool:
-	return has_sneak() and sneak_cd <= 0.0 and is_alive() and not is_sneaking() and not is_pouncing() and not is_tagged()
+	return has_sneak() and sneak_cd <= 0.0 and is_alive() and not is_sneaking() and not is_pouncing() and not is_tagged() and not is_crossing()
 
 
 ## Stalking: see-through on the defender's side, a bush over her on the attacker's (_sneak_look).
@@ -585,7 +662,7 @@ func has_blast() -> bool:
 
 
 func blast_ready() -> bool:
-	return has_blast() and blast_cd <= 0.0 and is_alive() and not is_blasting()
+	return has_blast() and blast_cd <= 0.0 and is_alive() and not is_blasting() and not is_crossing()
 
 
 ## The flamethrowers on her back burning (LionessBlast).
@@ -691,7 +768,7 @@ func cooling_down() -> bool:
 
 ## Kangaroo passive: carries supplies for others (AttackerCommander hands them out).
 func resupplies() -> bool:
-	return stats.has("resupply_range")
+	return stats.has("resupply_range") and not is_crossing()
 
 
 ## Wolf Medic: two modes, one always on (healing or minesweeping: dog_mode).
@@ -701,12 +778,12 @@ func has_dog_modes() -> bool:
 
 ## Healing (dog_mode "heal"): it heals the units in patients.
 func heals() -> bool:
-	return has_dog_modes() and dog_mode == "heal" and is_alive()
+	return has_dog_modes() and dog_mode == "heal" and is_alive() and not is_crossing()
 
 
 ## Minesweeping (dog_mode "sweep").
 func sweeps() -> bool:
-	return has_dog_modes() and dog_mode == "sweep" and is_alive()
+	return has_dog_modes() and dog_mode == "sweep" and is_alive() and not is_crossing()
 
 
 ## Switches the dog to `mode` ("heal" or "sweep"). Leaving healing it lets go of the units it heals;
@@ -775,6 +852,7 @@ func _ready() -> void:
 	# Attackers don't collide with each other; avoidance keeps them apart instead.
 	# Flyers don't collide with anything. Walkers keep out of the water (LAYER_WATER_EDGE).
 	collision_mask = 0 if is_flying() else GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES | GameConfig.LAYER_DEFENDERS | GameConfig.LAYER_WATER_EDGE
+	_walk_mask = collision_mask
 	floor_snap_length = 0.5
 
 	var shape := CollisionShape3D.new()
@@ -800,8 +878,12 @@ func _ready() -> void:
 	_agent.max_neighbors = 8
 	_agent.time_horizon_agents = 1.0
 	_agent.velocity_computed.connect(_on_velocity_computed)
+	_agent.path_changed.connect(func(): _wp = 0)
 	if fits_inside():
 		_agent.navigation_layers |= LevelBuilder.NAV_INFILTRATORS
+	if swims():
+		_agent.navigation_layers |= RiverCrossing.NAV_SWIMMERS
+	if fits_inside() or swims():
 		_agent.link_reached.connect(_on_link_reached)
 	add_child(_agent)
 
@@ -818,6 +900,16 @@ func _ready() -> void:
 func set_order(o: Dictionary) -> void:
 	if raiding:
 		return
+	if carrier != null:
+		# Riding: on dry land it gets off and goes; out on the water it carries on with it once it is off.
+		if carrier.in_water() or carrier.is_swimming():
+			_then = o if o.type != "idle" else null
+			return
+		dismount()
+		if not _route.is_empty():
+			_then = o if o.type != "idle" else null  # hopping down first
+			return
+	_ferry_wait.clear()  # a carrier sent off doesn't wait for riders any more (the commander's ferry waits again)
 	if not is_packed():
 		# A Mule Artillery can't move with its gun set up, or on its way up or down: an order to go anywhere is
 		# refused, unless it is packing up, when it waits till it is packed.
@@ -856,16 +948,18 @@ func set_order(o: Dictionary) -> void:
 			_agent.max_speed = _speed()
 	if o.type == "attack":
 		target = o.target
-	elif o.type == "move":
+	elif o.type in ["move", "board"]:
 		target = null
 	if o.has("pos") and not is_flying():
 		_agent.target_position = o.pos
+	elif o.type == "board" and is_instance_valid(o.carrier):
+		_agent.target_position = o.carrier.global_position
 
 
 ## A Mule Artillery with its gun set up (or on its way up or down) is busy, not idle.
 func is_idle() -> bool:
 	return not raiding and order.type == "idle" and not Combat.is_valid_target(target) and sweep_mine == null \
-			and is_packed()
+			and is_packed() and carrier == null and _route.is_empty()
 
 
 ## Serpent Sniper: an order while up its tree or round its bush. Up the tree an attack order it fires from
@@ -946,7 +1040,10 @@ func is_alive() -> bool:
 
 
 func get_aim_point() -> Vector3:
-	return global_position + Vector3.UP * stats.height * 0.6
+	var p: Vector3 = global_position + Vector3.UP * stats.height * 0.6
+	if is_swimming() and in_water():
+		p.y = maxf(p.y, JungleLayout.WATER_Y + 0.35)  # what shows over the water
+	return p
 
 
 func take_damage(amount: float, from_team: int) -> void:
@@ -1007,7 +1104,20 @@ func _die() -> void:
 		_supply_ring.visible = false
 	end_ram()
 	_route.clear()
+	_route_swim = false
 	_end_salvo()
+	if carrier != null:
+		carrier.riders.erase(self)
+		carrier = null
+	# A carrier lets its riders off where it falls; out on the water they go down with it.
+	var wet := in_water()
+	for r in riders.duplicate():
+		if wet:
+			r.drown()
+		else:
+			r.dismount()
+	riders.clear()
+	_ferry_wait.clear()
 	if _turrets:
 		_turrets.target = null
 	if _flight:
@@ -1078,7 +1188,7 @@ func _update_target() -> void:
 		target = _focus
 		return
 	# A sneaking lioness picks no fights on her own: only an attack order sends her (to pounce).
-	if order.type == "move" or is_sneaking():
+	if order.type in ["move", "board"] or is_sneaking():
 		target = null
 		return
 	if Combat.targetable(target) and _in_range(target) and _can_see(target) and not Combat.low_profile(target) \
@@ -2288,6 +2398,186 @@ func _serpent_die() -> bool:
 
 # ---------------------------------------------------------------- movement
 
+# ---------------------------------------------------------------- the water: swimming and riding
+
+## Swims straight to `to` (across the water: RiverCrossing.swim_route), whatever else it was doing.
+func swim_to(to: Vector3) -> void:
+	if not swims():
+		return
+	_route = RiverCrossing.swim_route(global_position, to, stats.swim_sink)
+	_route_swim = true
+	_route_breach_in = false
+	_crossed = false
+	if is_sneaking():
+		end_sneak()
+
+
+## Fell in the water and can't swim (off a carrier lost out there, off a bridge brought down): it is lost.
+func drown() -> void:
+	if hp <= 0.0:
+		return
+	if carrier != null:
+		carrier.riders.erase(self)
+		carrier = null
+	RiverCrossing.splash(self, Vector3(global_position.x, JungleLayout.WATER_Y, global_position.z), 1.6)
+	hp = 0.0
+	_update_hp_bar()
+	_die()
+
+
+## Where carrier seat `i` is (world): on its back, facing the way it faces.
+func seat_transform(i: int) -> Transform3D:
+	var seats: Array = stats.get("seats", [Vector3.UP * stats.height])
+	return global_transform * Transform3D(Basis.IDENTITY, seats[clampi(i, 0, seats.size() - 1)])
+
+
+## Riders `list` are on their way to its back: it waits for them (FERRY_WAIT s at most) before it goes.
+func wait_for(list: Array) -> void:
+	_ferry_wait = list.duplicate()
+	_ferry_t = 0.0
+
+
+## Lets its riders off beside it (on dry land only). They carry on with what they were sent to do.
+func unload() -> bool:
+	if riders.is_empty() or in_water() or is_swimming():
+		return false
+	for r in riders.duplicate():
+		r.dismount()
+	_crossed = false
+	return true
+
+
+## Where a rider gets down: beside the carrier, its side of it, on the navmesh.
+func drop_spot(r: AttackerUnit) -> Vector3:
+	var k := riders.find(r)
+	var side := -1.0 if k % 2 == 0 else 1.0
+	var at: Vector3 = global_position + global_basis.x * side * (stats.radius + r.stats.radius + 0.9) + global_basis.z * (0.6 * (k / 2))
+	var snap := LevelBuilder.nav_closest(get_world_3d().navigation_map, at)
+	return snap if snap.distance_to(at) < 3.0 else global_position + global_basis.z * (stats.radius + r.stats.radius + 0.6)
+
+
+## Hops onto `c`'s back.
+func mount(c: AttackerUnit) -> void:
+	if c.riders.size() >= c.stats.seats.size():
+		return
+	carrier = c
+	c.riders.append(self)
+	c._ferry_wait.erase(self)
+	_then = order.get("then") if order.type == "board" else null
+	order = {"type": "idle"}
+	target = null
+	velocity = Vector3.ZERO
+	collision_mask = 0
+	_agent.avoidance_enabled = false
+	_route.clear()
+	_route_swim = false
+	if is_sneaking():
+		end_sneak()
+	if has_dog_modes():
+		_drop_mine()
+	_hop_from = global_position
+	_hop_t = 0.0
+
+
+## Gets down off its carrier, beside it (or at `at`), with a hop.
+func dismount(at := Vector3.INF) -> void:
+	if carrier == null:
+		return
+	var c := carrier
+	var to := c.drop_spot(self) if at == Vector3.INF else at
+	c.riders.erase(self)
+	carrier = null
+	collision_mask = _walk_mask
+	_agent.avoidance_enabled = not is_flying()
+	var top := global_position.lerp(to, 0.4) + Vector3.UP * 0.8
+	_route = [top, to + Vector3.UP * 0.05]
+	_route_swim = false
+	_hop_t = 0.0
+	order = {"type": "idle"}
+
+
+## On its carrier's back: up there with a hop, then wherever the carrier takes it (place_on()).
+func _ride_tick(delta: float) -> void:
+	if not is_instance_valid(carrier) or not carrier.is_alive():
+		carrier = null
+		collision_mask = _walk_mask
+		_agent.avoidance_enabled = true
+		return
+	velocity = Vector3.ZERO
+	if _hop_t < 1.0:
+		_hop_t = minf(_hop_t + delta / HOP_TIME, 1.0)
+	place_on()
+
+
+## Puts it on its carrier's back (the carrier calls it once it has moved, every frame).
+func place_on() -> void:
+	if carrier == null:
+		return
+	var xf := carrier.seat_transform(carrier.riders.find(self))
+	if _hop_t < 1.0:
+		var t := smoothstep(0.0, 1.0, _hop_t)
+		global_transform = Transform3D(Basis(Quaternion(global_basis).slerp(Quaternion(xf.basis), t)),
+				_hop_from.lerp(xf.origin, t) + Vector3.UP * sin(PI * _hop_t) * HOP_HIGH)
+	else:
+		global_transform = xf
+
+
+## A board order: up to its carrier and onto its back. Where to walk meanwhile, or null once on (or given up: the
+## carrier is gone, full or out on the water, and it carries on with what it was to do after).
+func _board_step():
+	var c = order.get("carrier")
+	if not is_instance_valid(c) or not c.can_carry() or c.in_water() or c.is_swimming() \
+			or (c.riders.size() >= c.stats.seats.size()):
+		var then = order.get("then")
+		order = {"type": "idle"}
+		if then != null:
+			set_order(then)
+		return null
+	var gap := Vector2(c.global_position.x - global_position.x, c.global_position.z - global_position.z).length()
+	if gap <= c.stats.radius + stats.radius + BOARD_REACH:
+		mount(c)
+		return null
+	return c.global_position
+
+
+## A carrier: waits for the riders on their way to it; lets the ones on its back off once it has stopped on dry land
+## after a swim (or whatever they were sent to do on the far side calls them off it).
+func _carry_tick(delta: float) -> void:
+	riders = riders.filter(func(r): return is_instance_valid(r) and r.is_alive() and r.carrier == self)
+	if not _ferry_wait.is_empty():
+		_ferry_t += delta
+		_ferry_wait = _ferry_wait.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.carrier != self \
+				and u.order.type == "board" and u.order.get("carrier") == self)
+		if _ferry_t > FERRY_WAIT:
+			_ferry_wait.clear()
+	if riders.is_empty() or not _route.is_empty() or in_water():
+		return
+	if _crossed:
+		# Out of the water on the far side: the riders get off, but for any that still have water to cross to get
+		# where they are going (they stay on for the next swim).
+		_crossed = false
+		for r in riders.duplicate():
+			if r._then == null or not r._then.has("pos") or RiverCrossing.reaches(r, global_position, r._then.pos):
+				r.dismount()
+	elif riders.any(func(r): return r._then != null) and (order.type == "idle" or _agent.is_navigation_finished()):
+		unload()  # there without a swim (over a bridge)
+
+
+func _place_riders() -> void:
+	for r in riders:
+		if is_instance_valid(r):
+			r.place_on()
+
+
+## Ripples spreading off it where it swims.
+func _wake(delta: float) -> void:
+	_wake_cd -= delta
+	if _wake_cd > 0.0 or not in_water():
+		return
+	_wake_cd = WAKE_EVERY
+	RiverCrossing.ripple(self, Vector3(global_position.x, JungleLayout.WATER_Y + 0.03, global_position.z), stats.radius * 1.6)
+
+
 func _physics_process(delta: float) -> void:
 	if hp <= 0.0:
 		if not is_on_floor():
@@ -2300,6 +2590,11 @@ func _physics_process(delta: float) -> void:
 		_tags[id] -= delta
 		if _tags[id] <= 0.0:
 			_tags.erase(id)
+	if carrier != null:
+		_ride_tick(delta)
+		return  # on a carrier's back: no fighting, no skills
+	if not riders.is_empty() or not _ferry_wait.is_empty():
+		_carry_tick(delta)
 	_fire_cd -= delta
 	_retarget_cd -= delta
 	if _retarget_cd <= 0.0:
@@ -2415,6 +2710,8 @@ func _physics_process(delta: float) -> void:
 		move_to = _charge_pos
 	elif order.has("line"):
 		lined = true  # marching in a line: _line_step
+	elif order.type == "board":
+		move_to = _board_step()
 	elif order.type in ["move", "attack_move", "nest", "trap"]:
 		move_to = order.pos
 	elif running_over:
@@ -2428,6 +2725,9 @@ func _physics_process(delta: float) -> void:
 	if is_flying():
 		_fly(move_to, delta)
 		return
+	if not _ferry_wait.is_empty() and order.type in ["move", "attack_move"]:
+		move_to = null  # riders are on their way to its back: it waits for them
+		lined = false
 
 	_desired_velocity = Vector3.ZERO
 	if lined:
@@ -2436,7 +2736,7 @@ func _physics_process(delta: float) -> void:
 		if _agent.target_position.distance_to(move_to) > 1.5:
 			_agent.target_position = move_to
 		if _agent.is_navigation_finished():
-			if order.type not in ["attack", "raid", "nest", "trap"]:
+			if order.type not in ["attack", "raid", "nest", "trap", "board"]:
 				order = {"type": "idle"}
 			elif role == "melee" or charge_gate or running_over:
 				# Close the last stretch to the target straight on.
@@ -2445,7 +2745,7 @@ func _physics_process(delta: float) -> void:
 				if dir.length_squared() > 0.01:
 					_desired_velocity = dir.normalized() * _speed()
 		else:
-			var next := _agent.get_next_path_position()
+			var next := _next_waypoint()
 			if not _route.is_empty():
 				return  # just reached a link (_on_link_reached)
 			var dir := next - global_position
@@ -2509,6 +2809,11 @@ func _line_step() -> void:
 ## climbing a stair shaft or ladder, or slipping in through a broken gate.
 func _on_link_reached(details: Dictionary) -> void:
 	var link := details.get("owner") as NavigationLink3D
+	if link != null and link.has_meta("swim"):
+		# A swim link: straight across the water to its far end.
+		if _route.is_empty() and carrier == null and swims():
+			swim_to(details.link_exit_position)
+		return
 	if link == null or not link.has_meta("route") or not _route.is_empty():
 		return
 	var route: Array[Vector3] = link.get_meta("route").duplicate()
@@ -2520,18 +2825,70 @@ func _on_link_reached(details: Dictionary) -> void:
 	_route_breach_in = forward and link.has_meta("breach")
 
 
+## The next point of its path to make for. The agent counts a point reached only within path_desired_distance of it
+## in 3D; here one within reach on the flat (the navmesh's heights can be a metre or more off the ground, by a
+## bridge's ramp, say) or one it has gone past (a wide unit, kept off the corners the navmesh's slim agents hug, along
+## a bridge's railing) counts as well, so it never stands pushing at a point it can't get to. Never past a link: a
+## swimmer at a swim link's start on the flat sets off across (the agent may not count it reached either).
+func _next_waypoint() -> Vector3:
+	var next := _agent.get_next_path_position()
+	var path := _agent.get_current_navigation_path()
+	var i := maxi(_agent.get_current_navigation_path_index(), _wp)
+	if i >= path.size():
+		return next
+	var result := _agent.get_current_navigation_result()
+	var types := result.path_types
+	var owners := result.path_owner_ids
+	var reach := maxf(stats.radius + 0.6, 1.0)
+	while i < path.size() - 1:
+		var to := Vector2(path[i].x - global_position.x, path[i].z - global_position.z)
+		var link := -1
+		for k in [i, i + 1]:
+			if k < types.size() and types[k] == NavigationPathQueryResult3D.PATH_SEGMENT_TYPE_LINK:
+				link = k
+				break
+		if link >= 0:
+			if swims() and to.length() < reach and _route.is_empty() and link < owners.size():
+				var l := instance_from_id(owners[link]) as NavigationLink3D
+				if l != null and l.has_meta("swim"):
+					var a := l.to_global(l.start_position)
+					var b := l.to_global(l.end_position)
+					swim_to(b if global_position.distance_to(a) < global_position.distance_to(b) else a)
+			break
+		var seg := Vector2(path[i + 1].x - path[i].x, path[i + 1].z - path[i].z)
+		if to.length() < reach or (to.dot(seg) < 0.0 and to.length() < reach + 3.0):
+			i += 1
+		else:
+			break
+	_wp = i
+	return path[i]
+
+
 ## Moves straight from point to point, through the stair steps and ladder rungs: no collisions.
 func _follow_route(delta: float) -> void:
 	var to := _route[0] - global_position
-	var climbing := absf(to.y) > Vector2(to.x, to.z).length()
+	var climbing := not _route_swim and absf(to.y) > Vector2(to.x, to.z).length()
 	var speed: float = stats.get("climb_speed", stats.speed * 0.5) if climbing else stats.speed * 0.8
+	if _route_swim:
+		speed = stats.swim_speed if in_water() else minf(stats.speed * 0.7, stats.swim_speed * 1.3)
+		_wake(delta)
+	elif _hop_t < 1.0:
+		speed = 7.0  # hopping down off a carrier's back
 	var step := speed * delta
 	if to.length() <= step:
 		global_position = _route.pop_front()
 		if _route.is_empty():
 			velocity = Vector3.ZERO
+			if _route_swim and not riders.is_empty():
+				_crossed = true  # out of the water with riders on its back (_carry_tick lets them off)
+			_route_swim = false
+			_hop_t = 1.0
 			if _route_breach_in and stats.get("raider", false):
 				_start_raid()
+			if _then != null and carrier == null:
+				var then = _then
+				_then = null
+				set_order(then)
 		return
 	velocity = to.normalized() * speed
 	global_position += velocity * delta
@@ -2549,7 +2906,7 @@ func _fly(move_to, delta: float) -> void:
 
 
 func _on_velocity_computed(safe: Vector3) -> void:
-	if hp <= 0.0 or is_flying() or not _route.is_empty():
+	if hp <= 0.0 or is_flying() or not _route.is_empty() or carrier != null:
 		return
 	if not is_packed():
 		safe = Vector3.ZERO  # a Mule Artillery's gun set up: avoidance doesn't push it about
@@ -2600,6 +2957,8 @@ func _face(point: Vector3, delta: float) -> void:
 func _process(delta: float) -> void:
 	if hp <= 0.0:
 		return
+	if not riders.is_empty():
+		_place_riders()
 	# Procedural animation until models are rigged.
 	var spd := velocity.length() if not _route.is_empty() else Vector2(velocity.x, velocity.z).length()
 	if has_setup():

@@ -16,6 +16,7 @@ const LAYER_STRUCTURES := 8
 const LAYER_NAV_BLOCK := 16
 ## The wall along the Jungle Keep's water's edge (JungleTerrain): only walkers collide with it (the
 ## attackers' ground units, the garrison and the squads), so no one walks into the rivers or the lake; shots and rays go through it.
+## Swimmers and riders cross on routes of their own (RiverCrossing); it has a gap under each bridge (FoldingBridge).
 const LAYER_WATER_EDGE := 32
 const LAYER_ALL_SOLID := LAYER_WORLD | LAYER_ATTACKERS | LAYER_DEFENDERS | LAYER_STRUCTURES
 

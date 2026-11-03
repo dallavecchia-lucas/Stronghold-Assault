@@ -42,6 +42,16 @@ extends Node
 ##               to minesweeping (AttackerUnit.set_dog_mode)
 ##   {"type": "scout", "units": [ids]}   toggle scout formation: the rhinos in the selection
 ##                                       ring the rest of it so their anti-air covers the mass
+##   {"type": "bridge", "pos": Vector3}   airdrops a folding bridge across the river nearest pos (FoldingBridge.plan),
+##               one of the BRIDGE_STOCK the army has for the match; returns its id (0: none left, or it can't go there)
+##   {"type": "board", "units": [ids], "carrier": NodePath}   the riders among them (AttackerUnit.can_ride) hop onto
+##               that hippo's or elephant's back, as many as it has seats left
+##   {"type": "unload", "units": [ids]}   the carriers among them let their riders off (on dry land)
+##
+## Across the Jungle Keep's water (RiverCrossing), a move order ferries: the riders in it that can't walk there
+## (no bridge on the way) hop onto the hippos and elephants moved with them, two to a carrier, the nearest first; the
+## carriers wait for them, swim over and let them off at the far side, where they go on to their own spots (_ferry).
+## Units swimming or riding can't use their skills: skill commands leave them out.
 ##
 ## Lionesses moved together (two or more) form up in firing lines as they go (LionessLine), up to 8
 ## abreast and more ranks behind, while line_formation is on; the other units moved with them gather
@@ -58,6 +68,10 @@ extends Node
 
 signal unit_spawned(unit: AttackerUnit)
 signal unit_died(unit: AttackerUnit)
+## A bridge dropped, its alarm going off or quiet again (defenders on it), and one brought down.
+signal bridge_ordered(bridge: FoldingBridge)
+signal bridge_alarm(bridge: FoldingBridge, on: bool)
+signal bridge_fallen(bridge: FoldingBridge)
 
 const UNIT_CAP := 60
 const BASE_INCOME := 12.0
@@ -65,6 +79,13 @@ const BASE_INCOME := 12.0
 const SCOUT_MARGIN := 5.0
 ## Seconds between handing out the kangaroos' supplies.
 const RESUPPLY_EVERY := 0.25
+## Folding bridges the army has for the match.
+const BRIDGE_STOCK := 30
+## Riders this close together (m squares) are taken to need the same ride (_ferry).
+const FERRY_CELL := 20.0
+## The commands that use skills: units swimming or riding are left out of them.
+const SKILL_COMMANDS := ["cluster", "bombard", "setup", "strafe", "bomb", "smoke", "flash", "missile", "ram", "ping",
+		"sneak", "blast", "nest", "trap"]
 
 var supply := 250.0
 var income := BASE_INCOME
@@ -74,6 +95,11 @@ var spawn_points: Array[Vector3] = []
 ## left empty, every spawn point is open.
 var spawn_bases: Array = []
 var units_root: Node3D
+## The level (bridges go into it); without one no bridges.
+var level: LevelBuilder
+var bridges_left := BRIDGE_STOCK
+## The bridges dropped and not yet brought down.
+var bridges: Array[FoldingBridge] = []
 
 var _next_id := 1
 var _next_formation := 1
@@ -126,6 +152,9 @@ func can_afford(type_id: String) -> bool:
 
 ## Applies a command. Returns the new unit id for spawns, 0 otherwise / on failure.
 func submit(cmd: Dictionary) -> int:
+	if cmd.get("type", "") in SKILL_COMMANDS and cmd.has("units"):
+		cmd = cmd.duplicate()
+		cmd.units = cmd.units.filter(func(id): return units.has(id) and is_instance_valid(units[id]) and not units[id].is_crossing())
 	match cmd.get("type", ""):
 		"spawn":
 			return _spawn(cmd.unit, cmd.get("spawn", 0))
@@ -176,6 +205,14 @@ func submit(cmd: Dictionary) -> int:
 				u.set_dog_mode(cmd.get("mode", "heal"))
 		"scout":
 			_toggle_scout(cmd.units)
+		"bridge":
+			return _drop_bridge(cmd.pos)
+		"board":
+			_board(cmd.units, cmd.carrier)
+		"unload":
+			for u in _resolve(cmd.units):
+				if u.can_carry():
+					u.unload()
 	return 0
 
 
@@ -209,8 +246,10 @@ func _move(ids: Array, pos: Vector3, attack: bool) -> void:
 	var kind := "attack_move" if attack else "move"
 	var fid := _next_formation
 	_next_formation += 1
+	# Across the water the riders hop onto the carriers moved with them (they keep their spots in the formation).
+	var ferry := _ferry(list, pos)
 	# Two or more lionesses form up in firing lines; the rest gather behind them.
-	var lionesses := list.filter(func(u): return u.stats.get("line", false)) if line_formation else []
+	var lionesses := list.filter(func(u): return u.stats.get("line", false) and not ferry.has(u)) if line_formation else []
 	var at := pos
 	if lionesses.size() >= 2:
 		var line := LionessLine.make(lionesses, pos)
@@ -222,8 +261,110 @@ func _move(ids: Array, pos: Vector3, attack: bool) -> void:
 		at = pos - line.dir * (line.depth() + LionessLine.RANK_GAP + 2.0)
 	var offsets := formation_offsets(list.size(), 2.2)
 	for i in list.size():
-		list[i].formation_id = fid
-		list[i].set_order({"type": kind, "pos": at + offsets[i]})
+		var u: AttackerUnit = list[i]
+		u.formation_id = fid
+		var o := {"type": kind, "pos": at + offsets[i]}
+		if not ferry.has(u):
+			u.set_order(o)
+		elif u.carrier == ferry[u]:
+			u._then = o  # already on its back: it gets off on the far side
+		else:
+			u.set_order({"type": "board", "carrier": ferry[u], "then": o})
+	var waiting := {}
+	for u in ferry:
+		if u.carrier != ferry[u]:
+			if not waiting.has(ferry[u]):
+				waiting[ferry[u]] = []
+			waiting[ferry[u]].append(u)
+	for c in waiting:
+		c.wait_for(waiting[c])
+
+
+## Which of `list` ride which carrier (of `list`) to get to `pos`: those that ride (AttackerUnit.can_ride) and
+## can't walk there (RiverCrossing.needs_ride), the nearest rider and carrier first, as many as there are seats.
+## Riders on a carrier's back that still have the water to cross stay on it; the others get off.
+func _ferry(list: Array, pos: Vector3) -> Dictionary:
+	var out := {}
+	if not RiverCrossing.active():
+		return out
+	var carriers := list.filter(func(u): return u.can_carry())
+	# Nobody to ride on and nobody riding: nothing to work out (the path queries cost).
+	if carriers.is_empty() and not list.any(func(u): return u.carrier != null):
+		return out
+	var free := {}
+	for c in carriers:
+		free[c] = c.stats.seats.size() - c.riders.size()
+	var need := []
+	# Riders standing near one another share the answer (FERRY_CELL m squares).
+	var asked := {}
+	for u in list:
+		if not u.can_ride():
+			continue
+		var cell := Vector2i(floori(u.global_position.x / FERRY_CELL), floori(u.global_position.z / FERRY_CELL))
+		if not asked.has(cell):
+			asked[cell] = RiverCrossing.needs_ride(u, pos)
+		var needs: bool = asked[cell]
+		if u.carrier != null:
+			if needs:
+				out[u] = u.carrier
+			elif free.has(u.carrier):
+				free[u.carrier] += 1
+			continue
+		if needs and not carriers.is_empty():
+			need.append(u)
+	var pairs := []
+	for u in need:
+		for c in carriers:
+			pairs.append([u.global_position.distance_to(c.global_position), u, c])
+	pairs.sort_custom(func(a, b): return a[0] < b[0])
+	for p in pairs:
+		if out.has(p[1]) or free[p[2]] <= 0:
+			continue
+		out[p[1]] = p[2]
+		free[p[2]] -= 1
+	return out
+
+
+## Riders hop onto `carrier_path`'s back, as many as there are seats left, the nearest first; the rest stand by it.
+func _board(ids: Array, carrier_path: NodePath) -> void:
+	var c := get_node_or_null(carrier_path) as AttackerUnit
+	if c == null or not c.can_carry() or c.team != GameConfig.TEAM_ATTACKER:
+		return
+	var free := c.seats_free()
+	var list := _resolve(ids).filter(func(u): return u.can_ride() and u.carrier != c and u.is_controllable())
+	list.sort_custom(func(a, b): return a.global_position.distance_to(c.global_position) < b.global_position.distance_to(c.global_position))
+	var offsets := formation_offsets(list.size(), 2.2)
+	var boarding := []
+	for i in list.size():
+		var u: AttackerUnit = list[i]
+		if free > 0:
+			u.set_order({"type": "board", "carrier": c, "then": null})
+			boarding.append(u)
+			free -= 1
+		else:
+			u.set_order({"type": "move", "pos": c.global_position + c.global_basis.z * (c.stats.radius + 3.0) + offsets[i]})
+
+
+# ---------------------------------------------------------------- bridges
+
+## Drops a folding bridge across the river nearest `pos`, if there are any left and it can go there.
+func _drop_bridge(pos: Vector3) -> int:
+	if bridges_left <= 0 or level == null or not RiverCrossing.active():
+		return 0
+	var plan := FoldingBridge.plan(pos)
+	if not plan.ok:
+		return 0
+	bridges_left -= 1
+	var b := FoldingBridge.new()
+	b.setup(plan, BRIDGE_STOCK - bridges_left, level)
+	level.add_child(b)
+	bridges.append(b)
+	b.alarm.connect(func(br, on): bridge_alarm.emit(br, on))
+	b.fallen.connect(func(br):
+		bridges.erase(br)
+		bridge_fallen.emit(br))
+	bridge_ordered.emit(b)
+	return b.bridge_id
 
 
 func _attack(ids: Array, target_path: NodePath) -> void:
