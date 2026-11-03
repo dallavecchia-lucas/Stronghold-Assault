@@ -83,6 +83,7 @@ var _shape: CollisionShape3D
 ## model of its own (catching fire): the model's path and yaw, and the batches' instances to hide then.
 var _model_path := ""
 var _model_yaw := 0.0
+var _model_offset := Vector3.ZERO
 var _proxies: Array = []
 var _grid_key := Vector2i(1 << 30, 0)
 
@@ -107,11 +108,14 @@ func setup(h: float, model: Node3D, canopy_r: float, grove_index: int) -> void:
 
 
 ## Sets up a proxy tree (JungleFlora): no model of its own until it catches fire; `proxies` are
-## [MultiMesh, instance] pairs drawing it meanwhile. `trunk_radius_m`: its trunk's collision radius.
-func setup_proxy(h: float, model_path: String, yaw: float, canopy_r: float, grove_index: int, trunk_radius_m: float, proxies: Array) -> void:
+## [MultiMesh, instance] pairs drawing it meanwhile. `trunk_radius_m`: its trunk's collision radius;
+## `model_offset`: where the model's origin is from the tree's (the foot of its trunk).
+func setup_proxy(h: float, model_path: String, yaw: float, canopy_r: float, grove_index: int, trunk_radius_m: float, proxies: Array,
+		model_offset := Vector3.ZERO) -> void:
 	setup(h, null, canopy_r, grove_index)
 	_model_path = model_path
 	_model_yaw = yaw
+	_model_offset = model_offset
 	_proxies = proxies
 	(_shape.shape as CylinderShape3D).radius = trunk_radius_m
 
@@ -169,6 +173,7 @@ func _materialize() -> void:
 		return
 	_model = Props.instance(_model_path, height)
 	_model.rotation.y = _model_yaw
+	_model.position = _model_offset
 	add_child(_model)
 	for pr in _proxies:
 		var mm: MultiMesh = pr[0]

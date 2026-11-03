@@ -7,9 +7,9 @@ extends Node3D
 ##       the checks, then the stills (.png) in DIR:
 ##   map_top          the whole map from straight above (no haze)
 ##   map_oblique      over the citadel looking north across the map
-##   keep_clearing    the stronghold in its clearing, the jungle closing in
+##   keep_clearing    the stronghold in its clearing, the forest closing in
 ##   rts_view         the RTS camera over the south gate
-##   rts_river        the RTS camera over the river and the middle bridge, the jungle either side
+##   rts_river        the RTS camera over the river and the middle bridge, the forest either side
 ##   citadel          the Mobile Command Citadel, the main spawn, with the army for scale
 ##   bridge_main      the middle bridge over the river, an elephant crossing
 ##   east_bridge      the east river's bridge, toward the Outpost
@@ -18,8 +18,8 @@ extends Node3D
 ##   prison_cliff     the prison on its plateau, the cliff in front
 ##   prison_close     the prison's walls and towers, a soldier at the gate for scale
 ##   lake             the north-west river's lake
-##   jungle_floor     on the track to the Quarry, in the jungle at eye height
-##   canopy           over the canopy, the emergent giants above it
+##   jungle_floor     on the track to the Quarry, in the forest at eye height
+##   canopy           over the forest canopy
 ##
 ## The checks: a path on the navmesh from the main spawn to every gate, and from each helipad to the gate
 ## facing it; every path keeps out of the water (it crosses on the bridges); the main spawn's to the south
@@ -32,8 +32,8 @@ const SHOTS := {
 	"rts_view": [Vector3(10, 0, 130), Vector3(0, 0, 0), 55.0],
 	"rts_river": [Vector3(-40, 0, 455), Vector3(0, 0, 0), 55.0],
 	"citadel": [Vector3(-30, 13, 628), Vector3(4, 7, 690), 56.0],
-	"bridge_main": [Vector3(-14, 7, 534), Vector3(0, 3, 482), 58.0],
-	"east_bridge": [Vector3(318, 7, 2), Vector3(372, 3, -10), 58.0],
+	"bridge_main": [Vector3(1.5, 6, 538), Vector3(-2, 3, 482), 60.0],
+	"east_bridge": [Vector3(320, 6, -7), Vector3(372, 3, -10), 60.0],
 	"outpost": [Vector3(522, 13, 2), Vector3(562, 4, -40), 56.0],
 	"quarry": [Vector3(-398, 26, 8), Vector3(-505, 6, -40), 60.0],
 	"prison_cliff": [Vector3(70, 100, -360), Vector3(-20, 22, -610), 50.0],
@@ -219,4 +219,6 @@ func _shot(name: String) -> void:
 		await get_tree().process_frame
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png("%s/%s.png" % [shots_dir, name])
-	print("shot %s" % name)
+	# What it took to draw (shadows included): a measure of the map's load on the GPU from there.
+	print("shot %s: %.1f M triangles, %d draw calls" % [name, Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME) / 1.0e6,
+			Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)])

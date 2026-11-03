@@ -1,48 +1,74 @@
 class_name JungleFlora
 extends Node3D
-## The Jungle Keep's jungle: tens of thousands of plants (tools/gltf/build_jungle_flora.py), scattered
-## over the ground by kind (KINDS), drawn in MultiMesh batches per CHUNK square so the engine draws
-## each kind of a chunk at once and drops it past its visibility range. Trees swap to their `_far`
-## model past FAR_AT.
+## The Jungle Keep's forest, from the game's own scenery models (Props.TREES, BUSHES, ROCKS) at their
+## real sizes: stands of oak, birch and conifer by turns (a noise picks the stand), young trees under
+## them, shrubs, ground cover and mossy rocks; tens of thousands of them, drawn in MultiMesh batches per
+## CHUNK square (each model of a chunk at once, the engine dropping to the meshes' lower LODs with the
+## distance and the small ones past their visibility range).
 ##
-## The trees are also ForestTree proxies under the navigation region (their trunks block the way and
-## are baked into the navmesh; they burn, and Serpent Snipers nest in them): a proxy has no model of
-## its own until it catches fire, when it hides its instances in the batches. The bushes are Bush
-## proxies the same way (Serpent Snipers' traps). Undergrowth and ground cover (ferns, bananas,
-## elephant ears, grass) is only drawn: units walk through it.
+## The trees are also ForestTree proxies (they block the way, burn, and Serpent Snipers nest in them): a
+## proxy has no model of its own until it catches fire, when it hides its instance in the batch. Only the
+## big trunks (BAKE_TRUNK) are baked into the navmesh, under the navigation region; the rest only collide
+## (units slide round them): every hole cut in the navmesh costs every navmesh query on the map. The
+## bushes are Bush proxies the same way (Serpent Snipers' traps); the rocks are bodies with collision.
+## Young trees, shrubs and ground cover are only drawn: units walk through them.
 ##
-## In the jungle (in_jungle()) the whole jungle is one forest grove for the game (LevelBuilder).
+## In the forest (in_jungle()) the whole forest is one forest grove for the game (LevelBuilder).
 
-const DIR := "res://assets/environment/jungle/"
-const CHUNK := 150.0
-## Trees switch to their far model at this distance (m), with this much overlap.
-const FAR_AT := 300.0
-const FAR_MARGIN := 25.0
+const OAK := "res://assets/environment/majestic_oak/majestic_oak.glb"
+const BIRCHES := [
+	"res://assets/environment/birch_tree/birch_tree.glb",
+	"res://assets/environment/silver_birch/silver_birch.glb",
+	"res://assets/environment/white_birch_majesty/white_birch_majesty.glb",
+]
+const EVERGREEN := "res://assets/environment/solitary_evergreen/solitary_evergreen.glb"
+const SHRUBS := [
+	"res://assets/environment/berry_woodland_miniature/berry_woodland_miniature.glb",
+	"res://assets/environment/meadow_garden/meadow_garden.glb",
+]
+const COVER := [
+	"res://assets/environment/meadow_tuft/meadow_tuft.glb",
+	"res://assets/environment/wild_meadow_tangle/wild_meadow_tangle.glb",
+]
+
+const CHUNK := 100.0
 ## Plants are scattered over the map and out past its edge to OUTER (scenery only past MAP_HALF).
 const OUTER := 870.0
 
-## kind -> [model, far model ("": none), height range (m), grid cell (m), visibility end (m, 0: none),
-## shadows, tree (a ForestTree proxy) and its trunk radius per metre of height and where a Serpent
-## Sniper lies up it (share of its height)].
-const KINDS := {
-	"kapok": ["kapok", "kapok_far", Vector2(40, 56), 44.0, 0.0, true, true, 0.034, 0.8],
-	"canopy_a": ["canopy_a", "canopy_a_far", Vector2(24, 34), 14.0, 0.0, true, true, 0.028, 0.9],
-	"canopy_b": ["canopy_b", "canopy_a_far", Vector2(28, 38), 16.0, 0.0, true, true, 0.026, 0.9],
-	"palm": ["palm", "palm_far", Vector2(11, 22), 15.0, 0.0, true, true, 0.02, 0.92],
-	"bamboo": ["bamboo", "", Vector2(9, 14), 20.0, 0.0, true, true, 0.08, 0.85],
-	"under_a": ["canopy_a_far", "", Vector2(7.0, 14.0), 12.0, 380.0, true, false, 0.0, 0.0],
-	"under_b": ["canopy_b_far", "", Vector2(8.0, 15.0), 12.0, 380.0, true, false, 0.0, 0.0],
-	"banana": ["banana", "", Vector2(3.0, 6.0), 9.0, 220.0, true, false, 0.0, 0.0],
-	"tree_fern": ["tree_fern", "", Vector2(4.0, 7.5), 9.5, 240.0, true, false, 0.0, 0.0],
-	"elephant_ear": ["elephant_ear", "", Vector2(1.4, 2.6), 6.0, 150.0, false, false, 0.0, 0.0],
-	"fern": ["fern", "", Vector2(0.8, 1.7), 3.4, 130.0, false, false, 0.0, 0.0],
-	"grass": ["grass", "", Vector2(0.5, 1.1), 2.6, 95.0, false, false, 0.0, 0.0],
-}
-## The Meshy bushes (Props.BUSHES) as ground-cover shrubs and Serpent Sniper traps (LevelBuilder.BUSH_WIDTH).
+## Real heights (m): an open-grown oak spreads wider than it is tall (the model's crown is 1.36 times its
+## height), birches and conifers stand taller and narrower.
+const OAK_H := Vector2(15.0, 23.0)
+const BIRCH_H := Vector2(13.0, 22.0)
+const EVERGREEN_H := Vector2(18.0, 32.0)
+const YOUNG_H := Vector2(4.0, 9.0)
+const SHRUB_H := Vector2(1.2, 2.6)
+const COVER_H := Vector2(0.45, 1.1)
+const CLEARING_COVER_H := Vector2(0.35, 0.7)
+const ROCK_H := Vector2(1.2, 3.8)
+## Grid cells (m) the kinds are scattered over, a plant at most per cell.
+const OAK_CELL := 17.0
+const BIRCH_CELL := 12.0
+const EVERGREEN_CELL := 12.5
+const YOUNG_CELL := 13.0
+const SHRUB_CELL := 8.0
+const COVER_CELL := 4.5
+const ROCK_CELL := 42.0
+## How far (m) a trunk keeps from another's foot (an oak's spreads further).
+const TRUNK_GAP := 4.0
+const OAK_GAP := 8.0
+## Drawn this far out at most (m): the forest fades into the haze; the small things sooner.
+const TREE_VIS := 2600.0
+const YOUNG_VIS := 380.0
+const SHRUB_VIS := 230.0
+const COVER_VIS := 110.0
+const ROCK_VIS := 600.0
+## Trunks this thick (m) and over are baked into the navmesh: units path round them.
+const BAKE_TRUNK := 0.75
+## The Meshy bushes as Serpent Sniper traps (LevelBuilder.BUSH_WIDTH).
 const BUSH_CELL := 13.0
+const BUSH_VIS := 260.0
 ## The prison's grounds are cleared this far round it (m).
 const PRISON_CLEAR := 115.0
-const BUSH_VIS := 260.0
 
 static var current: JungleFlora
 
@@ -51,17 +77,22 @@ var terrain: JungleTerrain
 var trees := 0
 var plants := 0
 var bushes := 0
+var rocks := 0
 
 var _rng := RandomNumberGenerator.new()
-## [kind/model, chunk] -> {"parts": [[mesh, local xform], ...], "xforms": Array[Transform3D], "vis": .., "shadow": .., "far": bool}
+## [model path, chunk] -> {"path", "xforms": Array[Transform3D] (then the count), "vis", "shadow", "mms"}
 var _batches := {}
-## Per model path: [[mesh, local xform], ...] and its height as modelled.
+## Per model path: [[mesh, local xform], ...], its height as modelled and its footprint (x, z).
 var _parts := {}
+## Which stand grows where (oak, birch or conifer), and patches in the undergrowth.
+var _stand := FastNoiseLite.new()
 var _patch := FastNoiseLite.new()
-var _bamboo := FastNoiseLite.new()
+## Trunks placed so far, by TRUNK_GRID square, to keep them apart.
+const TRUNK_GRID := 8.0
+var _trunks := {}
 
 
-## True if `p` is in the jungle: out past the clearing and off the sites (one forest grove for the game).
+## True if `p` is in the forest: out past the clearing and off the sites (one forest grove for the game).
 static func in_jungle(p: Vector3) -> bool:
 	var q := Vector2(p.x, p.z)
 	if q.length() < JungleLayout.CLEARING_R + 25.0:
@@ -75,22 +106,27 @@ static func in_jungle(p: Vector3) -> bool:
 func build() -> void:
 	current = self
 	_rng.seed = 20261031
-	_patch.seed = 5
-	_patch.frequency = 0.012
-	_bamboo.seed = 77
-	_bamboo.frequency = 0.008
+	_stand.seed = 5
+	_stand.frequency = 0.0045
+	_stand.fractal_octaves = 2
+	_patch.seed = 9
+	_patch.frequency = 0.02
 	var t0 := Time.get_ticks_msec()
 	_build_room()
 	var records := []
-	for kind in ["kapok", "canopy_a", "palm", "bamboo"]:
-		records.append_array(_scatter_trees(kind))
-	for kind in ["under_a", "under_b", "banana", "tree_fern", "elephant_ear", "fern", "grass"]:
-		_scatter_plants(kind)
+	records.append_array(_scatter_trees("oak", OAK_CELL))
+	records.append_array(_scatter_trees("evergreen", EVERGREEN_CELL))
+	records.append_array(_scatter_trees("birch", BIRCH_CELL))
+	_scatter_young()
+	_scatter_shrubs()
+	_scatter_cover()
 	var bush_records := _scatter_bushes()
+	var rock_records := _scatter_rocks()
 	_build_batches()
 	_make_proxies(records)
 	_make_bushes(bush_records)
-	print("JungleFlora: %d trees, %d plants, %d bushes in %d batches (%d ms)" % [trees, plants, bushes, _batches.size(), Time.get_ticks_msec() - t0])
+	_make_rocks(rock_records)
+	print("JungleFlora: %d trees, %d plants, %d bushes, %d rocks in %d batches (%d ms)" % [trees, plants, bushes, rocks, _batches.size(), Time.get_ticks_msec() - t0])
 
 
 # ---------------------------------------------------------------- where things may grow
@@ -100,7 +136,7 @@ var _room_n := 0
 var _room_grid := PackedFloat32Array()
 
 
-## How much of the jungle's full density may grow, every ROOM_CELL metres (0 in the clearing, on the
+## How much of the forest's full density may grow, every ROOM_CELL metres (0 in the clearing, on the
 ## sites, by the bridges and in the quarry), worked out once.
 func _build_room() -> void:
 	_room_n = int(OUTER * 2.0 / ROOM_CELL) + 1
@@ -139,7 +175,7 @@ func _build_room() -> void:
 			_room_grid[j * _room_n + i] = w
 
 
-## How much of the jungle's full density grows at p, for a plant needing `track_clear` metres off the
+## How much of the forest's full density grows at p, for a plant needing `track_clear` metres off the
 ## tracks (0 in the clearing, on the sites, the tracks, the bridges).
 func _room(p: Vector2, track_clear: float) -> float:
 	var i := clampi(int((p.x + OUTER) / ROOM_CELL + 0.5), 0, _room_n - 1)
@@ -150,96 +186,127 @@ func _room(p: Vector2, track_clear: float) -> float:
 	return w * smoothstep(track_clear, track_clear + 3.0, terrain.track_distance(p.x, p.y))
 
 
-## The ground under p is dry and gentle enough: [ok, height, normal].
+## The ground under p is dry and gentle enough: [ok, height].
 func _ground(p: Vector2, max_slope: float) -> Array:
 	var h := terrain.height_at(p.x, p.y)
 	if h < JungleLayout.WATER_Y + 0.5:
-		return [false, h, Vector3.UP]
-	var nrm := terrain.normal_at(p.x, p.y)
-	return [nrm.y >= cos(deg_to_rad(max_slope)), h, nrm]
+		return [false, h]
+	return [terrain.normal_at(p.x, p.y).y >= cos(deg_to_rad(max_slope)), h]
 
 
 func _jitter(cell: float, i: int, j: int) -> Vector2:
 	return Vector2((i + _rng.randf()) * cell, (j + _rng.randf()) * cell) - Vector2.ONE * OUTER
 
 
+## Near the forest's edge (the clearing's rim).
+func _edge(p: Vector2) -> float:
+	return 1.0 - smoothstep(0.0, 40.0, absf(p.length() - JungleLayout.CLEARING_R - JungleLayout.CLEARING_EDGE * 0.5))
+
+
+## Off the sites' lots and the tracks (for the clearing's ground cover).
+func _site_free(p: Vector2) -> bool:
+	for f in JungleLayout.FLATTEN:
+		if p.distance_to(f[0]) < f[1] * 0.75:
+			return false
+	return terrain.track_distance(p.x, p.y) > 4.0
+
+
+## How much the stand at p is of `kind`: oak where the noise is low, conifer where it is high, birch
+## between, blending at the edges (and a few of each everywhere).
+func _stand_share(p: Vector2, kind: String) -> float:
+	var n := _stand.get_noise_2dv(p)
+	var oak := 1.0 - smoothstep(-0.32, -0.12, n)
+	var conifer := smoothstep(0.12, 0.32, n)
+	match kind:
+		"oak":
+			return 0.12 + 0.88 * oak
+		"evergreen":
+			return 0.1 + 0.9 * conifer
+		_:
+			return 0.15 + 0.85 * (1.0 - maxf(oak, conifer))
+
+
 # ---------------------------------------------------------------- trees
 
-func _scatter_trees(kind: String) -> Array:
-	var spec: Array = KINDS[kind]
-	var cell: float = spec[3]
+func _trunk_free(p: Vector2, gap: float) -> bool:
+	var c := Vector2i(floori(p.x / TRUNK_GRID), floori(p.y / TRUNK_GRID))
+	for dj in range(-1, 2):
+		for di in range(-1, 2):
+			for t in _trunks.get(c + Vector2i(di, dj), []):
+				if p.distance_to(t[0]) < maxf(gap, t[1]):
+					return false
+	return true
+
+
+func _trunk_add(p: Vector2, gap: float) -> void:
+	var c := Vector2i(floori(p.x / TRUNK_GRID), floori(p.y / TRUNK_GRID))
+	if not _trunks.has(c):
+		_trunks[c] = []
+	_trunks[c].append([p, gap])
+
+
+func _scatter_trees(kind: String, cell: float) -> Array:
 	var cells := int(OUTER * 2.0 / cell)
 	var out := []
 	for j in cells:
 		for i in cells:
 			var p := _jitter(cell, i, j)
-			var k := kind
-			var prob := 0.0
-			var room := _room(p, 7.5)
-			match kind:
-				"kapok":
-					prob = 0.55 * room
-				"canopy_a":
-					prob = 0.82 * room * (0.7 + 0.3 * _patch.get_noise_2dv(p * 0.5))
-					k = "canopy_a" if _patch.get_noise_2dv(p) > -0.1 else "canopy_b"
-				"palm":
-					# Along the rivers, round the clearing's edge, a few everywhere.
-					var by_water := 1.0 - smoothstep(20.0, 60.0, terrain.river_distance(p.x, p.y))
-					var edge := 1.0 - smoothstep(0.0, 45.0, absf(p.length() - JungleLayout.CLEARING_R - 15.0))
-					prob = (0.1 + 0.55 * by_water) * room + 0.3 * edge * _room(p, 6.0)
-				"bamboo":
-					prob = 0.8 * room * smoothstep(0.25, 0.45, _bamboo.get_noise_2dv(p))
+			var room := _room(p, 7.0)
+			if room <= 0.0:
+				continue
+			var prob := room * _stand_share(p, kind) * (0.8 if kind == "oak" else 0.78)
 			if _rng.randf() >= prob:
 				continue
-			var g := _ground(p, 24.0)
+			var gap := OAK_GAP if kind == "oak" else TRUNK_GAP
+			if not _trunk_free(p, gap):
+				continue
+			var g := _ground(p, 26.0)
 			if not g[0]:
 				continue
-			# Keep the trunks apart: no tree within 5 m of another's foot.
-			var s: Array = KINDS[k]
-			var h := _rng.randf_range(s[2].x, s[2].y)
+			var path: String = OAK if kind == "oak" else (EVERGREEN if kind == "evergreen" else BIRCHES[_rng.randi() % BIRCHES.size()])
+			var hr: Vector2 = OAK_H if kind == "oak" else (EVERGREEN_H if kind == "evergreen" else BIRCH_H)
+			var h := _rng.randf_range(hr.x, hr.y)
 			var yaw := _rng.randf() * TAU
-			var pos := Vector3(p.x, g[1] - 0.15, p.y)
-			var rec := {"kind": k, "pos": pos, "h": h, "yaw": yaw, "proxies": []}
-			rec.proxies.append(_add_instance(s[0], pos, h, yaw, s[4], s[5], false))
-			if s[1] != "":
-				rec.proxies.append(_add_instance(s[1], pos, h, yaw, 0.0, false, true))
+			# The trunk's foot as modelled (Props.TRUNKS) stands on p: the model is shifted back by it.
+			var trunk: Array = Props.TRUNKS.get(path, [0.0, 0.0, 0.015, 0.9])
+			var offset := Basis(Vector3.UP, yaw) * Vector3(trunk[0], 0.0, trunk[1]) * h
+			var foot := Vector3(p.x, g[1] - 0.15, p.y)
+			_trunk_add(p, gap)
+			var at := _add_instance(path, foot - offset, h, yaw, TREE_VIS, true)
 			if absf(p.x) < JungleLayout.MAP_HALF and absf(p.y) < JungleLayout.MAP_HALF:
-				out.append(rec)
+				out.append({"path": path, "foot": foot, "offset": offset, "h": h, "yaw": yaw, "trunk": trunk, "at": at})
 	return out
 
 
-## Adds an instance of model `name` to its batch for p's chunk; returns [batch key, index].
-func _add_instance(name: String, pos: Vector3, h: float, yaw: float, vis: float, shadow: bool, far: bool) -> Array:
-	var path := DIR + name + ".glb"
-	return _add_path_instance(path, pos, h, yaw, vis, shadow, far)
-
-
-func _add_path_instance(path: String, pos: Vector3, h: float, yaw: float, vis: float, shadow: bool, far: bool) -> Array:
+## Adds an instance of model `path` (scaled to `h`, turned by `yaw`, its origin at `pos`) to its batch for
+## the chunk it stands in; returns [batch key, index].
+func _add_instance(path: String, pos: Vector3, h: float, yaw: float, vis: float, shadow: bool) -> Array:
 	var info := _model_parts(path)
 	var chunk := Vector2i(floori(pos.x / CHUNK), floori(pos.z / CHUNK))
 	var key := [path, chunk]
 	if not _batches.has(key):
-		_batches[key] = {"path": path, "xforms": [], "vis": vis, "shadow": shadow, "far": far}
+		_batches[key] = {"path": path, "xforms": [], "vis": vis, "shadow": shadow}
 	var b: Dictionary = _batches[key]
-	var s: float = h / info[1]
-	b.xforms.append(Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * s), pos))
+	b.xforms.append(Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * (h / info[1])), pos))
 	return [key, b.xforms.size() - 1]
 
 
-## A model's meshes with their transforms (relative to its root), and its height as modelled.
+## A model's meshes with their transforms (relative to its root, Props.FACING included), its height as
+## modelled and its footprint (x, z).
 func _model_parts(path: String) -> Array:
 	if _parts.has(path):
 		return _parts[path]
 	var root := (load(path) as PackedScene).instantiate() as Node3D
+	root.rotation.y = Props.FACING.get(path, 0.0)
 	var parts := []
 	var box := AABB()
 	var first := true
 	for mi in root.find_children("*", "MeshInstance3D", true, false):
 		var xf := Transform3D.IDENTITY
 		var n: Node = mi
-		while n != root:
+		while n != null:
 			xf = (n as Node3D).transform * xf
-			n = n.get_parent()
+			n = n.get_parent() if n != root else null
 		parts.append([(mi as MeshInstance3D).mesh, xf])
 		var b: AABB = xf * (mi as MeshInstance3D).get_aabb()
 		box = b if first else box.merge(b)
@@ -251,55 +318,63 @@ func _model_parts(path: String) -> Array:
 
 # ---------------------------------------------------------------- undergrowth
 
-func _scatter_plants(kind: String) -> void:
-	var spec: Array = KINDS[kind]
-	var cell: float = spec[3]
-	var cells := int(OUTER * 2.0 / cell)
+## Young birches and conifers under the stands, thickest at the forest's edge.
+func _scatter_young() -> void:
+	var cells := int(OUTER * 2.0 / YOUNG_CELL)
 	for j in cells:
 		for i in cells:
-			var p := _jitter(cell, i, j)
-			var prob := 0.0
-			match kind:
-				"under_a", "under_b":
-					# The mid-storey: young trees filling the space under the canopy, thickest at the jungle's edge.
-					prob = (0.28 * _room(p, 5.0) + 0.3 * _edge(p) * _room(p, 5.0)) * (1.0 if (_patch.get_noise_2dv(p * 1.7) > 0.0) == (kind == "under_a") else 0.0) * 2.0
-				"banana":
-					var room := _room(p, 4.0)
-					prob = 0.3 * room + 0.25 * _edge(p) * _room(p, 4.0)
-				"tree_fern":
-					prob = 0.32 * _room(p, 4.0)
-				"elephant_ear":
-					var by_water := 1.0 - smoothstep(15.0, 45.0, terrain.river_distance(p.x, p.y))
-					prob = (0.2 + 0.4 * by_water) * _room(p, 3.0)
-				"fern":
-					prob = 0.55 * _room(p, 2.5) * (0.6 + 0.4 * _patch.get_noise_2dv(p * 2.0))
-				"grass":
-					# Thick in the clearing's rough edges and by the tracks and the water, thinner under the trees.
-					var clearing := 0.16 + 0.45 * smoothstep(JungleLayout.CLEARING_R - 140.0, JungleLayout.CLEARING_R - 20.0, p.length())
-					var mountain := maxf(absf(p.x), absf(p.y)) > LevelBuilder.MOUNTAIN_HALF + 6.0
-					prob = 0.15 * _room(p, 1.5) + (clearing if mountain and _room(p, 0.0) < 0.6 and _site_free(p) else 0.0)
+			var p := _jitter(YOUNG_CELL, i, j)
+			var room := _room(p, 5.0)
+			if _rng.randf() >= 0.3 * room + 0.3 * _edge(p) * room:
+				continue
+			var g := _ground(p, 30.0)
+			if not g[0]:
+				continue
+			var path: String = EVERGREEN if _stand_share(p, "evergreen") > 0.5 else BIRCHES[_rng.randi() % BIRCHES.size()]
+			_add_instance(path, Vector3(p.x, g[1] - 0.1, p.y), _rng.randf_range(YOUNG_H.x, YOUNG_H.y), _rng.randf() * TAU, YOUNG_VIS, true)
+			plants += 1
+
+
+## Shrubs: berry bushes and flowering thickets, thick along the forest's edge and the tracks.
+func _scatter_shrubs() -> void:
+	var cells := int(OUTER * 2.0 / SHRUB_CELL)
+	for j in cells:
+		for i in cells:
+			var p := _jitter(SHRUB_CELL, i, j)
+			var room := _room(p, 3.5)
+			var by_track := 1.0 - smoothstep(4.0, 14.0, terrain.track_distance(p.x, p.y))
+			if _rng.randf() >= (0.3 + 0.25 * _patch.get_noise_2dv(p)) * room + 0.35 * (_edge(p) + by_track) * _room(p, 3.5):
+				continue
+			var g := _ground(p, 32.0)
+			if not g[0]:
+				continue
+			_add_instance(SHRUBS[_rng.randi() % SHRUBS.size()], Vector3(p.x, g[1] - 0.05, p.y), _rng.randf_range(SHRUB_H.x, SHRUB_H.y),
+					_rng.randf() * TAU, SHRUB_VIS, true)
+			plants += 1
+
+
+## Ground cover: tufts and tangles all over the forest floor, and the clearing's rough grass, thicker
+## toward its rim (off the mountain's foot, the sites and the tracks).
+func _scatter_cover() -> void:
+	var cells := int(OUTER * 2.0 / COVER_CELL)
+	for j in cells:
+		for i in cells:
+			var p := _jitter(COVER_CELL, i, j)
+			var room := _room(p, 2.0)
+			var clearing := 0.0
+			if room < 0.6 and maxf(absf(p.x), absf(p.y)) > LevelBuilder.MOUNTAIN_HALF + 6.0 and _site_free(p):
+				clearing = 0.12 + 0.4 * smoothstep(JungleLayout.CLEARING_R - 140.0, JungleLayout.CLEARING_R - 20.0, p.length())
+			var prob := 0.42 * room * (0.7 + 0.3 * _patch.get_noise_2dv(p * 2.0)) + clearing
 			if _rng.randf() >= prob:
 				continue
 			var g := _ground(p, 35.0)
 			if not g[0]:
 				continue
-			var h := _rng.randf_range(spec[2].x, spec[2].y)
-			var pos := Vector3(p.x, g[1] - 0.05, p.y)
-			_add_instance(spec[0], pos, h, _rng.randf() * TAU, spec[4], spec[5], false)
+			var in_clearing := room < 0.3
+			var path: String = COVER[0] if in_clearing else COVER[_rng.randi() % COVER.size()]
+			var hr := CLEARING_COVER_H if in_clearing else COVER_H
+			_add_instance(path, Vector3(p.x, g[1] - 0.05, p.y), _rng.randf_range(hr.x, hr.y), _rng.randf() * TAU, COVER_VIS, false)
 			plants += 1
-
-
-## Near the jungle's edge (the clearing's rim).
-func _edge(p: Vector2) -> float:
-	return 1.0 - smoothstep(0.0, 40.0, absf(p.length() - JungleLayout.CLEARING_R - JungleLayout.CLEARING_EDGE * 0.5))
-
-
-## Off the sites' lots and the tracks (for the clearing's grass).
-func _site_free(p: Vector2) -> bool:
-	for f in JungleLayout.FLATTEN:
-		if p.distance_to(f[0]) < f[1] * 0.75:
-			return false
-	return terrain.track_distance(p.x, p.y) > 4.0
 
 
 func _scatter_bushes() -> Array:
@@ -308,8 +383,8 @@ func _scatter_bushes() -> Array:
 	for j in cells:
 		for i in cells:
 			var p := _jitter(BUSH_CELL, i, j)
-			var prob := 0.42 * _room(p, 4.0) + 0.3 * _edge(p) * _room(p, 4.0)
-			# A few shrubs out in the clearing's outer half, off the tracks and the mountain's foot.
+			var prob := 0.3 * _room(p, 4.0) + 0.3 * _edge(p) * _room(p, 4.0)
+			# A few out in the clearing's outer half, off the tracks and the mountain's foot.
 			if _room(p, 0.0) <= 0.0 and p.length() > JungleLayout.CLEARING_R * 0.55 and maxf(absf(p.x), absf(p.y)) > LevelBuilder.MOUNTAIN_HALF + 20.0 and _site_free(p):
 				prob = 0.06
 			if _rng.randf() >= prob:
@@ -321,12 +396,47 @@ func _scatter_bushes() -> Array:
 			var info := _model_parts(path)
 			var aspect: float = maxf(info[2].x, info[2].y) / info[1]
 			var h := minf(_rng.randf_range(LevelBuilder.BUSH_WIDTH[0], LevelBuilder.BUSH_WIDTH[1]) / aspect, LevelBuilder.BUSH_TALLEST)
-			var yaw := _rng.randf() * TAU
 			var pos := Vector3(p.x, g[1] - 0.05, p.y)
-			_add_path_instance(path, pos, h, yaw, BUSH_VIS, true, false)
+			_add_instance(path, pos, h, _rng.randf() * TAU, BUSH_VIS, true)
 			if absf(p.x) < JungleLayout.MAP_HALF and absf(p.y) < JungleLayout.MAP_HALF:
 				out.append([pos, path, h])
 	return out
+
+
+## Mossy rocks: along the foot and the top of the cliff, on the quarry's floor and out in the forest.
+## [position, model, height, yaw] each.
+func _scatter_rocks() -> Array:
+	var out := []
+	var a := JungleLayout.CLIFF_A
+	var b := JungleLayout.CLIFF_B
+	for k in 26:
+		out.append(_rock_at(a.lerp(b, _rng.randf()) + Vector2(_rng.randf_range(-6, 6), _rng.randf_range(4.0, 14.0)), Vector2(4.0, 9.0)))
+	for k in 14:
+		out.append(_rock_at(a.lerp(b, _rng.randf()) + Vector2(_rng.randf_range(-6, 6), _rng.randf_range(-12.0, -4.0)), Vector2(3.0, 6.0)))
+	var qc: Vector2 = JungleLayout.QUARRY_CUT[0]
+	for k in 12:
+		var p := qc + Vector2(_rng.randf_range(-35, 25), _rng.randf_range(-45, 45))
+		if JungleLayout.ellipse_d(p, qc, JungleLayout.QUARRY_CUT[1]) < 0.3:
+			out.append(_rock_at(p, Vector2(1.5, 4.0)))
+	var cells := int(JungleLayout.MAP_HALF * 2.0 / ROCK_CELL)
+	for j in cells:
+		for i in cells:
+			var p := Vector2((i + _rng.randf()) * ROCK_CELL, (j + _rng.randf()) * ROCK_CELL) - Vector2.ONE * JungleLayout.MAP_HALF
+			if _rng.randf() >= 0.32 * _room(p, 8.0):
+				continue
+			if terrain.height_at(p.x, p.y) < JungleLayout.WATER_Y + 0.6 or not _trunk_free(p, 3.0):
+				continue
+			out.append(_rock_at(p, ROCK_H))
+	return out.filter(func(r): return not r.is_empty())
+
+
+func _rock_at(p: Vector2, hr: Vector2) -> Array:
+	var path: String = Props.ROCKS[_rng.randi() % Props.ROCKS.size()]
+	var h := _rng.randf_range(hr.x, hr.y)
+	var yaw := _rng.randf() * TAU
+	var pos := Vector3(p.x, terrain.height_at(p.x, p.y) - h * 0.15, p.y)
+	_add_instance(path, pos, h, yaw, ROCK_VIS, true)
+	return [pos, path, h, yaw]
 
 
 # ---------------------------------------------------------------- batches and proxies
@@ -348,66 +458,46 @@ func _build_batches() -> void:
 			mmi.multimesh = mm
 			mmi.add_to_group("flora_batches")
 			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if b.shadow else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			if b.far:
-				mmi.visibility_range_begin = FAR_AT
-				mmi.visibility_range_begin_margin = FAR_MARGIN
-			elif b.vis > 0.0:
-				mmi.visibility_range_end = b.vis
-				mmi.visibility_range_end_margin = b.vis * 0.1
-			elif _is_tree_path(b.path):
-				mmi.visibility_range_end = FAR_AT + FAR_MARGIN
-				mmi.visibility_range_end_margin = FAR_MARGIN
+			mmi.visibility_range_end = b.vis
+			mmi.visibility_range_end_margin = b.vis * 0.1
 			add_child(mmi)
 			mms.append(mm)
 		b["mms"] = mms
-		# The transforms aren't needed once they are in the MultiMeshes (the parts' are kept apart).
+		# The transforms aren't needed once they are in the MultiMeshes.
 		b.xforms = b.xforms.size()
 
 
-func _is_tree_path(path: String) -> bool:
-	for k in KINDS:
-		if KINDS[k][6] and path == DIR + KINDS[k][0] + ".glb":
-			return true
-	return false
-
-
-## The ForestTree proxies for the trees on the map. Only the emergent giants' trunks (BAKED_KINDS,
-## buttresses and all) are baked into the navmesh, under the navigation region; the rest only collide
-## (units slide round them): every hole cut in the navmesh costs every navmesh query on the map.
-const BAKED_KINDS := ["kapok"]
-
-
+## The ForestTree proxies for the trees on the map: the thick trunks (BAKE_TRUNK) under the navigation
+## region, baked into the navmesh, the rest outside it.
 func _make_proxies(records: Array) -> void:
 	var baked := Node3D.new()
-	baked.name = "JungleTrees"
+	baked.name = "ForestTrees"
 	level.nav_region.add_child(baked)
 	var loose := Node3D.new()
-	loose.name = "JungleTreesUnbaked"
+	loose.name = "ForestTreesUnbaked"
 	level.add_child(loose)
 	for rec in records:
-		var parent: Node3D = baked if rec.kind in BAKED_KINDS else loose
-		var s: Array = KINDS[rec.kind]
 		var h: float = rec.h
+		var trunk: Array = rec.trunk
 		var proxies := []
-		for pr in rec.proxies:
-			var b: Dictionary = _batches[pr[0]]
-			for mm in b.mms:
-				proxies.append([mm, pr[1]])
-		var info := _model_parts(DIR + s[0] + ".glb")
-		var canopy: float = maxf(info[2].x, info[2].y) * (h / info[1]) * 0.5
+		var b: Dictionary = _batches[rec.at[0]]
+		for mm in b.mms:
+			proxies.append([mm, rec.at[1]])
+		var info := _model_parts(rec.path)
+		var radius: float = trunk[2] * h
 		var tree := ForestTree.new()
-		tree.position = rec.pos
-		tree.setup_proxy(h, DIR + s[0] + ".glb", rec.yaw, canopy, 0, maxf(s[7] * h, 0.3), proxies)
-		tree.trunk_r = s[7] * h
-		tree.perch = s[8] * h
-		parent.add_child(tree)
+		tree.position = rec.foot
+		tree.setup_proxy(h, rec.path, rec.yaw, maxf(info[2].x, info[2].y) * (h / info[1]) * 0.5, 0, maxf(radius, 0.25), proxies, -rec.offset)
+		tree.trunk_r = radius
+		tree.perch = trunk[3] * h
+		(baked if radius >= BAKE_TRUNK else loose).add_child(tree)
 		trees += 1
 
 
 ## The Bush proxies (Serpent Sniper traps), drawn by the batches.
 func _make_bushes(records: Array) -> void:
 	var parent := Node3D.new()
-	parent.name = "JungleBushes"
+	parent.name = "ForestBushes"
 	add_child(parent)
 	for rec in records:
 		var info := _model_parts(rec[1])
@@ -416,3 +506,29 @@ func _make_bushes(records: Array) -> void:
 		bush.setup(null, info[2] * (rec[2] / info[1]), rec[2], 0.0)
 		parent.add_child(bush)
 		bushes += 1
+
+
+## The rocks' bodies (drawn by the batches): a cylinder over the middle of each, under the navigation
+## region (the navmesh goes round them).
+func _make_rocks(records: Array) -> void:
+	var parent := Node3D.new()
+	parent.name = "ForestRocks"
+	level.nav_region.add_child(parent)
+	for rec in records:
+		var info := _model_parts(rec[1])
+		var h: float = rec[2]
+		var fp: Vector2 = info[2] * (h / info[1])
+		var body := StaticBody3D.new()
+		body.collision_layer = GameConfig.LAYER_WORLD
+		body.collision_mask = 0
+		body.position = rec[0]
+		body.rotation.y = rec[3]
+		var cs := CollisionShape3D.new()
+		var shape := CylinderShape3D.new()
+		shape.radius = minf(fp.x, fp.y) * 0.4
+		shape.height = h * 0.8
+		cs.shape = shape
+		cs.position.y = h * 0.4
+		body.add_child(cs)
+		parent.add_child(body)
+		rocks += 1

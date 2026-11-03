@@ -1,13 +1,14 @@
 class_name JungleLevel
 extends LevelBuilder
-## The Jungle Keep map (JungleLayout): the stronghold in a clearing in a 1.6 km jungle, the rivers and
+## The Jungle Keep map (JungleLayout): the stronghold in a clearing in a 1.6 km forest, the rivers and
 ## their truss bridges, the ridges, the prison on its plateau behind the cliff, the Quarry and Outpost
 ## helipads, and the Mobile Command Citadel at the south edge, the attackers' main spawn. The stronghold
 ## itself (gates, keep, posts, AA turrets, climbs) is the classic map's (LevelBuilder).
 ##
 ## Everything is at its real size: the prison fortress PRISON_HEIGHT tall (a cell block's windows
 ## about 3 m apart), the citadel CITADEL_HEIGHT (its hull modules two storeys), the helipads' decks big
-## enough for a transport helicopter (AttackerBase), the emergent trees 40-56 m, the canopy 24-38 m.
+## enough for a transport helicopter (AttackerBase), the forest's oaks, birches and conifers 13-32 m
+## (JungleFlora).
 ##
 ## The navmesh is baked in NAV_TILE squares (the map is far too big for one bake): the static colliders
 ## are parsed once, the ground (JungleTerrain.nav_faces, the water cut out) added, and every tile baked
@@ -89,7 +90,7 @@ func _build_environment() -> void:
 	var sky_mat := ProceduralSkyMaterial.new()
 	sky_mat.sky_top_color = Color(0.3, 0.46, 0.66)
 	sky_mat.sky_horizon_color = Color(0.68, 0.73, 0.72)
-	# Below the horizon the sky is the haze over the far jungle, so the land fades into it.
+	# Below the horizon the sky is the haze over the far forest, so the land fades into it.
 	sky_mat.ground_horizon_color = Color(0.66, 0.71, 0.7)
 	sky_mat.ground_bottom_color = Color(0.5, 0.56, 0.52)
 	sky_mat.sun_angle_max = 25.0
@@ -104,7 +105,7 @@ func _build_environment() -> void:
 	env.ssao_enabled = true
 	env.ssao_radius = 2.0
 	env.ssao_intensity = 2.0
-	# The rivers and the lake mirror the jungle and the sky (Forward+).
+	# The rivers and the lake mirror the forest and the sky (Forward+).
 	env.ssr_enabled = true
 	env.ssr_max_steps = 48
 	env.ssr_fade_in = 0.2
@@ -112,7 +113,7 @@ func _build_environment() -> void:
 	env.glow_enabled = true
 	env.glow_intensity = 0.5
 	env.glow_bloom = 0.04
-	# Humid haze: the far jungle fades blue-grey.
+	# Haze: the far forest fades blue-grey.
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.66, 0.71, 0.7)
 	env.fog_density = 0.00045
@@ -203,7 +204,6 @@ func _build_scenery() -> void:
 	_build_prison()
 	_build_citadel()
 	_build_bridges()
-	_build_rocks()
 	flora = JungleFlora.new()
 	flora.name = "Flora"
 	flora.level = self
@@ -278,71 +278,6 @@ func _build_bridges() -> void:
 		br.transform = Transform3D(Basis(Vector3.UP, atan2(-along.y, along.x)), Vector3(c.x, 0.0, c.y))
 		nav_region.add_child(br)
 		bridges.append(br)
-
-
-## Boulders: along the foot and the top of the cliff, on the quarry's floor, on the banks and out in
-## the jungle (with collision, like the classic map's rocks).
-func _build_rocks() -> void:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 4242
-	var a := JungleLayout.CLIFF_A
-	var b := JungleLayout.CLIFF_B
-	for k in 26:
-		var t := rng.randf()
-		var p := a.lerp(b, t) + Vector2(rng.randf_range(-6, 6), rng.randf_range(4.0, 14.0))
-		_boulder(p, rng.randf_range(4.0, 9.0), rng)
-	for k in 14:
-		var p := a.lerp(b, rng.randf()) + Vector2(rng.randf_range(-6, 6), rng.randf_range(-12.0, -4.0))
-		_boulder(p, rng.randf_range(3.0, 6.0), rng)
-	var qc: Vector2 = JungleLayout.QUARRY_CUT[0]
-	for k in 12:
-		var p := qc + Vector2(rng.randf_range(-35, 25), rng.randf_range(-45, 45))
-		if JungleLayout.ellipse_d(p, qc, JungleLayout.QUARRY_CUT[1]) < 0.3:
-			_boulder(p, rng.randf_range(1.5, 4.0), rng)
-	var placed := 0
-	var tries := 0
-	while placed < 220 and tries < 6000:
-		tries += 1
-		var p := Vector2(rng.randf_range(-780, 780), rng.randf_range(-780, 780))
-		if p.length() < JungleLayout.CLEARING_R + 20.0 or ground.track_distance(p.x, p.y) < 8.0:
-			continue
-		var h := ground.height_at(p.x, p.y)
-		if h < JungleLayout.WATER_Y + 0.6 or _near_site(p):
-			continue
-		_boulder(p, rng.randf_range(1.2, 3.5), rng)
-		placed += 1
-
-
-func _near_site(p: Vector2) -> bool:
-	for f in JungleLayout.FLATTEN:
-		if p.distance_to(f[0]) < f[1]:
-			return true
-	if p.distance_to(JungleLayout.PRISON) < 90.0:
-		return true
-	for b in JungleLayout.bridges():
-		if p.distance_to(b[0]) < b[2] * 0.5 + 20.0:
-			return true
-	return false
-
-
-func _boulder(p: Vector2, h: float, rng: RandomNumberGenerator) -> void:
-	var path: String = Props.ROCKS[rng.randi() % Props.ROCKS.size()]
-	var model := Props.instance(path, h)
-	var fp := Props.footprint(path, h)
-	var body := StaticBody3D.new()
-	body.collision_layer = GameConfig.LAYER_WORLD
-	body.collision_mask = 0
-	body.position = Vector3(p.x, ground.height_at(p.x, p.y) - h * 0.15, p.y)
-	body.rotation.y = rng.randf() * TAU
-	var cs := CollisionShape3D.new()
-	var shape := CylinderShape3D.new()
-	shape.radius = minf(fp.x, fp.y) * 0.4
-	shape.height = h * 0.8
-	cs.shape = shape
-	cs.position.y = h * 0.4
-	body.add_child(cs)
-	body.add_child(model)
-	nav_region.add_child(body)
 
 
 # ---------------------------------------------------------------- the navmesh, in tiles

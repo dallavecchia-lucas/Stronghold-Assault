@@ -174,9 +174,9 @@ static func above_ground(p: Vector3) -> float:
 
 
 ## How high the land and what stands on it reach under `p`, for flyers to keep clear of, where the map
-## knows it without a ray: the Jungle Keep's ground, and over the jungle its canopy (CANOPY_TOP). NAN
+## knows it without a ray: the Jungle Keep's ground, and over the forest its canopy (CANOPY_TOP). NAN
 ## where a ray has to find it (the classic map, and round the stronghold's mountain).
-const CANOPY_TOP := 36.0
+const CANOPY_TOP := 28.0
 
 
 static func flight_floor(p: Vector3) -> float:
