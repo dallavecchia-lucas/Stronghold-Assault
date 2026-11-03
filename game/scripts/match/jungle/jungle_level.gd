@@ -1,12 +1,13 @@
 class_name JungleLevel
 extends LevelBuilder
 ## The Jungle Keep map (JungleLayout): the stronghold in a clearing in a 1.6 km forest, the rivers and
-## their truss bridges, the ridges, the prison on its plateau behind the cliff, the Quarry and Outpost
+## their fords, the ridges, the prison on its plateau behind the cliff, the Quarry and Outpost
 ## helipads, and the Mobile Command Citadel at the south edge, the attackers' main spawn. The stronghold
 ## itself (gates, keep, posts, AA turrets, climbs) is the classic map's (LevelBuilder).
 ##
 ## Everything is at its real size: the prison fortress PRISON_HEIGHT tall (a cell block's windows
-## about 3 m apart), the citadel CITADEL_HEIGHT (its hull modules two storeys), the helipads' decks big
+## about 3 m apart), the citadel CITADEL_HEIGHT (a land carrier: each arm of its hull two vehicle decks
+## with room for giraffes, a whole army aboard), the helipads' decks big
 ## enough for a transport helicopter (AttackerBase), the forest's oaks, birches and conifers 13-32 m
 ## (JungleFlora).
 ##
@@ -19,12 +20,12 @@ const PRISON_MODEL := "res://assets/structures/violet_fortress/violet_fortress.g
 const CITADEL_MODEL := "res://assets/structures/mobile_command_citadel/mobile_command_citadel.glb"
 ## Real heights (m, to the top of the highest mast): the prison's central watchtower, the citadel's dishes.
 const PRISON_HEIGHT := 42.0
-const CITADEL_HEIGHT := 19.5
+const CITADEL_HEIGHT := 50.0
 ## The prison faces the Keep; the citadel's long arm points at it.
 const PRISON_YAW := 0.0
 const CITADEL_YAW := PI * 0.5
-## Units spawned at the main spawn appear this far in front (north) of the citadel's middle.
-const SPAWN_AHEAD := 52.0
+## Units spawned at the main spawn come out this far in front (north) of the citadel's hull.
+const SPAWN_AHEAD := 14.0
 const NAV_TILE := 200.0
 const NAV_BORDER := 3.0
 ## Tiles round the stronghold bake only up to its roofs (the mountain above is out of reach); the rest
@@ -39,7 +40,8 @@ var ground: JungleTerrain
 var flora: JungleFlora
 var prison: Node3D
 var citadel: Node3D
-var bridges: Array[TrussBridge] = []
+## How far the citadel's hull reaches out in front of its middle (m).
+var citadel_front := 0.0
 
 var _nav_template: NavigationMesh
 var _tiles := {}  # Vector2i -> NavigationRegion3D
@@ -171,7 +173,7 @@ func _build_bases() -> void:
 
 func _build_spawns() -> void:
 	var at := JungleLayout.MAIN_SPAWN
-	spawn_points.append(Vector3(at.x, 0.0, at.y - SPAWN_AHEAD))
+	spawn_points.append(Vector3(at.x, 0.0, at.y - citadel_front - SPAWN_AHEAD))
 	spawn_names.append("Main")
 	spawn_bases.append(null)
 	for b in bases:
@@ -203,7 +205,6 @@ func camera_home() -> Vector3:
 func _build_scenery() -> void:
 	_build_prison()
 	_build_citadel()
-	_build_bridges()
 	flora = JungleFlora.new()
 	flora.name = "Flora"
 	flora.level = self
@@ -243,14 +244,18 @@ func _build_prison() -> void:
 	_label(prison, "PRISON", PRISON_HEIGHT + 6.0)
 
 
-## The Mobile Command Citadel: the attackers' deployed headquarters at the south edge, its hull modules
-## in a cross on their outriggers. The main spawn is in front of it.
+## The Mobile Command Citadel: the attackers' deployed headquarters at the south edge, a land carrier
+## whose hull modules stand in a cross on their outriggers (each arm about 40 m wide and 16 m tall, two
+## decks inside), the army carried in it. The main spawn is in front of it.
 func _build_citadel() -> void:
 	Props.aspect(CITADEL_MODEL)
 	var fp := Props.footprint(CITADEL_MODEL, CITADEL_HEIGHT)
-	# Two boxes along the cross's arms.
-	citadel = _prop(CITADEL_MODEL, CITADEL_HEIGHT, JungleLayout.MAIN_SPAWN, CITADEL_YAW, 0.2,
-			[[Vector3(0, 5, 0), Vector3(fp.x * 0.95, 10, fp.y * 0.34)], [Vector3(0, 5, 0), Vector3(fp.x * 0.34, 10, fp.y * 0.95)]])
+	# Two boxes along the cross's arms, as tall as the hull.
+	var hull := CITADEL_HEIGHT * 0.34
+	citadel = _prop(CITADEL_MODEL, CITADEL_HEIGHT, JungleLayout.MAIN_SPAWN, CITADEL_YAW, 0.3,
+			[[Vector3(0, hull * 0.5, 0), Vector3(fp.x * 0.95, hull, fp.y * 0.34)], [Vector3(0, hull * 0.5, 0), Vector3(fp.x * 0.34, hull, fp.y * 0.95)]])
+	# Turned a quarter round, its length (the model's x) runs north-south.
+	citadel_front = fp.x * 0.5
 	citadel.name = "MobileCommandCitadel"
 	_label(citadel, "MOBILE COMMAND CITADEL", CITADEL_HEIGHT + 5.0)
 
@@ -267,17 +272,6 @@ func _label(parent: Node3D, text: String, y: float) -> void:
 	l.position = Vector3(0, y, 0)
 	l.no_depth_test = true
 	parent.add_child(l)
-
-
-func _build_bridges() -> void:
-	for b in JungleLayout.bridges():
-		var c: Vector2 = b[0]
-		var along: Vector2 = b[1]
-		var br := TrussBridge.new()
-		br.setup(b[2], b[3])
-		br.transform = Transform3D(Basis(Vector3.UP, atan2(-along.y, along.x)), Vector3(c.x, 0.0, c.y))
-		nav_region.add_child(br)
-		bridges.append(br)
 
 
 # ---------------------------------------------------------------- the navmesh, in tiles
@@ -372,7 +366,7 @@ func rebake_navigation() -> void:
 	_bake_t0 = Time.get_ticks_msec()
 	# The tiles' edges meet exactly: merge them by their exact positions, not the map's coarse cells.
 	NavigationServer3D.map_set_merge_rasterizer_cell_scale(get_world_3d().navigation_map, 0.001)
-	# The static colliders (the stronghold, structures, bridges, rocks, tree trunks), then the ground.
+	# The static colliders (the stronghold, structures, rocks, the big trunks), then the ground.
 	_source = NavigationMeshSourceGeometryData3D.new()
 	NavigationServer3D.parse_source_geometry_data(_nav_template, _source, nav_region)
 	var faces := ground.nav_faces(Rect2(-map_half - NAV_TILE * 0.1, -map_half - NAV_TILE * 0.1, map_half * 2.0 + NAV_TILE * 0.2, map_half * 2.0 + NAV_TILE * 0.2))

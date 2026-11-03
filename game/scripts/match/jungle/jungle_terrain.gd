@@ -2,20 +2,20 @@ class_name JungleTerrain
 extends Node3D
 ## The Jungle Keep map's ground (JungleLayout gives its shape): a height grid every CELL metres out
 ## to HALF (past the map's edge, so the rivers run off it), drawn as CHUNK-sized meshes with a
-## splat-mapped shader (jungle floor, the clearing's grass, mud by the water, the tracks, rock on the
-## steep faces and the quarry's benches), a HeightMapShape3D for collision and one water plane at
+## splat-mapped shader (forest floor, the clearing's grass, mud by the water, rock on the steep faces
+## and the quarry's benches), a HeightMapShape3D for collision and one water plane at
 ## JungleLayout.WATER_Y that only shows where the land dips under it (the rivers and the lake): opaque
-## and glossy, so it mirrors the jungle (screen-space reflections, Forward+).
+## and glossy, so it mirrors the forest (screen-space reflections, Forward+).
 ##
-## The navmesh gets the same ground with the water cut out of it (nav_faces()): the rivers and the
-## lake are chasms to it, so units only cross on the bridges.
+## The navmesh gets the same ground with the deep water cut out of it (nav_faces()): the rivers are
+## fords, walked across anywhere; the lake is a chasm to it.
 
 const CELL := 2.0
 const HALF := 880.0
 ## Quads per mesh chunk side (CHUNK * CELL m).
 const CHUNK := 50
-## Ground under water deeper than this (m) is cut out of the navmesh (and so is the bank within
-## NAV_SHORE of it).
+## Ground under water (deeper than NAV_WET); ground under more than JungleLayout.FORD_DEPTH of it is
+## cut out of the navmesh (and so is the bank within NAV_SHORE of it).
 const NAV_WET := 0.15
 const NAV_SHORE := 1
 
@@ -26,7 +26,6 @@ var heights := PackedFloat32Array()
 ## Per grid point: distance to the nearest river's centre (m), and that river's half width.
 var river_d := PackedFloat32Array()
 var river_hw := PackedFloat32Array()
-var track_d := PackedFloat32Array()
 var splat: Image
 var material: ShaderMaterial
 var body: StaticBody3D
@@ -37,7 +36,6 @@ func build() -> void:
 	n = int(HALF * 2.0 / CELL) + 1
 	var t0 := Time.get_ticks_msec()
 	river_d = _distance_field(_river_segments(), true)
-	track_d = _distance_field(_track_segments(), false)
 	var t1 := Time.get_ticks_msec()
 	_heights()
 	var t2 := Time.get_ticks_msec()
@@ -72,11 +70,9 @@ func wet(x: float, z: float) -> bool:
 	return height_at(x, z) < JungleLayout.WATER_Y + NAV_WET
 
 
-## Distance to the nearest track (m), from the grid.
-func track_distance(x: float, z: float) -> float:
-	var i := clampi(int(round((x + HALF) / CELL)), 0, n - 1)
-	var j := clampi(int(round((z + HALF) / CELL)), 0, n - 1)
-	return track_d[j * n + i]
+## True if (x, z) is under water too deep to wade (the lake).
+func deep(x: float, z: float) -> bool:
+	return height_at(x, z) < JungleLayout.WATER_Y - JungleLayout.FORD_DEPTH
 
 
 ## Distance to the nearest river's centre (m), from the grid.
@@ -94,14 +90,6 @@ func _river_segments() -> Array:
 		var c := JungleLayout.river_curve(r[0])
 		for i in c.size() - 1:
 			segs.append([c[i], c[i + 1], r[1] * 0.5])
-	return segs
-
-
-func _track_segments() -> Array:
-	var segs := []
-	for t in JungleLayout.TRACKS:
-		for i in t.size() - 1:
-			segs.append([t[i], t[i + 1], 0.0])
 	return segs
 
 
@@ -168,7 +156,6 @@ var _noise_b := PackedByteArray()
 ## The jungle floor's roll as two noise images over the grid (made natively in one go each: the rows
 ## below read them instead of calling the noise per point).
 func _prepare() -> void:
-	JungleLayout.bridges()
 	var a := FastNoiseLite.new()
 	a.seed = 4127
 	a.frequency = 0.004 * CELL
@@ -182,18 +169,12 @@ func _prepare() -> void:
 
 
 ## One row of the grid (on a worker thread): heights and splat (r mud by the water, g the clearing's
-## grass, b the tracks, a rock). JungleLayout's shapes, worked out inline: only built-in functions
+## grass, b unused, a rock). JungleLayout's shapes, worked out inline: only built-in functions
 ## here, which run side by side on the worker threads (calls into scripts or objects would not).
 func _height_row(j: int) -> void:
 	var L := JungleLayout
 	var flat_c := [L.MAIN_SPAWN, L.QUARRY, L.OUTPOST]
 	var flat_r := [110.0, 75.0, 75.0]
-	var br_a := PackedVector2Array()
-	var br_b := PackedVector2Array()
-	for bd in L.bridges():
-		var half: float = bd[2] * 0.5 + 12.0
-		br_a.append(bd[0] - bd[1] * half)
-		br_b.append(bd[0] + bd[1] * half)
 	var rg_c := PackedVector2Array()
 	var rg_r := PackedVector2Array()
 	var rg_h := PackedFloat32Array()
@@ -222,7 +203,6 @@ func _height_row(j: int) -> void:
 	var cle := L.CLEARING_EDGE
 	var hw_row := river_hw.slice(j * n, j * n + n)
 	var dr_row := river_d.slice(j * n, j * n + n)
-	var tr_row := track_d.slice(j * n, j * n + n)
 	var na := _noise_a.slice(j * n, j * n + n)
 	var nb := _noise_b.slice(j * n, j * n + n)
 	var z := -HALF + j * CELL
@@ -233,7 +213,7 @@ func _height_row(j: int) -> void:
 	for i in n:
 		var p := Vector2(-HALF + i * CELL, z)
 		var plen := p.length()
-		# Flattened: the clearing, the sites, either end of every bridge.
+		# Flattened: the clearing and the sites.
 		var flat := 1.0 - smoothstep(clr, clr + cle, plen)
 		var grass := 1.0 - smoothstep(clr - 30.0, clr + cle * 0.7, plen)
 		for f in 3:
@@ -242,13 +222,6 @@ func _height_row(j: int) -> void:
 			if fd < fr:
 				flat = maxf(flat, 1.0 - smoothstep(fr * 0.6, fr, fd))
 				grass = maxf(grass, (1.0 - smoothstep(fr * 0.45, fr * 0.9, fd)) * 0.8)
-		for b in br_a.size():
-			var a := br_a[b]
-			var ab := br_b[b] - a
-			var t := clampf((p - a).dot(ab) / ab.length_squared(), 0.0, 1.0)
-			var bd := p.distance_to(a + ab * t)
-			if bd < 34.0:
-				flat = maxf(flat, 1.0 - smoothstep(14.0, 34.0, bd))
 		var land := 0.0
 		if flat < 1.0:
 			var relief := na[i] / 255.0
@@ -306,7 +279,7 @@ func _height_row(j: int) -> void:
 		var rock := 1.0 - smoothstep(0.95, 1.05, Vector2(qcd2.x / qc_r.x, qcd2.y / qc_r.y).length())
 		sr[i * 4] = int(pow(shore, 0.6) * 255.0)
 		sr[i * 4 + 1] = int(grass * 255.0)
-		sr[i * 4 + 2] = int((1.0 - smoothstep(3.0, 7.0, tr_row[i])) * 255.0)
+		sr[i * 4 + 2] = 0
 		sr[i * 4 + 3] = int(rock * 255.0)
 	_rows[j] = [hr, sr]
 
@@ -397,14 +370,14 @@ func _build_collision() -> void:
 
 
 ## The ground for the navmesh as triangle faces (world space), rows j0..j1 of the grid: the same
-## ground, but every cell under water (or within NAV_SHORE cells of it) sunk far below the bake's
-## floor, so nothing there is walkable.
+## ground, but every cell under water too deep to wade (JungleLayout.FORD_DEPTH: the lake, or within
+## NAV_SHORE cells of it) sunk far below the bake's floor, so nothing there is walkable.
 func nav_faces(rect: Rect2) -> PackedVector3Array:
 	var i0 := clampi(int(floor((rect.position.x + HALF) / CELL)), 0, n - 2)
 	var i1 := clampi(int(ceil((rect.end.x + HALF) / CELL)), 1, n - 1)
 	var j0 := clampi(int(floor((rect.position.y + HALF) / CELL)), 0, n - 2)
 	var j1 := clampi(int(ceil((rect.end.y + HALF) / CELL)), 1, n - 1)
-	var wet_y := JungleLayout.WATER_Y + NAV_WET
+	var wet_y := JungleLayout.WATER_Y - JungleLayout.FORD_DEPTH
 	var hgt := func(gi: int, gj: int) -> float:
 		for dj in range(-NAV_SHORE, NAV_SHORE + 1):
 			for di in range(-NAV_SHORE, NAV_SHORE + 1):
@@ -534,9 +507,6 @@ void fragment() {
 	grass = mix(grass, vec3(0.4, 0.36, 0.2), smoothstep(0.6, 0.78, m) * 0.6);
 	grass = mix(grass, vec3(0.36, 0.27, 0.17), smoothstep(0.66, 0.74, m2 * 0.6 + n0 * 0.4) * 0.7);
 	col = mix(col, grass, s.g);
-	// Tracks: packed red-brown earth with ruts.
-	vec3 track = mix(vec3(0.33, 0.22, 0.13), vec3(0.48, 0.35, 0.22), n1);
-	col = mix(col, track, s.b * 0.92);
 	// Mud by the water, darker toward it.
 	vec3 mud = mix(vec3(0.16, 0.12, 0.08), vec3(0.3, 0.24, 0.16), n1);
 	float wet = smoothstep(-1.2, -2.4, wpos.y);

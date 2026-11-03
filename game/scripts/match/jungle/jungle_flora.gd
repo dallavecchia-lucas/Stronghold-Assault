@@ -137,7 +137,7 @@ var _room_grid := PackedFloat32Array()
 
 
 ## How much of the forest's full density may grow, every ROOM_CELL metres (0 in the clearing, on the
-## sites, by the bridges and in the quarry), worked out once.
+## sites and in the quarry), worked out once.
 func _build_room() -> void:
 	_room_n = int(OUTER * 2.0 / ROOM_CELL) + 1
 	_room_grid.resize(_room_n * _room_n)
@@ -146,12 +146,6 @@ func _build_room() -> void:
 	for f in JungleLayout.FLATTEN:
 		flat_c.append(f[0])
 		flat_r.append(f[1])
-	var br_a := PackedVector2Array()
-	var br_b := PackedVector2Array()
-	for b in JungleLayout.bridges():
-		var half: float = b[2] * 0.5 + 10.0
-		br_a.append(b[0] - b[1] * half)
-		br_b.append(b[0] + b[1] * half)
 	var r0 := JungleLayout.CLEARING_R - 10.0
 	var r1 := JungleLayout.CLEARING_R + JungleLayout.CLEARING_EDGE
 	var prison := JungleLayout.PRISON
@@ -165,25 +159,17 @@ func _build_room() -> void:
 				for f in flat_c.size():
 					w *= smoothstep(flat_r[f] * 0.75, flat_r[f] * 1.05, p.distance_to(flat_c[f]))
 				w *= smoothstep(PRISON_CLEAR, PRISON_CLEAR + 30.0, p.distance_to(prison))
-				for b in br_a.size():
-					var ab := br_b[b] - br_a[b]
-					var t := clampf((p - br_a[b]).dot(ab) / ab.length_squared(), 0.0, 1.0)
-					w *= smoothstep(8.0, 16.0, p.distance_to(br_a[b] + ab * t))
 				var q := p - qc
 				if Vector2(q.x / qr.x, q.y / qr.y).length() < 1.08:
 					w = 0.0
 			_room_grid[j * _room_n + i] = w
 
 
-## How much of the forest's full density grows at p, for a plant needing `track_clear` metres off the
-## tracks (0 in the clearing, on the sites, the tracks, the bridges).
-func _room(p: Vector2, track_clear: float) -> float:
+## How much of the forest's full density grows at p (0 in the clearing and on the sites).
+func _room(p: Vector2, _unused := 0.0) -> float:
 	var i := clampi(int((p.x + OUTER) / ROOM_CELL + 0.5), 0, _room_n - 1)
 	var j := clampi(int((p.y + OUTER) / ROOM_CELL + 0.5), 0, _room_n - 1)
-	var w := _room_grid[j * _room_n + i]
-	if w <= 0.0 or track_clear <= 0.0:
-		return w
-	return w * smoothstep(track_clear, track_clear + 3.0, terrain.track_distance(p.x, p.y))
+	return _room_grid[j * _room_n + i]
 
 
 ## The ground under p is dry and gentle enough: [ok, height].
@@ -203,12 +189,12 @@ func _edge(p: Vector2) -> float:
 	return 1.0 - smoothstep(0.0, 40.0, absf(p.length() - JungleLayout.CLEARING_R - JungleLayout.CLEARING_EDGE * 0.5))
 
 
-## Off the sites' lots and the tracks (for the clearing's ground cover).
+## Off the sites' lots (for the clearing's ground cover).
 func _site_free(p: Vector2) -> bool:
 	for f in JungleLayout.FLATTEN:
 		if p.distance_to(f[0]) < f[1] * 0.75:
 			return false
-	return terrain.track_distance(p.x, p.y) > 4.0
+	return true
 
 
 ## How much the stand at p is of `kind`: oak where the noise is low, conifer where it is high, birch
@@ -335,15 +321,14 @@ func _scatter_young() -> void:
 			plants += 1
 
 
-## Shrubs: berry bushes and flowering thickets, thick along the forest's edge and the tracks.
+## Shrubs: berry bushes and flowering thickets, thickest along the forest's edge.
 func _scatter_shrubs() -> void:
 	var cells := int(OUTER * 2.0 / SHRUB_CELL)
 	for j in cells:
 		for i in cells:
 			var p := _jitter(SHRUB_CELL, i, j)
 			var room := _room(p, 3.5)
-			var by_track := 1.0 - smoothstep(4.0, 14.0, terrain.track_distance(p.x, p.y))
-			if _rng.randf() >= (0.3 + 0.25 * _patch.get_noise_2dv(p)) * room + 0.35 * (_edge(p) + by_track) * _room(p, 3.5):
+			if _rng.randf() >= (0.3 + 0.25 * _patch.get_noise_2dv(p)) * room + 0.35 * _edge(p) * room:
 				continue
 			var g := _ground(p, 32.0)
 			if not g[0]:
@@ -354,7 +339,7 @@ func _scatter_shrubs() -> void:
 
 
 ## Ground cover: tufts and tangles all over the forest floor, and the clearing's rough grass, thicker
-## toward its rim (off the mountain's foot, the sites and the tracks).
+## toward its rim (off the mountain's foot and the sites).
 func _scatter_cover() -> void:
 	var cells := int(OUTER * 2.0 / COVER_CELL)
 	for j in cells:
@@ -384,7 +369,7 @@ func _scatter_bushes() -> Array:
 		for i in cells:
 			var p := _jitter(BUSH_CELL, i, j)
 			var prob := 0.3 * _room(p, 4.0) + 0.3 * _edge(p) * _room(p, 4.0)
-			# A few out in the clearing's outer half, off the tracks and the mountain's foot.
+			# A few out in the clearing's outer half, off the mountain's foot.
 			if _room(p, 0.0) <= 0.0 and p.length() > JungleLayout.CLEARING_R * 0.55 and maxf(absf(p.x), absf(p.y)) > LevelBuilder.MOUNTAIN_HALF + 20.0 and _site_free(p):
 				prob = 0.06
 			if _rng.randf() >= prob:
