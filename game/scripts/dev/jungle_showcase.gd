@@ -24,6 +24,7 @@ extends Node3D
 ##   fps_deck_east    on the south and the east gun decks, and on the south and the west roofs,
 ##   fps_roof_south   looking out over the clearing at the treeline
 ##   fps_roof_west
+##   fps_scope_south  the same on the south gun deck through the rifle's smart scope (RMB) at the treeline
 ##
 ## The checks: a path on the navmesh from the main spawn to every gate, and from each helipad to the gate
 ## facing it; none of them through the lake (the rivers they wade); the main spawn's to the south gate
@@ -35,23 +36,25 @@ const SHOTS := {
 	"keep_clearing": [Vector3(210, 120, 330), Vector3(0, 10, 0), 50.0],
 	"rts_view": [Vector3(10, 0, 130), Vector3(0, 0, 0), 55.0],
 	"rts_river": [Vector3(-40, 0, 455), Vector3(0, 0, 0), 55.0],
-	"citadel": [Vector3(-95, 16, 545), Vector3(0, 20, 680), 58.0],
-	"citadel_scale": [Vector3(-46, 2.0, 597), Vector3(-6, 15, 646), 62.0],
-	"ford": [Vector3(-26, 2.6, 516), Vector3(4, -1.0, 480), 58.0],
+	"citadel": [Vector3(86, 28, 772), Vector3(0, 16, 690), 72.0],
+	"citadel_scale": [Vector3(100, 2.2, 728), Vector3(56, 14, 692), 64.0],
+	"ford": [Vector3(-16, 0, 512), Vector3(4, -0.5, 482), 60.0, true],
 	"outpost": [Vector3(522, 13, 2), Vector3(562, 4, -40), 56.0],
 	"quarry": [Vector3(-398, 26, 8), Vector3(-505, 6, -40), 60.0],
 	"prison_cliff": [Vector3(70, 100, -360), Vector3(-20, 22, -610), 50.0],
 	"prison_close": [Vector3(55, 34, -575), Vector3(-20, 38, -650), 58.0],
 	"lake": [Vector3(-590, 13, 200), Vector3(-675, 4, 320), 62.0],
-	"forest_floor": [Vector3(-420, 0, 230), Vector3(-430, 6, 150), 68.0],
+	"forest_floor": [Vector3(-420, 0, 230), Vector3(-430, 6, 150), 68.0, true],
 	"canopy": [Vector3(200, 62, -260), Vector3(320, 30, -400), 60.0],
 	"fps_deck_south": [],
 	"fps_deck_east": [],
 	"fps_roof_south": [],
 	"fps_roof_west": [],
+	"fps_scope_south": [],
 }
-## Where the elephant and the chimp stand by the citadel's hull (x, z), and the ford's crossing (x).
-const BESIDE_CITADEL := [Vector2(-16, 622), Vector2(-9, 621)]
+## Where the elephant and the chimp stand by the citadel's hull (x, z: by the tip of its east arm, on the
+## sunny side), and the ford's crossing (x).
+const BESIDE_CITADEL := [Vector2(73, 706), Vector2(70, 699)]
 const FORD_X := 0.0
 
 var level: JungleLevel
@@ -178,13 +181,14 @@ func _stage_units() -> void:
 	var kinds := ["rifleman", "rifleman", "elephant", "rhino", "giraffe", "mule", "hippo", "rifleman", "kangaroo", "lioness"]
 	for k in kinds.size():
 		_unit(kinds[k], main + Vector3(40.0 + (k % 5 - 2) * 7.0, 0, -int(k / 5) * 9.0 - 6.0), 0.0)
-	_unit("elephant", Vector3(BESIDE_CITADEL[0].x, 0, BESIDE_CITADEL[0].y), 0.35)
-	_unit("chimp", Vector3(BESIDE_CITADEL[1].x, 0, BESIDE_CITADEL[1].y), 0.6)
+	_unit("elephant", Vector3(BESIDE_CITADEL[0].x, 0, BESIDE_CITADEL[0].y), -2.3)
+	_unit("chimp", Vector3(BESIDE_CITADEL[1].x, 0, BESIDE_CITADEL[1].y), -2.0)
 	var ford: Vector2 = JungleLayout.river_crossing("main", FORD_X)[0]
-	_unit("elephant", Vector3(ford.x, 0, ford.y + 4.0), 0.0)
-	_unit("rifleman", Vector3(ford.x - 4.0, 0, ford.y - 4.0), 0.0)
-	_unit("rifleman", Vector3(ford.x + 3.5, 0, ford.y - 9.0), 0.0)
-	_unit("kangaroo", Vector3(ford.x + 8.0, 0, ford.y + 6.0), 0.0)
+	_unit("elephant", Vector3(ford.x + 2.0, 0, ford.y + 3.0), 0.2)
+	_unit("rifleman", Vector3(ford.x - 3.0, 0, ford.y - 2.0), 0.1)
+	_unit("rifleman", Vector3(ford.x + 6.5, 0, ford.y - 6.0), 0.0)
+	_unit("kangaroo", Vector3(ford.x + 9.0, 0, ford.y + 5.0), -0.2)
+	_unit("giraffe", Vector3(ford.x - 7.0, 0, ford.y + 8.0), 0.3)
 	for b in level.bases:
 		for k in 4:
 			_unit(["rifleman", "rhino", "kangaroo", "giraffe"][k], b.spawn_point + Vector3(0, 0, (k - 1.5) * 6.0), -PI * 0.5 * signf(b.position.x))
@@ -217,10 +221,11 @@ func _shot(name: String) -> void:
 		return
 	cam.current = true
 	cam.fov = s[2]
-	if name == "forest_floor":
+	if s.size() > 3:
+		# Stood at the open spot nearest the one asked for (no trunk close by), at eye height.
 		var at := _open_spot(s[0])
-		cam.position = Vector3(at.x, level.ground.height_at(at.x, at.z) + 1.7, at.z)
-		cam.look_at(cam.position + (s[1] - s[0]) * Vector3(1, 0, 1) + Vector3.UP * 3.0)
+		cam.position = Vector3(at.x, level.ground.height_at(at.x, at.z) + 1.9, at.z)
+		cam.look_at(s[1] + (at - s[0]) * Vector3(1, 0, 1) * 0.5)
 	elif name.begins_with("rts_"):
 		# The game's RTS camera: pitched 58 degrees down, 90-130 m out (the shot's first point is where it looks).
 		var focus: Vector3 = s[0]
@@ -266,10 +271,11 @@ func _shot_fps(name: String) -> void:
 	for st in level.stations:
 		if st is DefenderSoldier and (st as DefenderSoldier).model_path.ends_with("_armed.glb"):
 			soldier = st
-	var face: String = {"fps_deck_south": "south", "fps_deck_east": "east", "fps_roof_south": "south", "fps_roof_west": "west"}[name]
+	var face: String = {"fps_deck_south": "south", "fps_deck_east": "east", "fps_roof_south": "south", "fps_roof_west": "west",
+			"fps_scope_south": "south"}[name]
 	var out: Vector3 = LevelBuilder.SIDES[face].dir
 	var at: Vector3
-	if name.begins_with("fps_deck"):
+	if name.begins_with("fps_deck") or name == "fps_scope_south":
 		# A rifle post on that side's gun deck (the east deck's is the soldier's own).
 		at = soldier.global_position
 		for st in level.stations:
@@ -293,9 +299,14 @@ func _shot_fps(name: String) -> void:
 	var pitch := atan2(to.y - 1.6, Vector2(to.x, to.z).length())
 	soldier._pitch = pitch
 	soldier.get_camera().get_parent().rotation.x = pitch
+	var scope := name == "fps_scope_south"
+	if scope:
+		Input.action_press("aim")
 	for k in 40:
 		await get_tree().process_frame
 	await _save(name)
+	if scope:
+		Input.action_release("aim")
 	soldier.unpossess()
 	soldier.process_mode = Node.PROCESS_MODE_DISABLED
 	for st in level.stations:
