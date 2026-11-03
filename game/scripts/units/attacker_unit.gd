@@ -773,8 +773,8 @@ func _ready() -> void:
 		add_to_group("air_units")
 	collision_layer = GameConfig.LAYER_ATTACKERS
 	# Attackers don't collide with each other; avoidance keeps them apart instead.
-	# Flyers don't collide with anything.
-	collision_mask = 0 if is_flying() else GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES | GameConfig.LAYER_DEFENDERS
+	# Flyers don't collide with anything. Walkers keep out of the water (LAYER_WATER_EDGE).
+	collision_mask = 0 if is_flying() else GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES | GameConfig.LAYER_DEFENDERS | GameConfig.LAYER_WATER_EDGE
 	floor_snap_length = 0.5
 
 	var shape := CollisionShape3D.new()

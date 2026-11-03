@@ -6,8 +6,8 @@ extends RefCounted
 ## Keep) stands in a wide clearing in the middle, its gates facing south, east and west. A river
 ## crosses the whole map south of it, west to east; a tributary comes down out of the north-west
 ## into a lake and on into it; another runs down the east side of the clearing from the north edge.
-## The rivers are shallow (RIVER_BED): units wade across anywhere; only the lake is too deep. The
-## attackers come from the Mobile Command Citadel (the main spawn) at the south edge, across the
+## The rivers and the lake are deep (RIVER_BED, LAKE_BED) and nothing walks into them (JungleTerrain's
+## water's edge): there is no ford and, for now, no bridge. The attackers come from the Mobile Command Citadel (the main spawn) at the south edge, across the
 ## river, or from the Quarry helipad west of the Keep and the Outpost helipad east of it, across the
 ## east river. The prison stands on a plateau to the north, behind a cliff that faces the Keep; the
 ## plateau slopes down to the forest round the cliff's ends. Four wooded ridges rise near the corners
@@ -18,12 +18,11 @@ const MAP_HALF := 800.0
 ## CLEARING_EDGE further out.
 const CLEARING_R := 270.0
 const CLEARING_EDGE := 70.0
-## The water's surface, and how deep the beds are dug (m below 0): the rivers a ford's depth
-## (FORD_DEPTH of water at most: the units wade through), the lake far deeper.
+## The water's surface, and how deep the beds are dug (m below 0): the rivers over 4 m deep, deeper
+## than a War Elephant is tall, the lake deeper still.
 const WATER_Y := -1.8
-const RIVER_BED := -2.6
-const LAKE_BED := -7.0
-const FORD_DEPTH := 1.2
+const RIVER_BED := -6.2
+const LAKE_BED := -8.0
 ## A river's banks rise from the water's edge to the land over this far (m).
 const BANK := 9.0
 

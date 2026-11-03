@@ -7,17 +7,23 @@ extends Node3D
 ## JungleLayout.WATER_Y that only shows where the land dips under it (the rivers and the lake): opaque
 ## and glossy, so it mirrors the forest (screen-space reflections, Forward+).
 ##
-## The navmesh gets the same ground with the deep water cut out of it (nav_faces()): the rivers are
-## fords, walked across anywhere; the lake is a chasm to it.
+## The water can't be crossed: the navmesh gets the same ground with all of it cut out (nav_faces()),
+## and an invisible wall stands along the water's edge (_build_water_edge(), LAYER_WATER_EDGE) that every
+## walker collides with, the player's soldier too, and nothing else does (shots, rays and the navmesh
+## bake go through it).
 
 const CELL := 2.0
 const HALF := 880.0
 ## Quads per mesh chunk side (CHUNK * CELL m).
 const CHUNK := 50
-## Ground under water (deeper than NAV_WET); ground under more than JungleLayout.FORD_DEPTH of it is
-## cut out of the navmesh (and so is the bank within NAV_SHORE of it).
+## Ground under water (or less than NAV_WET above it) is cut out of the navmesh, and so is the bank
+## within NAV_SHORE cells of it.
 const NAV_WET := 0.15
 const NAV_SHORE := 1
+## The water's edge wall stands where the ground is EDGE_UP above the water, from EDGE_WALL[0] to
+## EDGE_WALL[1] relative to the water (m): well over a giraffe's head.
+const EDGE_UP := 0.2
+const EDGE_WALL := [-3.0, 9.0]
 
 static var current: JungleTerrain
 
@@ -29,6 +35,7 @@ var river_hw := PackedFloat32Array()
 var splat: Image
 var material: ShaderMaterial
 var body: StaticBody3D
+var edge_body: StaticBody3D
 
 
 func build() -> void:
@@ -41,6 +48,7 @@ func build() -> void:
 	var t2 := Time.get_ticks_msec()
 	_build_meshes()
 	_build_collision()
+	_build_water_edge()
 	_build_water()
 	print("JungleTerrain: %dx%d grid, fields %d ms, heights %d ms, meshes %d ms" % [n, n, t1 - t0, t2 - t1, Time.get_ticks_msec() - t2])
 
@@ -65,14 +73,9 @@ func normal_at(x: float, z: float) -> Vector3:
 	return Vector3(height_at(x - e, z) - height_at(x + e, z), 2.0 * e, height_at(x, z - e) - height_at(x, z + e)).normalized()
 
 
-## True if (x, z) is under water.
+## True if (x, z) is under water (no one goes there: the rivers and the lake are too deep).
 func wet(x: float, z: float) -> bool:
 	return height_at(x, z) < JungleLayout.WATER_Y + NAV_WET
-
-
-## True if (x, z) is under water too deep to wade (the lake).
-func deep(x: float, z: float) -> bool:
-	return height_at(x, z) < JungleLayout.WATER_Y - JungleLayout.FORD_DEPTH
 
 
 ## Distance to the nearest river's centre (m), from the grid.
@@ -369,15 +372,15 @@ func _build_collision() -> void:
 	add_child(body)
 
 
-## The ground for the navmesh as triangle faces (world space), rows j0..j1 of the grid: the same
-## ground, but every cell under water too deep to wade (JungleLayout.FORD_DEPTH: the lake, or within
-## NAV_SHORE cells of it) sunk far below the bake's floor, so nothing there is walkable.
+## The ground for the navmesh as triangle faces (world space), the grid's cells under `rect`: the same
+## ground, but every cell under water (or within NAV_SHORE cells of it) sunk far below the bake's
+## floor, so nothing there is walkable.
 func nav_faces(rect: Rect2) -> PackedVector3Array:
 	var i0 := clampi(int(floor((rect.position.x + HALF) / CELL)), 0, n - 2)
 	var i1 := clampi(int(ceil((rect.end.x + HALF) / CELL)), 1, n - 1)
 	var j0 := clampi(int(floor((rect.position.y + HALF) / CELL)), 0, n - 2)
 	var j1 := clampi(int(ceil((rect.end.y + HALF) / CELL)), 1, n - 1)
-	var wet_y := JungleLayout.WATER_Y - JungleLayout.FORD_DEPTH
+	var wet_y := JungleLayout.WATER_Y + NAV_WET
 	var hgt := func(gi: int, gj: int) -> float:
 		for dj in range(-NAV_SHORE, NAV_SHORE + 1):
 			for di in range(-NAV_SHORE, NAV_SHORE + 1):
@@ -412,6 +415,58 @@ func nav_faces(rect: Rect2) -> PackedVector3Array:
 			faces[w + 5] = c
 			w += 6
 	return faces
+
+
+## The wall along the water's edge: the contour of the ground at EDGE_UP above the water (marching
+## squares over the grid), stood up as a sheer, invisible collision surface. Only LAYER_WATER_EDGE is
+## on it, which only walkers' masks have.
+func _build_water_edge() -> void:
+	var iso := JungleLayout.WATER_Y + EDGE_UP
+	var y0: float = JungleLayout.WATER_Y + EDGE_WALL[0]
+	var y1: float = JungleLayout.WATER_Y + EDGE_WALL[1]
+	var faces := PackedVector3Array()
+	for j in n - 1:
+		var z := -HALF + j * CELL
+		var top := heights.slice(j * n, j * n + n)
+		var bot := heights.slice(j * n + n, j * n + n + n)
+		for i in n - 1:
+			# Corners a (i, j), b (i + 1, j), c (i + 1, j + 1), d (i, j + 1); a bit set for each one under.
+			var ha := top[i]
+			var hb := top[i + 1]
+			var hc := bot[i + 1]
+			var hd := bot[i]
+			var code := int(ha < iso) | int(hb < iso) << 1 | int(hc < iso) << 2 | int(hd < iso) << 3
+			if code == 0 or code == 15:
+				continue
+			var x := -HALF + i * CELL
+			# Where the contour crosses each side: 0 a-b, 1 b-c, 2 c-d, 3 d-a.
+			var e := [
+				Vector2(x + CELL * (iso - ha) / (hb - ha), z) if (ha < iso) != (hb < iso) else Vector2.ZERO,
+				Vector2(x + CELL, z + CELL * (iso - hb) / (hc - hb)) if (hb < iso) != (hc < iso) else Vector2.ZERO,
+				Vector2(x + CELL * (iso - hd) / (hc - hd), z + CELL) if (hc < iso) != (hd < iso) else Vector2.ZERO,
+				Vector2(x, z + CELL * (iso - ha) / (hd - ha)) if (hd < iso) != (ha < iso) else Vector2.ZERO,
+			]
+			for seg in EDGE_SEGMENTS[code]:
+				var p: Vector2 = e[seg[0]]
+				var q: Vector2 = e[seg[1]]
+				faces.append_array([Vector3(p.x, y0, p.y), Vector3(q.x, y0, q.y), Vector3(q.x, y1, q.y),
+						Vector3(p.x, y0, p.y), Vector3(q.x, y1, q.y), Vector3(p.x, y1, p.y)])
+	var shape := ConcavePolygonShape3D.new()
+	shape.backface_collision = true
+	shape.set_faces(faces)
+	edge_body = StaticBody3D.new()
+	edge_body.name = "WaterEdge"
+	edge_body.collision_layer = GameConfig.LAYER_WATER_EDGE
+	edge_body.collision_mask = 0
+	var cs := CollisionShape3D.new()
+	cs.shape = shape
+	edge_body.add_child(cs)
+	add_child(edge_body)
+
+
+## Marching squares: for each corner code, the sides the contour runs between (see _build_water_edge).
+const EDGE_SEGMENTS := [[], [[3, 0]], [[0, 1]], [[3, 1]], [[1, 2]], [[3, 0], [1, 2]], [[0, 2]], [[3, 2]],
+		[[2, 3]], [[0, 2]], [[0, 1], [2, 3]], [[1, 2]], [[1, 3]], [[0, 1]], [[0, 3]], []]
 
 
 func _build_water() -> void:

@@ -1,7 +1,7 @@
 class_name JungleLevel
 extends LevelBuilder
-## The Jungle Keep map (JungleLayout): the stronghold in a clearing in a 1.6 km forest, the rivers and
-## their fords, the ridges, the prison on its plateau behind the cliff, the Quarry and Outpost
+## The Jungle Keep map (JungleLayout): the stronghold in a clearing in a 1.6 km forest, the rivers (too
+## deep to cross: no ford, no bridge yet), the ridges, the prison on its plateau behind the cliff, the Quarry and Outpost
 ## helipads, and the Mobile Command Citadel at the south edge, the attackers' main spawn. The stronghold
 ## itself (gates, keep, posts, AA turrets, climbs) is the classic map's (LevelBuilder).
 ##

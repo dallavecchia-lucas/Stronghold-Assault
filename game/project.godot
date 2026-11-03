@@ -26,6 +26,7 @@ window/stretch/aspect="expand"
 3d_physics/layer_3="defenders"
 3d_physics/layer_4="structures"
 3d_physics/layer_5="nav_block"
+3d_physics/layer_6="water_edge"
 
 [navigation]
 

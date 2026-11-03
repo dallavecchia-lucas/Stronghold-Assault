@@ -144,7 +144,7 @@ func _ready() -> void:
 	add_to_group("troopers")
 	collision_layer = GameConfig.LAYER_DEFENDERS
 	# Squad mates and the garrison don't block each other: avoidance keeps them apart.
-	collision_mask = GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES | GameConfig.LAYER_ATTACKERS
+	collision_mask = GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES | GameConfig.LAYER_ATTACKERS | GameConfig.LAYER_WATER_EDGE
 	floor_snap_length = 0.6
 	floor_max_angle = deg_to_rad(50.0)
 	# Up the spawn ramp at walking pace, not slowed by the slope.

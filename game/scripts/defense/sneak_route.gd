@@ -112,9 +112,9 @@ static func _lay_out(world: World3D) -> bool:
 			var c := _centre(Vector2i(i, j))
 			var solid := LevelBuilder.base_distance(c) <= 1.0
 			if not solid and terrain and LevelBuilder.base_distance(c) > 40.0:
-				# The Jungle Keep's ground says where the deep water and the steep faces are without asking the
+				# The Jungle Keep's ground says where the water and the steep faces are without asking the
 				# navmesh (thousands of queries on a map this size): the rest is open but the helipads' decks.
-				solid = terrain.deep(c.x, c.z) or terrain.normal_at(c.x, c.z).y < 0.75
+				solid = terrain.wet(c.x, c.z) or terrain.normal_at(c.x, c.z).y < 0.75
 				for b in bases:
 					solid = solid or b.edge_distance(c) <= 0.0
 			elif not solid:
