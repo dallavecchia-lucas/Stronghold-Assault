@@ -77,7 +77,8 @@ func _ready() -> void:
 	add_to_group("damageable")
 	add_to_group("defender_targets")
 	collision_layer = GameConfig.LAYER_DEFENDERS
-	collision_mask = GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES | GameConfig.LAYER_ATTACKERS | GameConfig.LAYER_DEFENDERS
+	collision_mask = (GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES | GameConfig.LAYER_ATTACKERS | GameConfig.LAYER_DEFENDERS
+			| GameConfig.LAYER_WATER_EDGE)
 	post_transform = global_transform
 
 	_shape = CollisionShape3D.new()

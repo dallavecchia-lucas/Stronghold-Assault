@@ -413,7 +413,7 @@ func _pick_anchor() -> ForestTree:
 func _next_tree(t: SquadTrooper) -> Array:
 	var lpos := leader.global_position
 	var cands: Array = []
-	for tree in ForestTree.standing:
+	for tree in ForestTree.near(lpos, WORK_RADIUS + 1.0):
 		if tree.grove < 0 or _flat(lpos, tree.global_position) > WORK_RADIUS or not _claimable(tree, t):
 			continue
 		cands.append([LevelBuilder.base_distance(tree.global_position) + WALK_COST * _flat(t.global_position, tree.global_position), tree])
@@ -437,7 +437,7 @@ func _spot_for(t: SquadTrooper, tree: ForestTree) -> Vector3:
 	var space := get_world_3d().direct_space_state
 	for k in [0, 1, -1, 2, -2, 3, -3, 4, -4, 5]:
 		var d := away.rotated(Vector3.UP, k * 0.55)
-		var p := NavigationServer3D.map_get_closest_point(map, tp + d * STAND + Vector3.UP * 0.5)
+		var p := LevelBuilder.nav_closest(map, tp + d * STAND + Vector3.UP * 0.5)
 		var r := _flat(p, tp)
 		if r < STAND_MIN or r > STAND_MAX or absf(p.y - tp.y) > 1.5:
 			continue

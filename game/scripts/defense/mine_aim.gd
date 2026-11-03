@@ -35,7 +35,7 @@ static func solve(from: Vector3, toward: Vector3, count: int, world: World3D, se
 		var p := from + dir.rotated(Vector3.UP, a) * d
 		if points.any(func(q): return _flat(q, p) < SPACING):
 			continue
-		var c := NavigationServer3D.map_get_closest_point(map, p + Vector3.UP * 0.5)
+		var c := LevelBuilder.nav_closest(map, p + Vector3.UP * 0.5)
 		if _flat(c, p) > 1.0 or absf(c.y - from.y) > 4.0:
 			continue
 		points.append(_ground(space, c))

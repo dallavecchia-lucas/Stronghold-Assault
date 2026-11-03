@@ -223,6 +223,9 @@ func _highest(c: Vector3, r: float) -> float:
 
 
 func _ground_at(p: Vector3) -> float:
+	var floor_y := LevelBuilder.flight_floor(p)
+	if not is_nan(floor_y):
+		return floor_y
 	var q := PhysicsRayQueryParameters3D.create(Vector3(p.x, 200.0, p.z), Vector3(p.x, -5.0, p.z), GameConfig.LAYER_WORLD)
 	var hit := _unit.get_world_3d().direct_space_state.intersect_ray(q)
 	return maxf(hit.position.y, 0.0) if not hit.is_empty() else 0.0

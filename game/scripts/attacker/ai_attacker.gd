@@ -95,8 +95,7 @@ func _think() -> void:
 		_pending.pop_front()
 		_staging.append(id)
 		# Off the map's edge the wave gathers a way down its lane; at a helipad, right there.
-		var rally: Vector3 = commander.spawn_points[_wave_spawn] * 0.72 if at == _wave_spawn else commander.spawn_points[at]
-		commander.submit({"type": "move", "units": [id], "pos": rally, "attack": true})
+		commander.submit({"type": "move", "units": [id], "pos": level.rally_point(at), "attack": true})
 
 	if _pending.is_empty() and not _staging.is_empty():
 		_launch_wave()
@@ -341,7 +340,7 @@ func _note_sightings() -> void:
 		if not d.is_alive() or d.get("station_kind") not in SerpentTrap.PREY or Combat.low_profile(d) or not AttackerVision.sees_node(d):
 			continue
 		var p: Vector3 = d.global_position
-		if p.y < 2.0 and Vector2(p.x, p.z).length() > LevelBuilder.FACE_DIST + 4.0:
+		if LevelBuilder.above_ground(p) < 2.0 and Vector2(p.x, p.z).length() > LevelBuilder.FACE_DIST + 4.0:
 			_sightings.append([p, _clock])
 
 
@@ -354,7 +353,7 @@ func _nest_tree(u: AttackerUnit) -> ForestTree:
 	var reach: float = u.stats.range * u.stats.nest_range * 0.85
 	var best: ForestTree = null
 	var best_d := NEST_LOOK
-	for tree in ForestTree.standing:
+	for tree in ForestTree.near(u.global_position, NEST_LOOK + 4.0):
 		if not tree.nest_free(u):
 			continue
 		var foot := tree.trunk_centre()
@@ -463,7 +462,7 @@ func _spawn_for(edge: int) -> int:
 		var b = commander.spawn_bases[k]
 		if b != null and b.side == side and commander.spawn_open(k):
 			return k
-	return edge
+	return level.edge_spawns.get(side, 0)
 
 
 ## Sabotaged helipads: the ground units nearest each (not raiding, not a wave about to set off) go

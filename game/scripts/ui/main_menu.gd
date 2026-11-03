@@ -60,6 +60,18 @@ func _ready() -> void:
 	diff_row.add_child(diff)
 	box.add_child(diff_row)
 
+	var map_row := HBoxContainer.new()
+	map_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	map_row.add_child(UIKit.label("Map  ", 18))
+	var maps := OptionButton.new()
+	for n in GameConfig.MAP_NAMES:
+		maps.add_item(n)
+	maps.select(maxi(GameConfig.MAPS.find(GameConfig.map), 0))
+	maps.item_selected.connect(func(i): GameConfig.map = GameConfig.MAPS[i])
+	maps.add_theme_font_size_override("font_size", 18)
+	map_row.add_child(maps)
+	box.add_child(map_row)
+
 	var intro := UIKit.button("Watch Intro", 18)
 	intro.custom_minimum_size = Vector2(560, 44)
 	intro.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/intro.tscn"))

@@ -209,7 +209,7 @@ func _trunk_in_flame(from: Vector3, dir: Vector3, reach: float) -> Array:
 	var flat := Vector2(dir.x, dir.z)
 	if flat.length() < 0.2:
 		return [null, reach]
-	for tr in ForestTree.standing:
+	for tr in ForestTree.near(from, reach + 4.0):
 		var rel := Vector2(tr.global_position.x - from.x, tr.global_position.z - from.z)
 		if rel.length() > reach + 1.0:
 			continue
@@ -219,7 +219,7 @@ func _trunk_in_flame(from: Vector3, dir: Vector3, reach: float) -> Array:
 		var width := lerpf(WIDTH_NOZZLE, WIDTH_TIP, t / REACH) * 0.5
 		var off := (rel - flat * t).length()
 		var y := from.y + dir.y * t - tr.global_position.y
-		if off < ForestTree.TRUNK_RADIUS + width and y > 0.0 and y < tr.height * 0.5:
+		if off < maxf(ForestTree.TRUNK_RADIUS, tr.trunk_r) + width and y > 0.0 and y < tr.height * 0.5:
 			best = tr
 			best_t = t
 	return [best, best_t]

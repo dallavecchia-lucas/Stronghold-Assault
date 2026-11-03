@@ -62,8 +62,11 @@ func _unhandled_input(event: InputEvent) -> void:
 		rotation.y -= event.relative.x * 0.006
 
 
-## Terrain height (the mountain included) under a point.
+## Terrain height (the mountain included) under a point. On the Jungle Keep the ground's own height,
+## and the mountain's near it (a ray would catch the tree trunks).
 func _ground_height(p: Vector3) -> float:
+	if LevelBuilder.terrain and LevelBuilder.base_distance(p) > 20.0:
+		return maxf(LevelBuilder.ground_height(p), 0.0)
 	var q := PhysicsRayQueryParameters3D.create(Vector3(p.x, 200.0, p.z), Vector3(p.x, -5.0, p.z), GameConfig.LAYER_WORLD)
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
 	return maxf(hit.position.y, 0.0) if not hit.is_empty() else 0.0
