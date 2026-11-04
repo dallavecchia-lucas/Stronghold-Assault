@@ -31,8 +31,8 @@ extends Node3D
 ## The river (main) here: where the bears set off on the south bank, where they go on the north bank.
 const SOUTH := Vector3(-322.0, 0.0, 506.0)
 const NORTH := Vector3(-322.0, 0.0, 424.0)
-## The defender rifleman on the north bank, in reach of the river's middle.
-const GUARD_AT := Vector3(-330.0, 0.0, 440.0)
+## The defender rifleman at the top of the north bank (3.6 m over the water), in reach of the river's middle.
+const GUARD_AT := Vector3(-323.0, 0.0, 432.0)
 
 var test := false
 var video := false
@@ -128,12 +128,16 @@ func _start() -> void:
 func _swim_and_dive() -> void:
 	bear = _unit("rifleman", SOUTH)
 	bear2 = _unit("rifleman", SOUTH + Vector3(12.0, 0.0, 1.0))
-	# Tough enough to be shot at the whole way over.
+	# Tough enough to be shot at the whole way over, and slower in the water than they are (the river is narrow
+	# here: the whole dive out in it, and some swimming after).
 	for b in [bear, bear2]:
 		b.stats = b.stats.duplicate()
 		b.stats.hp = 500.0
 		b.hp = 500.0
+		b.stats.swim_speed = 1.5
 	guard = _guard(GUARD_AT, SOUTH)
+	_check(LevelBuilder.ground_height(GUARD_AT) > JungleLayout.WATER_Y + 1.0,
+			"the rifleman stands up on the bank (%.1f m over the water)" % (LevelBuilder.ground_height(GUARD_AT) - JungleLayout.WATER_Y))
 	await _frames(20)
 	_check(commander.submit({"type": "dive", "units": _ids([bear, bear2])}) == 0 and not bear.is_submerged(),
 			"no dive on dry land")
@@ -151,8 +155,8 @@ func _swim_and_dive() -> void:
 	_check(head.y > JungleLayout.WATER_Y + 0.1 and top.y > JungleLayout.WATER_Y + 0.25,
 			"its head out of the water (%.2f m, the top %.2f m over it)" % [head.y - JungleLayout.WATER_Y, top.y - JungleLayout.WATER_Y])
 	if shots_dir != "":
-		await _shot_at("bear_swim", bear, Vector3(2.2, 0.75, -3.6), Vector3(0.0, 0.85, -0.4), 50.0)
-		await _shot_at("bear_swim_side", bear, Vector3(4.2, 0.7, -0.6), Vector3(0.0, 0.7, -0.2), 46.0)
+		await _shot_at("bear_swim", bear, Vector3(1.8, 1.9, -3.0), Vector3(0.0, 0.85, -0.3), 50.0)
+		await _shot_at("bear_swim_side", bear, Vector3(3.8, 1.6, -0.4), Vector3(0.0, 0.8, -0.2), 46.0)
 		await _shot_at("bear_swim_back", bear, Vector3(-1.6, 2.6, 3.4), Vector3(0.0, 0.7, -0.4), 50.0)
 	# The CPU's way: a bear shot at out swimming dives.
 	var ai := AIAttacker.new()
@@ -161,15 +165,21 @@ func _swim_and_dive() -> void:
 	ai._bear_dives()
 	_check(bear2.is_submerged() and not bear.is_submerged(), "the CPU's bear shot at out swimming dives (and the other one doesn't)")
 	ai.free()
-	# The rifleman on the bank is let loose: he picks the bear out and hits it.
+	# The rifleman on the bank is let loose once it is in his reach: he picks the bear out and hits it.
+	await _until(func(): return guard.global_position.distance_to(bear.global_position) < DefenderSoldier.AI_RANGE - 3.0, 20.0)
 	guard.set_process(true)
 	guard.set_physics_process(true)
 	var hp0 := bear.hp
-	ok = await _until(func(): return bear.hp < hp0, 8.0)
+	ok = await _until(func(): return bear.hp < hp0, 15.0)
 	_check(ok and guard._target == bear, "the rifleman on the bank picks it out and hits it (%d hp off)" % int(hp0 - bear.hp))
 	if shots_dir != "":
 		await _until(func(): return guard._fire_cd > DefenderSoldier.AI_FIRE_INTERVAL * 0.75, 2.0)
-		await _shoot("bear_shot_at", guard.global_position + Vector3(4.0, 2.4, 3.0), bear.global_position + Vector3(0, 0.9, 0), 55.0)
+		# Over the rifleman's shoulder at it.
+		var to := bear.global_position - guard.global_position
+		to.y = 0.0
+		var d := to.normalized()
+		var side := d.cross(Vector3.UP)
+		await _shoot("bear_shot_at", guard.global_position - d * 3.0 + side * 0.9 + Vector3.UP * 2.0, bear.global_position + Vector3(0, 0.3, 0), 42.0)
 	# F (the attacker's key, the bear selected): it dives.
 	_select([bear])
 	var ev := InputEventKey.new()
@@ -195,7 +205,7 @@ func _swim_and_dive() -> void:
 		await _rts_shot("bear_under_rts")
 		GameConfig.player_side = GameConfig.PlayerSide.DEFENDER
 		await _frames(2)
-		await _rts_shot("bear_under_defender")
+		await _rts_shot("bear_under_defender", false)
 		GameConfig.player_side = GameConfig.PlayerSide.ATTACKER
 		await _frames(2)
 	# On the defender's side nothing shows: no silhouette, no health bar.
@@ -212,11 +222,23 @@ func _swim_and_dive() -> void:
 	var above := bear.global_position + Vector3(1.5, 5.0, 0.8)
 	var hit := Combat.fire_hitscan(guard, above, bear.global_position + Vector3.UP * 0.4, 0.0, 20.0, GameConfig.TEAM_DEFENDER)
 	_check(bear.hp < hp1 - 19.0, "a round fired into the water where it is hits it (%d hp off: %s)" % [int(hp1 - bear.hp), hit])
-	if shots_dir != "":
-		for k in 3:
-			Combat.fire_hitscan(guard, guard.global_position + Vector3(0.4 * k, 1.6, 0.0), bear.global_position + Vector3(0.3 * k - 0.3, 0.4, 0.0), 0.0, 1.0, GameConfig.TEAM_DEFENDER, 1.0, [guard.get_rid()])
-		await _frames(1)
-		await _shot_at("bear_hit_under", bear, Vector3(3.4, 4.2, -5.0), Vector3(0.0, 0.0, -0.4), 54.0)
+	if shots_dir != "" and (only.is_empty() or "bear_hit_under" in only):
+		# Rounds into the water where it is, the moment they are fired (their tracers fade fast).
+		# From the side of their way, a stream of rounds from the bank into the water over it, some in the air.
+		var mid := (guard.global_position + bear.global_position) * 0.5
+		var along := (bear.global_position - guard.global_position)
+		along.y = 0.0
+		var across := along.normalized().cross(Vector3.UP)
+		cam.fov = 58.0
+		cam.current = true
+		_labels(false)
+		controller.visible = false
+		cam.global_position = mid + across * 22.0 + Vector3.UP * 7.0
+		cam.look_at(mid.lerp(bear.global_position, 0.25))
+		for k in 8:
+			Combat.fire_hitscan(guard, guard.global_position + Vector3(0.1 * (k % 3), 1.6, 0.0), bear.global_position + Vector3(0.25 * (k % 4) - 0.4, 0.4, 0.0), 0.0, 0.5, GameConfig.TEAM_DEFENDER, 1.0, [guard.get_rid()])
+			await get_tree().process_frame
+		await _snap("bear_hit_under", 1)
 	# Up again after dive_time s: the Swim clip, the rifleman hits it again.
 	ok = await _until(func(): return not bear.is_submerged(), bear.stats.dive_time + 1.0)
 	_check(ok, "up again after %.0f s" % bear.stats.dive_time)
@@ -244,8 +266,8 @@ func _swim_and_dive() -> void:
 
 ## The camera's place by the bear (in its frame, turned with it) and where it looks, eased toward each frame;
 ## the video's steps move them (_to).
-var _eye := Vector3(2.4, 0.9, -3.8)
-var _at := Vector3(0.0, 0.8, -0.5)
+var _eye := Vector3(2.4, 1.9, -3.8)
+var _at := Vector3(0.0, 0.9, -0.5)
 var _look := Vector3.ZERO
 
 
@@ -282,6 +304,7 @@ func _video_run() -> void:
 	bear.stats = bear.stats.duplicate()
 	bear.stats.hp = 900.0
 	bear.hp = 900.0
+	bear.stats.swim_speed = 1.6
 	guard = _guard(GUARD_AT, SOUTH)
 	cam.current = true
 	cam.fov = 50.0
@@ -290,8 +313,8 @@ func _video_run() -> void:
 	_say("Bear Rifleman", "swims like a bear: a dog paddle, its head up, its LMG slung across its back")
 	await _hold(30)
 	await _until(func(): return _deep(bear), 30.0)
-	await _to(Vector3(3.0, 0.9, -3.2), Vector3(0.0, 0.8, -0.4), 75)
-	await _to(Vector3(4.3, 0.8, -0.4), Vector3(0.0, 0.7, -0.2), 60)
+	await _to(Vector3(1.9, 1.8, -3.0), Vector3(0.0, 0.85, -0.3), 75)
+	await _to(Vector3(3.8, 1.6, -0.4), Vector3(0.0, 0.8, -0.2), 60)
 	_say("Shot at", "out in the water it can't fire back")
 	guard.set_process(true)
 	guard.set_physics_process(true)
@@ -316,7 +339,7 @@ func _video_run() -> void:
 		await _hold(12)
 	await _until(func(): return not bear.is_submerged(), 6.0)
 	_say("Up again", "after %.0f s: in sight, and shot at, again" % bear.stats.dive_time)
-	await _to(Vector3(2.8, 1.0, -4.0), Vector3(0.0, 0.8, -0.5), 75)
+	await _to(Vector3(2.2, 1.8, -3.4), Vector3(0.0, 0.85, -0.4), 75)
 	await _hold(60)
 	_say("", "")
 
@@ -356,6 +379,10 @@ func _guard(p: Vector3, look: Vector3) -> DefenderSoldier:
 	var to := look - at
 	s.transform = Transform3D(Basis.looking_at(Vector3(to.x, 0.0, to.z)), at)
 	add_child(s)
+	if shots_dir != "":
+		# Stills: its skinned model's bounds go with it (they are left behind while nothing is drawn).
+		for mi: MeshInstance3D in s.find_children("*", "MeshInstance3D", true, false):
+			mi.custom_aabb = AABB(Vector3(-6, -6, -6), Vector3(12, 12, 12))
 	s.became_unavailable.connect(func(_st): s.set("_respawn_cd", 1e9))
 	s.set_process(false)
 	s.set_physics_process(false)
@@ -422,19 +449,20 @@ func _shoot(name: String, eye: Vector3, at: Vector3, fov: float) -> void:
 
 
 ## The RTS view over the bear: the commander's camera, the HUD up.
-func _rts_shot(name: String) -> void:
+func _rts_shot(name: String, hud := true) -> void:
 	if not only.is_empty() and name not in only:
 		return
 	var rig := controller.camera_rig
 	_labels(true)
 	cam.current = false
 	rig.camera.current = true
-	controller.visible = true
-	rig.rotation.y = 0.25
-	rig.pitch = deg_to_rad(-58.0)
-	rig.zoom = 34.0
-	rig._target_zoom = 34.0
-	rig.focus(bear.global_position + Vector3(0, 0, 8))
+	controller.visible = hud
+	# From the east, over the river (the banks' trees out of the way).
+	rig.rotation.y = 1.45
+	rig.pitch = deg_to_rad(-56.0)
+	rig.zoom = 28.0
+	rig._target_zoom = 28.0
+	rig.focus(bear.global_position)
 	_select([bear])
 	await _frames(3)
 	await _snap(name)
@@ -442,10 +470,10 @@ func _rts_shot(name: String) -> void:
 	cam.current = true
 
 
-func _snap(name: String) -> void:
+func _snap(name: String, settle := 3) -> void:
 	RenderingServer.render_loop_enabled = true
 	var t0 := Time.get_ticks_msec()
-	for k in 3:
+	for k in settle:
 		await RenderingServer.frame_post_draw
 	DirAccess.make_dir_recursive_absolute(shots_dir)
 	get_viewport().get_texture().get_image().save_png(shots_dir.path_join(name + ".png"))

@@ -7,13 +7,14 @@ extends Node3D
 ##   godot --path game --resolution 1280x720 --fixed-fps 30 res://scenes/dev/bridge_showcase.tscn -- --shots=DIR [--only=a,b]
 ##       the same run, with stills (.png) in DIR on the way (--only: just those, and it stops after the last):
 ##   swim_bears        bears and a Serpent Sniper swimming across, only their heads and backs over the water
-##   rafts_crossing    two hippos and an elephant swimming across, towing their rafts: two riders on each of two,
-##                     a Combat Rhino alone on the third
+##   rafts_crossing    three hippos and an elephant swimming across, towing their rafts: two riders on each of two,
+##                     a Combat Rhino alone on the third, a giraffe alone on the fourth
 ##   raft_riders       close by the first hippo's raft: its two riders on its deck, out on the river
 ##   raft_rhino        close by the rhino on its raft of its own
+##   raft_giraffe      close by the giraffe on its raft of its own
 ##   hippo_head        a swimming hippo, its head over the water
 ##   elephant_trunk    the swimming elephant, its trunk raised out of the water to breathe through
-##   left_behind       the giraffe left on the south bank (it can't swim or ride), the one rider with no place left
+##   left_behind       the bison left on the south bank (it can't swim or ride), the one rider with no place left
 ##                     beside it, the eagles gone over
 ##   preview           the RTS view: the cyan preview across the river under the cursor
 ##   preview_bad       red where it can't go (the river too wide where the lake's outlet comes in)
@@ -21,7 +22,7 @@ extends Node3D
 ##   drop_thrusters    the thrusters braking it
 ##   drop_unfold       unfolding in the hover
 ##   bridge_down       down across the river
-##   bridge_crossing   the giraffe, a Bison Field Gun, the Mule Artillery and a rhino with no raft crossing it
+##   bridge_crossing   the bison, a giraffe and a rhino with no raft to ride, and the Mule Artillery crossing it
 ##   alarm             defenders on it: the red lights flashing along its railings, the alarm on the RTS HUD
 ##   under_fire        shells bursting on it: no alarm, its health barely down
 ##   godot --path game --resolution 1280x720 --write-movie bridge.avi --fixed-fps 30 res://scenes/dev/bridge_showcase.tscn -- --video
@@ -30,14 +31,15 @@ extends Node3D
 ##       onto the banks; the RTS view again, one bridge fewer left.
 ##
 ## The checks: 30 bridges and no more; no bridge on dry land, across the lake's outlet where it is too wide, or on top
-## of another; with no bridge the giraffe can't get across and goes only to the south bank; the bears, the snake, the
+## of another; with no bridge the bison can't get across and goes only to the south bank; the bears, the snake, the
 ## hippos and the elephant swim over (no shot fired nor skill used while in the water); the kangaroos, the chimp, the
 ## lioness and the dog hop onto two of the rafts the carriers tow, two to a raft, the rhino onto the third on its own,
-## the one left over stays behind, out on the water the rafts keep clear of one another, and the riders get off on
+## the giraffe onto the fourth on its own, the one left over stays behind, out on the water the rafts keep clear of one another, and the riders get off on
 ## the north bank and go to their spots; the eagles fly over; the bridge comes down where its preview showed it, the
-## navmesh and the wall at the water's edge open over it, and the giraffe, the bison, the mule and a rhino walk over
+## navmesh and the wall at the water's edge open over it, and the bison, a giraffe, the mule and a rhino walk over
 ## it; a defender on it sets the alarm off until it is off it again; on dry land (--test) two of three riders board a
-## raft, a giraffe can't, a rhino can't join riders nor anyone a rhino, and Space lets them off; shots and shells on
+## raft, a giraffe can't join them, a rhino can't join riders nor anyone a rhino (the giraffe neither), a giraffe
+## boards an empty raft on its own and nobody joins it, and Space lets them off; shots and shells on
 ## it set no alarm off and take ARMOR off every hit; brought down, the bridge sinks, the chimp on it drowns, the bear
 ## on it swims to the bank, and the way over is gone again.
 
@@ -183,8 +185,8 @@ var dummy: FlameTrooper
 
 
 func _act_cross() -> void:
-	# Bears and a snake to swim, two hippos and an elephant towing their rafts, the riders (a rhino among them, next to
-	# the second hippo's raft), the giraffe that can do neither, eagles.
+	# Bears and a snake to swim, three hippos and an elephant towing their rafts, the riders (a rhino and a giraffe
+	# among them, next to the second and the third hippo's rafts), a bison that can do neither, eagles.
 	for k in 2:
 		swimmers.append(_unit("rifleman", SOUTH + Vector3(-6.0 + k * 4.0, 0, 0)))
 	swimmers.append(_unit("serpent", SOUTH + Vector3(6.0, 0, 2.0)))

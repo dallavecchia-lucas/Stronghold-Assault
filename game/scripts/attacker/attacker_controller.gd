@@ -980,7 +980,9 @@ func _build_hud() -> void:
 	info.add_child(_supply_label)
 	info.add_child(_count_label)
 	info.add_child(_selection_label)
-	info.custom_minimum_size.x = 150
+	# Long lines about the selection wrap (the bar would grow off the screen's sides).
+	_selection_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	info.custom_minimum_size.x = 200
 	row.add_child(info)
 	# Lionesses moved together form up in firing lines: the toggle shows while any are selected.
 	_line_button = UIKit.button("", 13)
