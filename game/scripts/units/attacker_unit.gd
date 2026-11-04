@@ -143,6 +143,11 @@ const HOP_HIGH := 1.4
 const FERRY_WAIT := 40.0
 ## Ripples off a swimmer every WAKE_EVERY s.
 const WAKE_EVERY := 0.32
+## A unit on its way that has gone less than HEADWAY of its speed in each of the last HEADWAY_CHECKS spells of
+## HEADWAY_EVERY s is caught on something: it takes a fresh path from where it is.
+const HEADWAY_EVERY := 1.0
+const HEADWAY := 0.3
+const HEADWAY_CHECKS := 2
 
 static var _supply_tex: ImageTexture
 static var _bush_tex: ImageTexture
@@ -376,6 +381,10 @@ var _crossed := false
 var _walk_mask := 0
 ## The point of its path it makes for, at or after the agent's own (_next_waypoint).
 var _wp := 0
+## Headway: where it was HEADWAY_EVERY s ago, and how many of those checks in a row it has hardly moved.
+var _headway_at := Vector3.ZERO
+var _headway_t := 0.0
+var _no_headway := 0
 var _in_forest := false
 var _recoil := 0.0
 var _desired_velocity := Vector3.ZERO
@@ -2755,6 +2764,7 @@ func _physics_process(delta: float) -> void:
 			dir.y = 0.0
 			if dir.length_squared() > 0.0001:
 				_desired_velocity = dir.normalized() * _speed()
+			_headway(delta, move_to)
 	if _agent.avoidance_enabled:
 		_agent.velocity = _desired_velocity
 	else:
@@ -2828,6 +2838,22 @@ func _on_link_reached(details: Dictionary) -> void:
 	_route_breach_in = forward and link.has_meta("breach")
 
 
+## Caught on something on its way (it has hardly moved for a while): a fresh path from where it is.
+func _headway(delta: float, move_to: Vector3) -> void:
+	_headway_t += delta
+	if _headway_t < HEADWAY_EVERY:
+		return
+	var moved := Vector2(global_position.x - _headway_at.x, global_position.z - _headway_at.z).length()
+	_no_headway = _no_headway + 1 if moved < _speed() * HEADWAY_EVERY * HEADWAY else 0
+	if _no_headway >= HEADWAY_CHECKS:
+		_no_headway = 0
+		_wp = 0
+		# A target a hair off the old one: the agent works the path out afresh.
+		_agent.target_position = move_to + Vector3(randf_range(-0.05, 0.05), 0.0, randf_range(-0.05, 0.05))
+	_headway_at = global_position
+	_headway_t = 0.0
+
+
 ## The next point of its path to make for. The agent counts a point reached only within path_desired_distance of it
 ## in 3D; here one within reach on the flat (the navmesh's heights can be a metre or more off the ground, by a
 ## bridge's ramp, say) or one it has gone past (a wide unit, kept off the corners the navmesh's slim agents hug, along
@@ -2859,7 +2885,7 @@ func _next_waypoint() -> Vector3:
 					swim_to(b if global_position.distance_to(a) < global_position.distance_to(b) else a)
 			break
 		var seg := Vector2(path[i + 1].x - path[i].x, path[i + 1].z - path[i].z)
-		if to.length() < reach or (to.dot(seg) < 0.0 and to.length() < reach + 3.0):
+		if to.length() < reach or (to.dot(seg) < 0.0 and to.length() < reach + 1.0):
 			i += 1
 		else:
 			break

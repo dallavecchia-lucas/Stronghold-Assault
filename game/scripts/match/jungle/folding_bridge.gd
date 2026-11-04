@@ -41,7 +41,7 @@ const HINGE_X := 15.05
 const HINGE_TOP := 1.65
 const HINGE_BOTTOM := -3.3
 ## Curbs CURB_H high down the flaps' sides, ending CURB_SHORT short of their tips (m).
-const CURB_H := 0.6
+const CURB_H := 1.1
 const CURB_SHORT := 1.5
 ## Spans: the water plus OVERHANG m either side, within MIN_LENGTH..MAX_LENGTH.
 const OVERHANG := 10.5

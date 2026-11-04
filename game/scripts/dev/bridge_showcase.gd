@@ -155,9 +155,11 @@ func _start() -> void:
 	await _act_cross()
 	await _act_bridge()
 	await _act_alarm()
+	if test:
+		await _act_board()
 	await _act_fall()
 	# A script error in an act cuts it short: all four must have run to the end.
-	_check(_acts == 4, "all four acts ran to the end (%d)" % _acts)
+	_check(_acts == (5 if test else 4), "all the acts ran to the end (%d)" % _acts)
 	print("BRIDGE SHOWCASE %s" % ("FAIL" if _failed else "PASS"))
 	get_tree().quit(1 if _failed else 0)
 
@@ -491,6 +493,40 @@ func _act_alarm() -> void:
 
 
 # ---------------------------------------------------------------- act 4: brought down
+
+## The player's own boarding (RMB a carrier with riders selected: "board"; Space: "unload"), on dry land.
+func _act_board() -> void:
+	var at := OVER_TO + Vector3(-14.0, 0.0, -8.0)
+	var hippo := _unit("hippo", at)
+	var chimp := _unit("chimp", at + Vector3(6.0, 0.0, 3.0))
+	var roo := _unit("kangaroo", at + Vector3(-6.0, 0.0, 3.0))
+	var dog := _unit("medic", at + Vector3(0.0, 0.0, 7.0))
+	var giraffe := _unit("giraffe", at + Vector3(3.0, 0.0, 8.0))
+	await _frames(20)
+	commander.submit({"type": "board", "units": _ids([chimp, roo, dog, giraffe]), "carrier": hippo.get_path()})
+	_check(giraffe.order.type != "board", "a giraffe can't board (%s)" % giraffe.order.type)
+	var boarding := [chimp, roo, dog].filter(func(u): return u.order.type == "board")
+	_check(boarding.size() == 2, "two of the three riders go to board it (2 seats): %d" % boarding.size())
+	for k in 30 * 20:
+		await get_tree().physics_frame
+		if hippo.riders.size() == 2:
+			break
+	_check(hippo.riders.size() == 2, "they hop onto its back: %d" % hippo.riders.size())
+	var rider: AttackerUnit = hippo.riders[0] if not hippo.riders.is_empty() else null
+	commander.submit({"type": "move", "units": [hippo.unit_id], "pos": at + Vector3(0, 0, -12.0), "attack": false})
+	for k in 30 * 8:
+		await get_tree().physics_frame
+	_check(hippo.riders.size() == 2, "on dry land they stay on while it walks (no water crossed)")
+	_check(rider != null and rider.global_position.distance_to(hippo.seat_transform(0).origin) < 0.5, "riding on its back as it goes")
+	commander.submit({"type": "unload", "units": [hippo.unit_id]})
+	for k in 30 * 3:
+		await get_tree().physics_frame
+	_check(hippo.riders.is_empty() and rider != null and not rider.is_riding() and rider.is_on_floor(), "Space: they hop off beside it")
+	for u in [hippo, chimp, roo, dog, giraffe]:
+		commander.units.erase(u.unit_id)
+		u.queue_free()
+	_acts += 1
+
 
 func _act_fall() -> void:
 	# A chimp (can't swim) and a bear (can) standing on it.
