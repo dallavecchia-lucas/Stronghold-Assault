@@ -152,7 +152,7 @@ const DATA := {
 		"range": 30.0, "damage": 8.0, "fire_interval": 0.55, "spread": 0.035,
 		"structure_mult": 0.5, "radius": 0.5, "height": 1.9,
 		"role": "infantry", "anim": "rigged", "hotkey": KEY_Z,
-		"swim_speed": 2.2, "swim_sink": 1.25,
+		"swim_speed": 2.2, "swim_sink": 0.85,
 		"anim_move": "Running", "anim_idle": "Idle", "anim_ref_speed": 4.5,
 		# The Prototype C heavy LMG at the hip, on the model's `rifle` bone (tools/gltf/arm_rifle.py).
 		"gun": "res://assets/weapons/prototype_c_lmg/prototype_c_lmg.glb",
@@ -206,7 +206,7 @@ const DATA := {
 		"structure_mult": 1.5, "radius": 1.6, "height": 3.8,
 		"role": "anti_air", "anim": "rigged", "hotkey": KEY_B,
 		# Carries two riders on its back across the water, behind its cannons.
-		"swim_speed": 2.0, "swim_sink": 1.9,
+		"swim_speed": 2.0, "swim_sink": 1.05,
 		"seats": [Vector3(-0.45, 3.05, 0.85), Vector3(0.45, 3.05, 0.85)],
 		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 2.2,
 		# The real anti-air unit: one elephant's flak is worth about five rhinos.
@@ -313,7 +313,7 @@ const DATA := {
 		"role": "infantry", "anim": "rigged", "hotkey": KEY_U,
 		"anim_move": "Slither", "anim_idle": "Idle", "anim_ref_speed": 2.4,
 		"steer": true, "turn_rate": 2.5,
-		"swim_speed": 2.8, "swim_sink": 0.55,
+		"swim_speed": 2.8, "swim_sink": 0.4,
 		"nest_time": 8.0, "nest_sight": 1.8, "nest_range": 1.6,
 		"trap_time": 8.0, "trap_reach": 4.0, "squeeze_time": 15.0, "sneak_alpha": 0.3,
 		"model": "res://assets/units/serpent_sniper/serpent_sniper_rigged.glb",
@@ -339,8 +339,8 @@ const DATA := {
 		"structure_mult": 1.0, "radius": 1.4, "height": 2.6,
 		"role": "infantry", "anim": "rigged", "hotkey": KEY_K,
 		# Carries two riders on its back across the water.
-		"swim_speed": 2.4, "swim_sink": 1.55,
-		"seats": [Vector3(-0.42, 2.35, 0.75), Vector3(0.42, 2.35, 0.75)],
+		"swim_speed": 2.4, "swim_sink": 0.8,
+		"seats": [Vector3(-0.42, 1.62, 0.6), Vector3(0.42, 1.62, 0.6)],
 		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 2.4,
 		# Mounted machine guns: inaccurate suppressive fire that sprays around the target.
 		"suppress_radius": 2.2, "overheat_time": 8.0, "overheat_cooldown": 2.0,

@@ -105,6 +105,7 @@ var _exhaust: Array[CPUParticles3D] = []
 var _pod_lights: Array[OmniLight3D] = []
 var _spray: CPUParticles3D
 var _lamp_mats: Array[StandardMaterial3D] = []
+var _halos: Array[Sprite3D] = []
 var _alarm_lights: Array[OmniLight3D] = []
 var _body: StaticBody3D
 var _area: Area3D
@@ -615,9 +616,11 @@ func _standing(delta: float) -> void:
 	var phase := fmod(_flash_t * ALARM_RATE, 1.0) < 0.5
 	for k in _lamp_mats.size():
 		var lit := alarm_on and (phase == (k % 2 == 0))
-		_lamp_mats[k].emission_energy_multiplier = 9.0 if lit else 0.15
+		_lamp_mats[k].emission_energy_multiplier = 16.0 if lit else 0.15
+	for h in _halos:
+		h.visible = alarm_on and (phase == (int(h.get_meta("side")) % 2 == 0))
 	for k in _alarm_lights.size():
-		_alarm_lights[k].light_energy = (7.0 if phase == (k % 2 == 0) else 0.0) if alarm_on else 0.0
+		_alarm_lights[k].light_energy = (12.0 if phase == (k % 2 == 0) else 0.0) if alarm_on else 0.0
 
 
 ## Red lamps on the railing posts, the two sides flashing by turns, and red lights over the deck.
@@ -632,8 +635,8 @@ func _build_lamps() -> void:
 		m.roughness = 0.3
 		_lamp_mats.append(m)
 	var dome := SphereMesh.new()
-	dome.radius = 0.26
-	dome.height = 0.4
+	dome.radius = 0.34
+	dome.height = 0.5
 	dome.is_hemisphere = true
 	dome.radial_segments = 10
 	dome.rings = 4
@@ -670,6 +673,7 @@ func _build_lamps() -> void:
 				lamp.scale = Vector3(1.0 / k, 1, 1)
 				lamp.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 				parent.add_child(lamp)
+				_halo(parent, at + Vector3(0, 0.2, 0), (LAMP_X.find(x0) + side) % 2)
 			else:
 				var lamp_base := MeshInstance3D.new()
 				lamp_base.mesh = base
@@ -682,16 +686,56 @@ func _build_lamps() -> void:
 				lamp.position = at + Vector3(0, 0.08, 0)
 				lamp.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 				_model.root.add_child(lamp)
+				_halo(_model.root, at + Vector3(0, 0.2, 0), (LAMP_X.find(x0) + side) % 2)
 	for x0 in [-24.0, -8.0, 8.0, 24.0]:
 		var l := OmniLight3D.new()
 		l.light_color = Color(1.0, 0.12, 0.08)
 		l.light_energy = 0.0
-		l.omni_range = 16.0
-		l.omni_attenuation = 1.2
+		l.omni_range = 20.0
+		l.omni_attenuation = 1.0
 		l.shadow_enabled = false
 		l.position = Vector3(x0 * k, RAIL_H + 1.2, 0)
 		add_child(l)
 		_alarm_lights.append(l)
+
+
+## A red glow round a lamp, showing while it flashes (`side`: which of the two that take turns).
+func _halo(parent: Node3D, at: Vector3, side: int) -> void:
+	var h := Sprite3D.new()
+	h.texture = _halo_texture()
+	h.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	h.shaded = false
+	h.transparent = true
+	h.modulate = Color(1.0, 0.15, 0.08, 0.9)
+	h.pixel_size = 2.4 / 64.0
+	h.position = at
+	h.top_level = false
+	h.visible = false
+	h.set_meta("side", side)
+	h.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(h)
+	# Stays round on the stretched spans.
+	h.scale = Vector3(1.0 / parent.global_transform.basis.get_scale().x if parent != _model.root else 1.0, 1, 1)
+	_halos.append(h)
+
+
+static var _halo_tex: GradientTexture2D
+
+
+static func _halo_texture() -> GradientTexture2D:
+	if _halo_tex == null:
+		var g := Gradient.new()
+		g.set_color(0, Color(1, 1, 1, 1))
+		g.add_point(0.25, Color(1, 1, 1, 0.55))
+		g.set_color(g.get_point_count() - 1, Color(1, 1, 1, 0))
+		_halo_tex = GradientTexture2D.new()
+		_halo_tex.gradient = g
+		_halo_tex.fill = GradientTexture2D.FILL_RADIAL
+		_halo_tex.fill_from = Vector2(0.5, 0.5)
+		_halo_tex.fill_to = Vector2(1.0, 0.5)
+		_halo_tex.width = 64
+		_halo_tex.height = 64
+	return _halo_tex
 
 
 # ---------------------------------------------------------------- thrusters

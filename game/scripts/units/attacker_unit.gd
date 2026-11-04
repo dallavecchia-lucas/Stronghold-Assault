@@ -1410,6 +1410,9 @@ func start_ping() -> bool:
 	_ping_t = 0.0
 	_ping_sent = false
 	_burst_left = 0
+	# It stops on the spot to sweep its dish.
+	velocity.x = 0.0
+	velocity.z = 0.0
 	return true
 
 
@@ -2908,8 +2911,10 @@ func _fly(move_to, delta: float) -> void:
 func _on_velocity_computed(safe: Vector3) -> void:
 	if hp <= 0.0 or is_flying() or not _route.is_empty() or carrier != null:
 		return
-	if not is_packed():
-		safe = Vector3.ZERO  # a Mule Artillery's gun set up: avoidance doesn't push it about
+	if not is_packed() or is_pinging() or is_throwing() or is_bombarding():
+		# A Mule Artillery's gun set up, or a skill used on the spot: it stands (the avoidance pass for the step it
+		# was still walking can come in after it stopped).
+		safe = Vector3.ZERO
 	var dt := get_physics_process_delta_time()
 	if stats.get("steer", false):
 		_steer(safe, dt)
@@ -2920,9 +2925,32 @@ func _on_velocity_computed(safe: Vector3) -> void:
 	move_and_slide()
 	if fits_inside() and is_on_wall() and Vector2(safe.x, safe.z).length() > 0.5:
 		_step_up(Vector3(safe.x, 0.0, safe.z).normalized() * 0.3)
+	elif not stats.get("steer", false) and is_on_wall():
+		_sidestep(safe, dt)
 	var flat := Vector2(velocity.x, velocity.z)
 	if not stats.get("steer", false) and flat.length() > 0.3 and not (Combat.is_valid_target(target) and _in_range(target)):
 		rotation.y = lerp_angle(rotation.y, atan2(-velocity.x, -velocity.z), 8.0 * dt)
+
+
+## Head-on into something the navmesh goes past (a slim trunk the units brush past): move_and_slide gets nowhere
+## against it, so it slides round it, to the side its id picks when it is dead ahead (always the same way: no dithering).
+func _sidestep(want: Vector3, dt: float) -> void:
+	var flat := Vector2(want.x, want.z)
+	if flat.length() < 0.5 or Vector2(velocity.x, velocity.z).length() > flat.length() * 0.3:
+		return
+	var n := get_wall_normal()
+	n.y = 0.0
+	if n.length_squared() < 0.01:
+		return
+	n = n.normalized()
+	var tangent := n.cross(Vector3.UP)
+	var along := tangent.dot(Vector3(want.x, 0.0, want.z))
+	var left := unit_id % 2 == 1 if absf(along) < 0.2 * flat.length() else along < 0.0
+	if left:
+		tangent = -tangent
+	velocity.x = tangent.x * flat.length() + n.x * 0.4
+	velocity.z = tangent.z * flat.length() + n.z * 0.4
+	move_and_slide()
 
 
 ## move_and_slide stops dead at a ledge: hop onto it if it is low enough and there is room.

@@ -386,17 +386,21 @@ The test checks that no dog ever comes within a mine's reach (2.05 m) of a live 
 
 ```sh
 godot --path game --headless --fixed-fps 30 res://scenes/dev/bridge_showcase.tscn -- --test  # prints and checks: BRIDGE SHOWCASE PASS / FAIL
-godot --path game --rendering-driver opengl3 --resolution 1280x720 --fixed-fps 30 res://scenes/dev/bridge_showcase.tscn -- --shots=/tmp/bridge
+godot --path game --resolution 1280x720 --fixed-fps 30 res://scenes/dev/bridge_showcase.tscn -- --shots=/tmp/bridge [--only=alarm,preview]
 # swim_bears, swim_carriers, riders_close, riders_elephant, left_behind, preview, preview_bad, drop_fall, drop_thrusters,
 # drop_unfold, bridge_down, bridge_crossing, alarm, under_fire (.png)
 ```
 
+Taking stills, only the frames saved are drawn (the run in between goes at full speed); without a GPU, Mesa's software Vulkan (`mesa-vulkan-drivers`, under `xvfb-run`) renders Forward+ at about 10 s a frame.
+
 `-- --video` films the deployment (`media/bridge_deploy.mp4`): the RTS view, `Shift+B`, the preview sliding along the river with the cursor and the click, then from the bank the bridge coming out of the sky folded, its thrusters lighting, the unfolding in the hover and the landing, and the RTS view again with one bridge fewer:
 
 ```sh
-godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie bridge.avi --fixed-fps 30 res://scenes/dev/bridge_showcase.tscn -- --video
+godot --path game --resolution 1280x720 --write-movie bridge.avi --fixed-fps 30 res://scenes/dev/bridge_showcase.tscn -- --video
 ffmpeg -i bridge.avi -c:v libx264 -crf 20 -pix_fmt yuv420p media/bridge_deploy.mp4
 ```
+
+For the video every frame is drawn, the forest only out to 520 m and the sun's shadows to 220 m (the drop is seen from close by).
 
 The bridge (`assets_src/structures/folding_bridge/folding_bridge_meshy.glb`, a Meshy "military loading ramp") is cut into the three spans it folds in by `tools/gltf/fold_bridge.py` (see the asset pipeline).
 
