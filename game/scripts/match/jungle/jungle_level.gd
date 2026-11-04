@@ -28,6 +28,9 @@ const PRISON_YAW := 0.0
 const CITADEL_YAW := PI * 0.5
 ## Units spawned at the main spawn come out this far in front (north) of the citadel's hull.
 const SPAWN_AHEAD := 14.0
+## The flat land past the terrain's edge, out to the horizon: how high it lies and how far it reaches (m).
+const SKIRT_Y := -0.3
+const SKIRT_FAR := 30000.0
 const NAV_TILE := 200.0
 const NAV_BORDER := 3.0
 ## Tiles round the stronghold bake only up to its roofs (the mountain above is out of reach); the rest
@@ -147,15 +150,22 @@ func _build_ground() -> void:
 	add_child(ground)
 	ground.build()
 	terrain = ground
-	# Past the terrain's edge, flat land under the haze to the horizon.
-	var skirt := MeshInstance3D.new()
-	var pm := PlaneMesh.new()
-	pm.size = Vector2(60000, 60000)
-	skirt.mesh = pm
-	skirt.material_override = Mats.flat(Color(0.1, 0.13, 0.07), 0.0, 1.0)
-	skirt.position.y = -0.3
-	skirt.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(skirt)
+	# Past the terrain's edge, flat land under the haze to the horizon: a frame round the terrain (a sheet
+	# under all of it would cover the rivers, which dip below it, over their water). The terrain's edge
+	# stands above it all the way round.
+	var mat := Mats.flat(Color(0.1, 0.13, 0.07), 0.0, 1.0)
+	var far := SKIRT_FAR
+	var h := JungleTerrain.HALF - 1.0
+	for strip in [Rect2(-far, -far, far * 2.0, far - h), Rect2(-far, h, far * 2.0, far - h),
+			Rect2(-far, -h, far - h, h * 2.0), Rect2(h, -h, far - h, h * 2.0)]:
+		var skirt := MeshInstance3D.new()
+		var pm := PlaneMesh.new()
+		pm.size = strip.size
+		skirt.mesh = pm
+		skirt.material_override = mat
+		skirt.position = Vector3(strip.get_center().x, SKIRT_Y, strip.get_center().y)
+		skirt.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(skirt)
 
 
 # ---------------------------------------------------------------- the sites
