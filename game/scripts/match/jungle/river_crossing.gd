@@ -10,10 +10,12 @@ extends RefCounted
 ##     the bank, its feet sinking to swim_sink under the surface out in the deep water, up the far bank. A swim
 ##     costs SWIM_COST times its length, so a bridge close by is taken instead.
 ##   - Riding. Every hippo and elephant tows a pontoon raft (TowPlatform, UnitTypes tows); the other units, but the
-##     ones too big or awkward to (UnitTypes no_ride), climb onto it, two at most, or a Combat Rhino on its own
-##     (UnitTypes ride_alone), and get off on the far side (AttackerCommander's ferry, AttackerUnit board / riders).
+##     ones too big or awkward to (UnitTypes no_ride), climb onto it, two at most, or a Combat Rhino or a giraffe on
+##     its own (UnitTypes ride_alone), and get off on the far side (AttackerCommander's ferry, AttackerUnit board /
+##     riders).
 ##   - The bridges the attackers drop across the rivers (FoldingBridge): everyone walks over, the defenders too.
-## Swimming or riding, a unit can't attack or use its skills: it is completely vulnerable.
+## Swimming or riding, a unit can't attack or use its skills: it is completely vulnerable. But a bear can dive under
+## the water (AttackerUnit.start_dive): out of the defenders' sight, though a round that goes in where it is hits it.
 
 ## Navigation layer bit of the swim links (LevelBuilder has 1, 2 and 4).
 const NAV_SWIMMERS := 8

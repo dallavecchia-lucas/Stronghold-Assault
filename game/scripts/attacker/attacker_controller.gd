@@ -32,7 +32,7 @@ extends CanvasLayer
 ##    preview of it follows the cursor, snapped across the river nearest it (red where it can't go, and why); LMB
 ##    drops it (it comes down out of the sky and unfolds), RMB/Shift+B cancel. 30 a match (AttackerCommander).
 ## RMB a hippo or an elephant with riders selected: they climb onto the raft it tows (two to a raft, or a rhino
-##    alone); sent across the water the riders get onto the rafts of the carriers moved with them by themselves. Space with no ram selected: the selected
+##    or a giraffe alone); sent across the water the riders get onto the rafts of the carriers moved with them by themselves. Space with no ram selected: the selected
 ##    carriers let their riders off.
 ## A defender on a bridge sets off its alarm: the banner at the top (click it to look) for as long as one is on it.
 ## The fog of war (AttackerVision) dims the land the army doesn't see (FogOverlay); defenders in it
@@ -217,6 +217,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				commander.submit({"type": "sneak", "units": _ready_lionesses("sneak").map(func(u): return u.unit_id)})
 			elif not _serpents("nest").is_empty():
 				_set_aiming("nest")
+			elif not _ready_divers().is_empty():
+				dive()
 			return
 		if event.physical_keycode == BOMBARD_KEY:
 			if _aiming in ["bombard", "bomb", "trap"]:
@@ -610,6 +612,18 @@ func _ready_lionesses(skill: String) -> Array:
 	return selected.filter(func(u): return u.sneak_ready() if skill == "sneak" else u.blast_ready())
 
 
+## The selected bears out swimming that can dive.
+func _ready_divers() -> Array:
+	_alive_selection()
+	return selected.filter(func(u): return u.dive_ready())
+
+
+## F (with none of the others' F skills ready: the others in the water can't use theirs) or the HUD's button: the
+## selected bears out swimming dive under the water.
+func dive() -> int:
+	return commander.submit({"type": "dive", "units": _ready_divers().map(func(u): return u.unit_id)})
+
+
 ## T (with no rhino selected) or the HUD's toggle: lionesses moved together form up in firing lines, or
 ## don't.
 func toggle_lines() -> void:
@@ -622,7 +636,7 @@ func toggle_lines() -> void:
 ## those squeezing their prey (nothing calls that off).
 func _serpents(skill: String) -> Array:
 	_alive_selection()
-	return selected.filter(func(u): return (u.has_nest() if skill == "nest" else u.has_trap()) and not u.is_constricting())
+	return selected.filter(func(u): return (u.has_nest() if skill == "nest" else u.has_trap()) and not u.is_constricting() and not u.is_crossing())
 
 
 func _tree_under(screen_pos: Vector2) -> ForestTree:
@@ -1028,7 +1042,7 @@ func _build_hud() -> void:
 	row.add_child(sp)
 	set_spawn_point(0)
 
-	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nBisons: G bombardment (LMB fire, RMB cancel), onto the gun decks and roofs too\nMule Artillery: T sets the gun up / disarms it (it can't move unless disarmed) · armed, G bombardment (LMB fire): further, harder and wider than the bisons'\nTalons: F strafe run (press LMB on the target, drag the way to fly, let go) · G bomb strike (LMB fire) · RMB cancels\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nGiraffes: see furthest through the fog · P ping: marks every defender it reaches, even under camo, and reveals infiltrators out of camo\nKangaroos: R flash grenade (LMB fire, RMB cancel) when no hippo's smoke is ready · they resupply units nearby\nLionesses: F sneak (then RMB a defender: they pounce) · G fire blast · T firing lines on/off when moved together\nSerpent Snipers: F sniper nest (LMB a tree: up it they see and shoot further; any move order climbs them down) · G bush trap (LMB a bush: coiled, they strike and crush a defender who comes close)\nWolf Medics: T healing (2 units each) / minesweeping (they find the hidden mines and dig them out; RMB sweeps on the way, Ctrl+RMB doesn't)\nChimps / Rams / Kangaroos: RMB next to a broken gate to send them in\nRivers: Shift+B drop a bridge (LMB, RMB cancel; 30 a match) · bears, snakes, hippos, elephants swim · the rest but mules, bisons, giraffes ride the rafts hippos/elephants tow, 2 each or a rhino alone (RMB one, or send them across with it; Space lets them off)\nHelipads (S/E/W Pad): spawn there and +%.1f supply/s each while you hold them · sabotaged, stand ground units by one to retake it" % AttackerBase.INCOME,
+	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nBisons: G bombardment (LMB fire, RMB cancel), onto the gun decks and roofs too\nMule Artillery: T sets the gun up / disarms it (it can't move unless disarmed) · armed, G bombardment (LMB fire): further, harder and wider than the bisons'\nTalons: F strafe run (press LMB on the target, drag the way to fly, let go) · G bomb strike (LMB fire) · RMB cancels\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nGiraffes: see furthest through the fog · P ping: marks every defender it reaches, even under camo, and reveals infiltrators out of camo\nKangaroos: R flash grenade (LMB fire, RMB cancel) when no hippo's smoke is ready · they resupply units nearby\nLionesses: F sneak (then RMB a defender: they pounce) · G fire blast · T firing lines on/off when moved together\nSerpent Snipers: F sniper nest (LMB a tree: up it they see and shoot further; any move order climbs them down) · G bush trap (LMB a bush: coiled, they strike and crush a defender who comes close)\nWolf Medics: T healing (2 units each) / minesweeping (they find the hidden mines and dig them out; RMB sweeps on the way, Ctrl+RMB doesn't)\nChimps / Rams / Kangaroos: RMB next to a broken gate to send them in\nRivers: Shift+B drop a bridge (LMB, RMB cancel; 30 a match) · bears, snakes, hippos, elephants swim · the rest but mules and bisons ride the rafts hippos/elephants tow, 2 each or a rhino or giraffe alone (RMB one, or send them across with it; Space lets them off)\nBears: swimming, F dives under the water for 10 s, out of the defenders' sight (rounds that go in where it is still hit it)\nHelipads (S/E/W Pad): spawn there and +%.1f supply/s each while you hold them · sabotaged, stand ground units by one to retake it" % AttackerBase.INCOME,
 			13, Color(0.85, 0.85, 0.85, 0.75))
 	help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	help.grow_vertical = Control.GROW_DIRECTION_BEGIN
@@ -1046,7 +1060,7 @@ func _build_hud() -> void:
 		_bridge_button.toggle_mode = true
 		_bridge_button.focus_mode = Control.FOCUS_NONE
 		_bridge_button.custom_minimum_size = Vector2(150, 34)
-		_bridge_button.tooltip_text = "Airdrop a folding bridge across a river: everyone can cross it (the defenders too: its alarm goes off)\nBears, snakes, hippos and elephants swim; the rest but the Mule Artillery, bisons and giraffes ride across on the rafts hippos and elephants tow (2 each, or a rhino alone)"
+		_bridge_button.tooltip_text = "Airdrop a folding bridge across a river: everyone can cross it (the defenders too: its alarm goes off)\nBears, snakes, hippos and elephants swim; the rest but the Mule Artillery and bisons ride across on the rafts hippos and elephants tow (2 each, or a rhino or a giraffe alone)"
 		_bridge_button.pressed.connect(toggle_bridge)
 		info.add_child(_bridge_button)
 	# Defenders on a bridge: a banner at the top while the alarm goes off (click it to look).
@@ -1158,11 +1172,22 @@ func _process(_delta: float) -> void:
 	var carriers := selected.filter(func(u): return is_instance_valid(u) and u.can_carry())
 	if not carriers.is_empty():
 		var aboard: int = carriers.reduce(func(n, u): return n + u.riders.size(), 0)
-		_selection_label.text += "\nOn their rafts %d (2 each, or a rhino alone) · RMB a carrier to board · Space lets them off" % aboard
+		_selection_label.text += "\nOn their rafts %d (2 each, or a rhino or a giraffe alone) · RMB a carrier to board · Space lets them off" % aboard
 	var crossing := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.is_crossing())
 	if not crossing.is_empty():
 		var riding := crossing.filter(func(u): return u.is_riding()).size()
 		_selection_label.text += "\nCrossing %d (%d swimming, %d riding) · can't fight or use skills" % [crossing.size(), crossing.size() - riding, riding]
+	var bears := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_dive())
+	if not bears.is_empty():
+		var under := bears.filter(func(u): return u.is_submerged())
+		var ready := bears.filter(func(u): return u.dive_ready()).size()
+		if not under.is_empty():
+			_selection_label.text += "\nUnder the water %d (%.0fs) · out of the defenders' sight" % [under.size(), under.map(func(u): return u.dive_left()).max()]
+		elif ready > 0:
+			_selection_label.text += "\nDive %d/%d [F] · under the water %.0fs, out of the defenders' sight" % [ready, bears.size(), bears[0].stats.dive_time]
+		else:
+			var soonest: float = bears.map(func(u): return u.dive_cd).min()
+			_selection_label.text += "\nDive [F] · out swimming only" + (" · ready in %.0fs" % soonest if soonest > 0.0 else "")
 	var supplied := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.resupply > 0.0)
 	if not supplied.is_empty():
 		_selection_label.text += "\nResupplied %d · skills back %d%% sooner" % [supplied.size(), roundi(supplied[0].resupply * 100.0)]

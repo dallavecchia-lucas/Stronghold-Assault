@@ -8,8 +8,8 @@ extends Node3D
 ## trails the carrier's way round corners. On land it slides along on its floats over the ground under it (over a
 ## bridge, along its deck); in the water it floats, the drums DRAFT deep, rocking a little.
 ##
-## On its deck: two animals (SEATS, one ahead of the other), or a Combat Rhino on its own (UnitTypes ride_alone,
-## ALONE_SEAT): a rhino only boards an empty raft, and nobody joins one a rhino is on (fits()). Its riders ride where it
+## On its deck: two animals (SEATS, one ahead of the other), or a Combat Rhino or a giraffe on its own (UnitTypes
+## ride_alone, ALONE_SEAT): those only board an empty raft, and nobody joins one they are on (fits()). Its riders ride where it
 ## goes; it has no collision of its own (they do: they can be shot).
 
 const MODEL := "res://assets/structures/tow_platform/tow_platform.glb"
@@ -22,7 +22,7 @@ const DRAFT := 0.4
 ## Its half width (to the drums' outsides).
 const HALF_WIDTH := LENGTH * 0.2678 / 0.9542
 ## Where riders stand on the deck (its frame, the front -Z toward the carrier): two, one ahead of the other, or a
-## rhino alone in the middle.
+## rhino or a giraffe alone in the middle.
 const SEATS := [Vector3(0, DECK, -1.45), Vector3(0, DECK, 1.45)]
 const ALONE_SEAT := Vector3(0, DECK, 0.15)
 ## The tow line from the carrier's hitch to the raft's front (m).
@@ -43,8 +43,8 @@ var _t := 0.0
 var _placed := false
 
 
-## True if `u` may get onto a raft with `aboard` on it (or on their way to it): never more than two, and a rhino only
-## onto an empty one, and nobody onto one with a rhino.
+## True if `u` may get onto a raft with `aboard` on it (or on their way to it): never more than two, and a rhino or a
+## giraffe only onto an empty one, and nobody onto one with a rhino or a giraffe.
 static func fits(aboard: Array, u) -> bool:
 	if aboard.any(func(o): return o != u and o.rides_alone()):
 		return false
@@ -169,7 +169,7 @@ func _bumped(h: Vector3, dir: Vector3) -> Vector3:
 	return dir
 
 
-## Where rider `k` of the ones on it stands (world), facing ahead; a rhino in the middle.
+## Where rider `k` of the ones on it stands (world), facing ahead; a rhino or a giraffe in the middle.
 func seat_transform(k: int, alone: bool) -> Transform3D:
 	var at: Vector3 = ALONE_SEAT if alone else SEATS[clampi(k, 0, SEATS.size() - 1)]
 	return global_transform * Transform3D(Basis.IDENTITY, at)

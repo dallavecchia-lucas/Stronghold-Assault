@@ -133,12 +133,16 @@ extends RefCounted
 ##   (authored at anim_sneak_speed).
 ## steer: only move where the model faces, turning at turn_rate (rad/s), no strafing.
 ## swim_*: swims across the Jungle Keep's rivers and its lake (RiverCrossing): bears, snakes, hippos and elephants.
-##   swim_speed m/s in the water, its feet swim_sink m under the surface. Swimming it can't attack or use skills.
+##   swim_speed m/s in the water, its feet swim_sink m under the surface. Swimming it can't attack or use skills
+##   (but dive: below).
 ## tows: tows a pontoon raft riders cross the water on (hippos and elephants, TowPlatform): the tow line's hitch on
 ##   its rear (unit frame, -Z forward). Two animals to a raft. Every unit that neither swims, flies nor tows rides
-##   on one (AttackerUnit.can_ride), but the Mule Artillery, bisons and giraffes (no_ride): those cross by a bridge
-##   or not at all. ride_alone: a Combat Rhino has a raft to itself (only an empty one, and nobody joins it). Riding
-##   it can't attack or use skills either.
+##   on one (AttackerUnit.can_ride), but the Mule Artillery and bisons (no_ride): those cross by a bridge or not at
+##   all. ride_alone: a Combat Rhino or a giraffe has a raft to itself (only an empty one, and nobody joins it).
+##   Riding it can't attack or use skills either.
+## anim_swim / anim_dive: the clips a swimmer plays out in the water and under it (bears). dive_*: it dives under
+##   the water (AttackerUnit.start_dive, swimming only) dive_time s, dive_depth m under its swim depth, every
+##   dive_cooldown s.
 ## model: path to a processed GLB (front facing +Z, feet at origin).
 ## gun: a hand-held gun model (HeldGun) hung on the model's `rifle` bone; its rounds' tracers leave its muzzle.
 
@@ -153,7 +157,11 @@ const DATA := {
 		"range": 30.0, "damage": 8.0, "fire_interval": 0.55, "spread": 0.035,
 		"structure_mult": 0.5, "radius": 0.5, "height": 1.9,
 		"role": "infantry", "anim": "rigged", "hotkey": KEY_Z,
-		"swim_speed": 2.2, "swim_sink": 0.85,
+		# Swims like a bear (a dog paddle, its head up, its gun slung on its back: tools/gltf/swim_bear.py) and
+		# can dive under the water for a while (F): out of the defenders' sight, though rounds that go in where
+		# it is still hit it.
+		"swim_speed": 2.2, "swim_sink": 0.72, "anim_swim": "Swim", "anim_dive": "Dive",
+		"dive_time": 10.0, "dive_cooldown": 35.0, "dive_depth": 1.4,
 		"anim_move": "Running", "anim_idle": "Idle", "anim_ref_speed": 4.5,
 		# The Prototype C heavy LMG at the hip, on the model's `rifle` bone (tools/gltf/arm_rifle.py).
 		"gun": "res://assets/weapons/prototype_c_lmg/prototype_c_lmg.glb",
@@ -265,7 +273,8 @@ const DATA := {
 		"range": 30.0, "damage": 6.0, "fire_interval": 0.6, "spread": 0.04,
 		"structure_mult": 0.3, "radius": 0.8, "height": 4.5,
 		"role": "infantry", "anim": "rigged", "hotkey": KEY_H,
-		"no_ride": true,
+		# Rides a raft over the water on its own (its neck is in everyone's way).
+		"ride_alone": true,
 		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 3.0,
 		# The radar dish on its back: a sonar ping round it (GiraffePing).
 		"ping_cooldown": 45.0, "ping_radius": 60.0, "ping_speed": 40.0, "ping_mark": 7.0,

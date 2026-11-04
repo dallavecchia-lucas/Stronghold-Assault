@@ -149,6 +149,11 @@ const WAKE_EVERY := 0.32
 const SWIM_CLEAR := 3.0
 const SWIM_ASIDE := 6.0
 const SWIM_ASIDE_RATE := 0.35
+## How fast a diving bear goes down and comes back up (m/s).
+const DIVE_SPEED := 1.3
+## Deeper than this under its swim depth (m), a diving bear is out of sight: its silhouette shows (to the
+## attacking player).
+const SILHOUETTE_DEPTH := 0.5
 ## A unit on its way that has gone less than HEADWAY of its speed in each of the last HEADWAY_CHECKS spells of
 ## HEADWAY_EVERY s is caught on something: it takes a fresh path from where it is.
 const HEADWAY_EVERY := 1.0
@@ -193,6 +198,8 @@ var bomb_cd := 0.0
 var flash_cd := 0.0
 ## Seconds until the giraffe can ping again.
 var ping_cd := 0.0
+## Seconds until the bear can dive again.
+var dive_cd := 0.0
 ## Seconds until the lioness can sneak / light her fire blast again.
 var sneak_cd := 0.0
 var blast_cd := 0.0
@@ -375,6 +382,15 @@ var _route_swim := false
 var _swim_aside := 0.0
 var _swim_side := Vector3.ZERO
 var _wake_cd := 0.0
+## Diving (bears): seconds left under the water, how far under its swim depth it is now (m), the paw it
+## paddles with next (its splash), and how it shows down there (0 as ever, 1 its silhouette to the attacking
+## player, 2 not at all on the defender's side).
+var _dive_t := 0.0
+var _dive_y := 0.0
+var _paw := 0
+var _silhouette := 0
+## Seconds since it was last hurt.
+var _since_hurt := INF
 ## Riding: the carrier it is on (null on foot), and what it does once it is off again; the hop up onto its raft.
 var carrier: AttackerUnit = null
 var _then = null
@@ -444,7 +460,7 @@ func platform() -> TowPlatform:
 
 
 ## Hops onto a carrier's raft to get across the water: everyone who neither swims, flies nor carries, but the Mule
-## Artillery, bisons and giraffes (no_ride). A Combat Rhino has a raft to itself (rides_alone).
+## Artillery and bisons (no_ride). A Combat Rhino or a giraffe has a raft to itself (rides_alone).
 func can_ride() -> bool:
 	return not swims() and not is_flying() and not stats.has("tows") and not stats.get("no_ride", false)
 
@@ -658,6 +674,50 @@ func ping_ready() -> bool:
 ## Standing with its neck up and its dish sweeping, sending a ping: it stands until it is done.
 func is_pinging() -> bool:
 	return _ping_t >= 0.0
+
+
+## Bears: swimming, they can dive under the water and stay down dive_time s (the one skill a unit can use
+## while it crosses).
+func has_dive() -> bool:
+	return stats.has("dive_time")
+
+
+func dive_ready() -> bool:
+	return has_dive() and dive_cd <= 0.0 and is_alive() and not is_submerged() and is_swimming() and in_water()
+
+
+## Under the water (diving): out of the defenders' sight (Combat.has_line_of_sight), though a round that
+## goes in where it is still hits it; the attacking player sees its silhouette.
+func is_submerged() -> bool:
+	return _dive_t > 0.0
+
+
+## Seconds it has left under the water.
+func dive_left() -> float:
+	return _dive_t
+
+
+## Dives (if it can): down under its swim depth, still swimming on its way across, for dive_time s.
+func start_dive() -> bool:
+	if not dive_ready():
+		return false
+	_dive_t = stats.dive_time
+	dive_cd = stats.dive_cooldown
+	RiverCrossing.splash(self, Vector3(global_position.x, JungleLayout.WATER_Y, global_position.z), 0.8)
+	return true
+
+
+func _dive_tick(delta: float) -> void:
+	dive_cd = maxf(dive_cd - delta / (1.0 - resupply), 0.0)
+	if _dive_t > 0.0:
+		_dive_t -= delta
+		# Up again at the far bank (or once the swim is over, whatever ended it).
+		if not is_swimming() or not in_water():
+			_dive_t = 0.0
+		if _dive_t <= 0.0:
+			_dive_t = 0.0
+			RiverCrossing.ripple(self, Vector3(global_position.x, JungleLayout.WATER_Y + 0.03, global_position.z), stats.radius * 2.0)
+	_dive_y = move_toward(_dive_y, stats.dive_depth if is_submerged() else 0.0, delta * DIVE_SPEED)
 
 
 func has_sneak() -> bool:
@@ -1076,7 +1136,7 @@ func is_alive() -> bool:
 
 func get_aim_point() -> Vector3:
 	var p: Vector3 = global_position + Vector3.UP * stats.height * 0.6
-	if is_swimming() and in_water():
+	if is_swimming() and in_water() and not is_submerged():
 		p.y = maxf(p.y, JungleLayout.WATER_Y + 0.35)  # what shows over the water
 	return p
 
@@ -1087,6 +1147,7 @@ func take_damage(amount: float, from_team: int) -> void:
 	if is_tagged():
 		amount *= 1.0 + TAG_BONUS
 	hp -= amount
+	_since_hurt = 0.0
 	_update_hp_bar()
 	if hp <= 0.0:
 		_die()
@@ -1101,6 +1162,11 @@ func heal(amount: float) -> void:
 
 func _die() -> void:
 	hp = 0.0
+	if has_dive():
+		_dive_t = 0.0
+		_silhouette = 0
+		for mi: MeshInstance3D in model_meshes():
+			mi.material_overlay = null
 	remove_from_group("damageable")
 	remove_from_group("attacker_units")
 	remove_from_group("air_units")
@@ -2634,10 +2700,11 @@ func _swim_point(delta: float) -> Vector3:
 	# Back onto its way as it comes to the far bank: no further aside than half the way left.
 	var left := _route.size() * 2.0
 	_swim_aside = clampf(_swim_aside, -minf(SWIM_ASIDE, left * 0.5), minf(SWIM_ASIDE, left * 0.5))
-	if absf(_swim_aside) < 0.01 or _route.size() <= 1:
+	if (absf(_swim_aside) < 0.01 and _dive_y <= 0.0) or _route.size() <= 1:
 		return p
+	# Aside off its way, and (diving) down under its swim depth, clear of the bed.
 	var q := p + _swim_side * _swim_aside
-	q.y = maxf(RiverCrossing.ground(Vector2(q.x, q.z)), JungleLayout.WATER_Y - stats.swim_sink)
+	q.y = maxf(RiverCrossing.ground(Vector2(q.x, q.z)) + (0.3 if _dive_y > 0.0 else 0.0), JungleLayout.WATER_Y - stats.swim_sink - _dive_y)
 	return q
 
 
@@ -2704,10 +2771,15 @@ static func _closest(a0: Vector2, a1: Vector2, b0: Vector2, b1: Vector2) -> Arra
 ## Ripples spreading off it where it swims.
 func _wake(delta: float) -> void:
 	_wake_cd -= delta
-	if _wake_cd > 0.0 or not in_water():
-		return
+	if _wake_cd > 0.0 or not in_water() or _dive_y > 0.3:
+		return  # none off a bear down under the water: nothing gives it away
 	_wake_cd = WAKE_EVERY
 	RiverCrossing.ripple(self, Vector3(global_position.x, JungleLayout.WATER_Y + 0.03, global_position.z), stats.radius * 1.6)
+	if stats.has("anim_swim"):
+		# A paddling bear: the water churned by its fore paws in front of it, one and then the other.
+		_paw = 1 - _paw
+		var at := global_position - global_basis.z * 0.55 + global_basis.x * (0.28 if _paw == 0 else -0.28)
+		RiverCrossing.ripple(self, Vector3(at.x, JungleLayout.WATER_Y + 0.04, at.z), 0.35)
 
 
 func _physics_process(delta: float) -> void:
@@ -2738,6 +2810,9 @@ func _physics_process(delta: float) -> void:
 		if stats.has("forest_speed"):
 			_in_forest = LevelBuilder.in_forest(global_position)
 			_agent.max_speed = _speed()
+	_since_hurt += delta
+	if has_dive():
+		_dive_tick(delta)
 	if not _route.is_empty():
 		_follow_route(delta)
 		return
@@ -3168,6 +3243,12 @@ func _process(delta: float) -> void:
 			ref = stats.anim_run_speed
 			rate = stats.run_scale
 		var skill := is_throwing() or is_pinging() or is_pouncing() or is_striking() or is_digging()
+		# Out in the water a bear paddles (its gun slung on its back), down under it the Dive stroke.
+		var swim := stats.has("anim_swim") and is_swimming() and in_water()
+		if swim:
+			clip = stats.anim_dive if _dive_y > 0.3 else stats.anim_swim
+			ref = stats.swim_speed
+			moving = true
 		if is_throwing():
 			clip = "Throw"
 		elif is_pinging():
@@ -3179,7 +3260,7 @@ func _process(delta: float) -> void:
 		elif is_digging():
 			clip = stats.anim_dig
 		if _anim.current_animation != clip:
-			_anim.play(clip, 0.15 if skill else 0.25)
+			_anim.play(clip, 0.15 if skill else 0.45 if swim or _anim.current_animation in [stats.get("anim_swim"), stats.get("anim_dive")] else 0.25)
 		elif _clip_restart:
 			_anim.seek(0.0, true)  # the next blow, from the start of its clip
 		_clip_restart = false
@@ -3187,6 +3268,8 @@ func _process(delta: float) -> void:
 				if moving and not skill else 1.0
 	if has_sneak() or has_trap():
 		_sneak_look()
+	if has_dive():
+		_dive_look()
 	if has_dog_modes():
 		_heal_beams()
 	if _rig:
@@ -3294,6 +3377,54 @@ func ghosted() -> bool:
 	return _look == 1
 
 
+## A bear down under the water: the attacking player sees it by its silhouette through the water (the water
+## is murky: nothing else shows it); on the defender's side nothing does, not even its health bar.
+func _dive_look() -> void:
+	var want := 0
+	if _dive_y > SILHOUETTE_DEPTH and is_alive():
+		want = 1 if GameConfig.player_side == GameConfig.PlayerSide.ATTACKER else 2
+	if want == _silhouette:
+		return
+	_silhouette = want
+	for mi: MeshInstance3D in model_meshes():
+		mi.material_overlay = silhouette_material() if want == 1 else null
+	_update_hp_bar()
+
+
+## True while the bear is down under the water on the defender's side of the screen (nothing shows it).
+func hidden_under() -> bool:
+	return _silhouette == 2
+
+
+## True while the attacking player sees it by its silhouette under the water.
+func silhouetted() -> bool:
+	return _silhouette == 1
+
+
+static var _silhouette_mat: ShaderMaterial
+
+
+## The silhouette of a bear under the water: drawn over everything (through the water), a pale blue, brightest
+## round its edges.
+static func silhouette_material() -> ShaderMaterial:
+	if _silhouette_mat == null:
+		var sh := Shader.new()
+		sh.code = """
+shader_type spatial;
+render_mode unshaded, depth_test_disabled, depth_draw_never, cull_back, shadows_disabled, blend_mix;
+uniform vec4 tint : source_color = vec4(0.45, 0.9, 1.0, 1.0);
+void fragment() {
+	float rim = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 1.6);
+	ALBEDO = tint.rgb;
+	ALPHA = 0.22 + 0.6 * rim;
+}
+"""
+		_silhouette_mat = ShaderMaterial.new()
+		_silhouette_mat.shader = sh
+		_silhouette_mat.render_priority = 10
+	return _silhouette_mat
+
+
 ## A healing dog: a beam from the medic pack on its back to each unit it heals.
 func _heal_beams() -> void:
 	var n := 0
@@ -3347,7 +3478,7 @@ func _build_model() -> void:
 	if not players.is_empty() and stats.has("anim_move"):
 		_anim = players[0]
 		var loops := [stats.anim_move, stats.anim_idle]
-		for k in ["anim_run", "anim_sneak", "anim_dig", "anim_armed"]:
+		for k in ["anim_run", "anim_sneak", "anim_dig", "anim_armed", "anim_swim", "anim_dive"]:
 			if stats.has(k):
 				loops.append(stats[k])
 		for clip in loops:
@@ -3824,6 +3955,6 @@ func _update_hp_bar() -> void:
 		return
 	var ratio := clampf(hp / stats.hp, 0.0, 1.0)
 	# A sneaking lioness shows none on the defender's side: it would give her away.
-	_hp_bar.visible = hp > 0.0 and (selected or ratio < 1.0) and _look != 1
+	_hp_bar.visible = hp > 0.0 and (selected or ratio < 1.0) and _look != 1 and not hidden_under()
 	_hp_fill.scale.x = maxf(ratio, 0.001)
 	_hp_fill.material_override = Mats.unshaded(Color(1.0, 0.25, 0.2) if ratio < 0.35 else Color(0.95, 0.8, 0.2) if ratio < 0.7 else Color(0.3, 1.0, 0.4))

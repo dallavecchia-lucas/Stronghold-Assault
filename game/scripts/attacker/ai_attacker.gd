@@ -5,9 +5,10 @@ extends Node
 ## gate falls everyone pushes for the keep. A helipad the defenders sabotaged is retaken by the
 ## ground units nearest it (_retake_bases). It never goes after the defenders' infiltrators: it
 ## doesn't know they are there (their low profile, Combat.low_profile), unless its giraffes' pings
-## reveal them (_giraffe_pings). Its lionesses hunt the defenders out on the field (_lioness_hunts). Its dogs
-## heal; it can't see the defenders' mines any more than a player can, but one going off under its army
-## tells it a minefield is there: the dogs near the blast sweep for mines until they find no more (_dog_modes).
+## reveal them (_giraffe_pings). Its bears dive when they are shot at out swimming (_bear_dives). Its lionesses
+## hunt the defenders out on the field (_lioness_hunts). Its dogs heal; it can't see the defenders' mines any more
+## than a player can, but one going off under its army tells it a minefield is there: the dogs near the blast sweep
+## for mines until they find no more (_dog_modes).
 ## Its Serpent Snipers snipe from the trees in reach of the gate they go for, and lie in wait round bushes where
 ## the army saw the defenders out on the field (_serpent_skills). Its Mule Artillery set their guns up as soon as
 ## the stronghold is in reach and shell it whenever they have reloaded (_mule_guns).
@@ -35,6 +36,8 @@ const SPAWN_SIDES := ["south", "east", "west"]
 const FLASH_SPARE := 0.97
 ## Units sent to retake a sabotaged helipad: as many as RETAKERS of the nearest ground units.
 const RETAKERS := 3
+## A bear swimming that was hurt this long ago (s) or less dives.
+const DIVE_HURT := 1.5
 ## Giraffes this close to the middle of the map (m, flat) are out on the field: they ping.
 const PING_FIELD := 150.0
 ## Lionesses go after defenders on the ground this close to them (m, flat).
@@ -122,6 +125,7 @@ func _think() -> void:
 	_talon_strikes()
 	_kangaroo_flashes()
 	_giraffe_pings()
+	_bear_dives()
 	_lioness_hunts()
 	_serpent_skills()
 	_dog_modes()
@@ -332,6 +336,16 @@ func _giraffe_pings() -> void:
 			ids.append(u.unit_id)
 	if not ids.is_empty():
 		commander.submit({"type": "ping", "units": ids})
+
+
+## Bears out swimming that are shot at dive under the water, out of the defenders' sight.
+func _bear_dives() -> void:
+	var ids := []
+	for u in commander.units.values():
+		if u.dive_ready() and u._since_hurt < DIVE_HURT:
+			ids.append(u.unit_id)
+	if not ids.is_empty():
+		commander.submit({"type": "dive", "units": ids})
 
 
 ## Lionesses hunt the defenders on the ground the army sees within HUNT_RANGE (squads out on the field,

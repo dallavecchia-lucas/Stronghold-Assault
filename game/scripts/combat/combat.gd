@@ -66,8 +66,11 @@ static func wall_approach(post: Vector3) -> Vector3:
 
 
 ## True if nothing static blocks the line between two points (ignores `target` itself).
-## Smoke screens block it too.
+## Smoke screens block it too, and the murky water over a bear diving under it (AttackerUnit.is_submerged):
+## nobody picks it out down there, though a round that goes in where it is still hits it.
 static func has_line_of_sight(ctx: Node3D, from: Vector3, to: Vector3, target: Object = null) -> bool:
+	if target != null and is_instance_valid(target) and target.has_method("is_submerged") and target.is_submerged():
+		return false
 	if SmokeCloud.blocks(from, to):
 		return false
 	var q := PhysicsRayQueryParameters3D.create(from, to, GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES)

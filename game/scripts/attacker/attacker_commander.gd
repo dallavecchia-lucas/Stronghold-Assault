@@ -45,14 +45,17 @@ extends Node
 ##   {"type": "bridge", "pos": Vector3}   airdrops a folding bridge across the river nearest pos (FoldingBridge.plan),
 ##               one of the BRIDGE_STOCK the army has for the match; returns its id (0: none left, or it can't go there)
 ##   {"type": "board", "units": [ids], "carrier": NodePath}   the riders among them (AttackerUnit.can_ride) climb onto
-##               the raft that hippo or elephant tows, as many as fit (two, or a rhino alone: TowPlatform.fits)
+##               the raft that hippo or elephant tows, as many as fit (two, or a rhino or a giraffe alone:
+##               TowPlatform.fits)
 ##   {"type": "unload", "units": [ids]}   the carriers among them let their riders off (on dry land)
 ##
 ## Across the Jungle Keep's water (RiverCrossing), a move order ferries: the riders in it that can't walk there
 ## (no bridge on the way) climb onto the rafts the hippos and elephants moved with them tow, two to a raft or a rhino
-## alone, the nearest first; the carriers wait for them, swim over towing them and let them off at the far side,
-## where they go on to their own spots (_ferry).
-## Units swimming or riding can't use their skills: skill commands leave them out.
+## or a giraffe alone, the nearest first; the carriers wait for them, swim over towing them and let them off at the
+## far side, where they go on to their own spots (_ferry).
+## Units swimming or riding can't use their skills: skill commands leave them out. All but one:
+##   {"type": "dive", "units": [ids]}   the bears among them out swimming dive under the water (AttackerUnit
+##               start_dive); returns how many did
 ##
 ## Lionesses moved together (two or more) form up in firing lines as they go (LionessLine), up to 8
 ## abreast and more ranks behind, while line_formation is on; the other units moved with them gather
@@ -214,6 +217,8 @@ func submit(cmd: Dictionary) -> int:
 			for u in _resolve(cmd.units):
 				if u.can_carry():
 					u.unload()
+		"dive":
+			return _resolve(cmd.units).filter(func(u): return u.start_dive()).size()
 	return 0
 
 
@@ -283,7 +288,7 @@ func _move(ids: Array, pos: Vector3, attack: bool) -> void:
 
 ## Which of `list` ride which carrier's raft (of `list`) to get to `pos`: those that ride (AttackerUnit.can_ride) and
 ## can't walk there (RiverCrossing.needs_ride), the nearest rider and carrier first, as many as fit (TowPlatform.fits:
-## two to a raft, a rhino alone). Riders on a raft that still have the water to cross stay on it; the others get off.
+## two to a raft, a rhino or a giraffe alone). Riders on a raft that still have the water to cross stay on it; the others get off.
 func _ferry(list: Array, pos: Vector3) -> Dictionary:
 	var out := {}
 	if not RiverCrossing.active():
@@ -327,7 +332,8 @@ func _ferry(list: Array, pos: Vector3) -> Dictionary:
 	return out
 
 
-## Riders hop onto `carrier_path`'s raft, as many as fit (two, or a rhino alone), the nearest first; the rest stand
+## Riders hop onto `carrier_path`'s raft, as many as fit (two, or a rhino or a giraffe alone), the nearest
+## first; the rest stand
 ## by it.
 func _board(ids: Array, carrier_path: NodePath) -> void:
 	var c := get_node_or_null(carrier_path) as AttackerUnit

@@ -178,6 +178,7 @@ var walkers: Array = []
 var eagles: Array = []
 var spare: AttackerUnit
 var rhino: AttackerUnit
+var giraffe: AttackerUnit
 var dummy: FlameTrooper
 
 
@@ -190,13 +191,16 @@ func _act_cross() -> void:
 	carriers.append(_unit("hippo", SOUTH + Vector3(-4.0, 0, 6.0)))
 	carriers.append(_unit("elephant", SOUTH + Vector3(5.0, 0, 7.0)))
 	carriers.append(_unit("hippo", SOUTH + Vector3(17.0, 0, 6.0)))
+	carriers.append(_unit("hippo", SOUTH + Vector3(29.0, 0, 6.0)))
 	# A walk from the rafts; the second kangaroo the furthest from them all (the one left over).
 	for t in ["kangaroo", "chimp", "lioness", "medic"]:
 		riders.append(_unit(t, SOUTH + Vector3(-8.0 + riders.size() * 4.0, 0, 20.0)))
 	riders.append(_unit("kangaroo", SOUTH + Vector3(-13.0, 0, 25.0)))
 	rhino = _unit("rhino", SOUTH + Vector3(17.0, 0, 20.0))
 	riders.append(rhino)
-	walkers.append(_unit("giraffe", LEFT_AT))
+	giraffe = _unit("giraffe", SOUTH + Vector3(29.0, 0, 20.0))
+	riders.append(giraffe)
+	walkers.append(_unit("bison_gun", LEFT_AT))
 	for k in 2:
 		eagles.append(_unit("talon", EAGLES_AT + Vector3(k * 5.0, 0, 0)))
 	# A defender on the north bank in their reach (not for the stills: the shots' tracers would pile up while
@@ -222,15 +226,17 @@ func _act_cross() -> void:
 	# Where each is going (or already is, if it was close enough to hop straight on).
 	var raft_of := func(u): return u.carrier if u.carrier != null else (u.order.get("carrier") if u.order.type == "board" else null)
 	var boarding := riders.filter(func(u): return raft_of.call(u) != null)
-	_check(boarding.size() == 5, "5 of the 6 riders go to board the three rafts (two to a raft, the rhino alone): %d" % boarding.size())
-	var rhino_raft = raft_of.call(rhino)
-	_check(rhino_raft != null and boarding.all(func(u): return u == rhino or raft_of.call(u) != rhino_raft),
-			"the rhino has a raft to itself")
+	_check(boarding.size() == 6, "6 of the 7 riders go to board the four rafts (two to a raft, the rhino and the giraffe alone): %d" % boarding.size())
+	for lone in [rhino, giraffe]:
+		var lone_raft = raft_of.call(lone)
+		_check(lone_raft != null and boarding.all(func(u): return u == lone or raft_of.call(u) != lone_raft),
+				"the %s has a raft to itself" % lone.stats.name)
 	var spares := riders.filter(func(u): return raft_of.call(u) == null)
 	spare = spares[0] if spares.size() == 1 else null
 	_check(spare == riders[4], "the one left over has no place: the %s (the furthest from the rafts)" % (spare.stats.name if spare else "none"))
-	_check(walkers.all(func(u): return u.order.type != "board"), "the giraffe doesn't board (it can't ride)")
-	# Swimming and riding: nobody fires or uses a skill; never more than two on a raft, nobody with the rhino.
+	_check(walkers.all(func(u): return u.order.type != "board"), "the bison doesn't board (it can't ride)")
+	# Swimming and riding: nobody fires or uses a skill; never more than two on a raft, nobody with the rhino or the
+	# giraffe.
 	var shot_while_swimming := false
 	var shooter := ""
 	var shared := false
@@ -282,10 +288,10 @@ func _act_cross() -> void:
 		if over.all(func(u): return _flat(u.global_position, NORTH) < 40.0 and not u.is_crossing() and u.global_position.z < 445.0) \
 				and riders.all(func(r): return not r.is_riding()) and frame > 120:
 			break
-	_check(swam.size() == 6, "the bears, the snake, the hippos and the elephant swam across (%d of 6 seen in the water)" % swam.size())
-	_check(rode.size() == 5, "5 riders rode across on the rafts: %d" % rode.size())
+	_check(swam.size() == 7, "the bears, the snake, the hippos and the elephant swam across (%d of 7 seen in the water)" % swam.size())
+	_check(rode.size() == 6, "6 riders rode across on the rafts: %d" % rode.size())
 	_check(most_aboard <= 2, "never more than 2 on a raft: %d" % most_aboard)
-	_check(rode.has(rhino) and not shared, "the rhino rode across on its own")
+	_check(rode.has(rhino) and rode.has(giraffe) and not shared, "the rhino and the giraffe rode across on their own")
 	_check(raft_gap > 0.5, "out on the water the rafts keep clear of one another (%.1f m at the closest)" % raft_gap)
 	if armed:
 		_check(not shot_while_swimming, "nobody fired swimming or riding (the defender on the bank in reach)%s" % ((": " + shooter) if shooter else ""))
@@ -303,7 +309,7 @@ func _act_cross() -> void:
 		_check(dummy.hp < start_hp, "out of the water they fire at the defender on the bank (%d hp off it)" % int(start_hp - dummy.hp))
 		dummy.queue_free()
 	else:
-		# From over the water, the giraffe on the south bank, the eagles gone over.
+		# From over the water, the bison on the south bank, the eagles gone over.
 		cam.fov = 56.0
 		var g: Vector3 = walkers[0].global_position
 		await _shoot("left_behind", Vector3(g.x + 14.0, JungleLayout.WATER_Y + 4.0, g.z - 30.0), g + Vector3(-4.0, 2.5, 0.0))
@@ -322,7 +328,7 @@ func _shots_on_the_way(_frame: int) -> void:
 		cam.fov = 44.0
 		await _shoot("swim_bears", Vector3(c.x + 6.0, JungleLayout.WATER_Y + 1.2, c.z - 6.0), Vector3(c.x - 0.5, JungleLayout.WATER_Y + 0.6, c.z + 1.5))
 	var towing := carriers.filter(func(c): return not c.riders.is_empty() and c.platform().afloat)
-	if not _taken.has("rafts_crossing") and towing.size() == 3 and towing.all(func(u): return _mid_river(u) and _sunny(u)):
+	if not _taken.has("rafts_crossing") and towing.size() == 4 and towing.all(func(u): return _mid_river(u) and _sunny(u)):
 		_taken["rafts_crossing"] = true
 		var c := _centre(towing)
 		cam.fov = 52.0
@@ -335,6 +341,10 @@ func _shots_on_the_way(_frame: int) -> void:
 	if lone != null and not _taken.has("raft_rhino") and lone.platform().afloat and _sunny(lone) and _mid_river(lone):
 		_taken["raft_rhino"] = true
 		await _shot_at("raft_rhino", lone.platform(), Vector3(-7.5, 2.4, -5.0), Vector3(0, 1.8, 0.5), 50.0)
+	var tall = giraffe.carrier
+	if tall != null and not _taken.has("raft_giraffe") and tall.platform().afloat and _sunny(tall) and _mid_river(tall):
+		_taken["raft_giraffe"] = true
+		await _shot_at("raft_giraffe", tall.platform(), Vector3(-9.0, 3.2, -6.5), Vector3(0, 2.6, 0.5), 52.0)
 	if not _taken.has("hippo_head") and hippo.in_water() and _mid_river(hippo) and _sunny(hippo):
 		_taken["hippo_head"] = true
 		await _shot_at("hippo_head", hippo, Vector3(3.2, 0.9 + hippo.stats.swim_sink, -5.0), Vector3(0, 1.1, -1.4), 46.0)
@@ -390,9 +400,10 @@ var heavies: Array = []
 
 
 func _act_bridge() -> void:
-	# The bison and the mule join the giraffe and the rhino on the south bank by the bridge.
+	# The mule, a rhino and a giraffe (with no raft to ride, a bridge for them) join the bison on the south bank by
+	# the bridge.
 	heavies = walkers.duplicate()
-	for t in [["bison_gun", 4.0], ["mule", 11.0], ["rhino", -3.0]]:
+	for t in [["giraffe", 4.0], ["mule", 11.0], ["rhino", -3.0]]:
 		heavies.append(_unit(t[0], HEAVY_AT + Vector3(t[1], 0, 0)))
 	commander.submit({"type": "move", "units": _ids(walkers), "pos": HEAVY_AT + Vector3(6, 0, 4), "attack": false})
 	_check(not RiverCrossing.reaches(self, HEAVY_AT, OVER_TO), "no way over on foot before the bridge")
@@ -568,10 +579,10 @@ func _act_board() -> void:
 	var chimp := _unit("chimp", at + Vector3(6.0, 0.0, 3.0))
 	var roo := _unit("kangaroo", at + Vector3(-6.0, 0.0, 3.0))
 	var dog := _unit("medic", at + Vector3(0.0, 0.0, 7.0))
-	var giraffe := _unit("giraffe", at + Vector3(3.0, 0.0, 8.0))
+	var tall := _unit("giraffe", at + Vector3(3.0, 0.0, 15.0))
 	await _frames(20)
-	commander.submit({"type": "board", "units": _ids([chimp, roo, dog, giraffe]), "carrier": hippo.get_path()})
-	_check(giraffe.order.type != "board", "a giraffe can't board (%s)" % giraffe.order.type)
+	commander.submit({"type": "board", "units": _ids([chimp, roo, dog, tall]), "carrier": hippo.get_path()})
+	_check(tall.order.type != "board", "a giraffe can't get onto a raft with riders on it (%s)" % tall.order.type)
 	var boarding := [chimp, roo, dog].filter(func(u): return u.order.type == "board")
 	_check(boarding.size() == 2, "two of the three riders go to board its raft (two to a raft): %d" % boarding.size())
 	for k in 30 * 20:
@@ -595,6 +606,19 @@ func _act_board() -> void:
 	_check(other.riders == [rhino2], "a rhino boards an empty raft on its own")
 	commander.submit({"type": "board", "units": [chimp2.unit_id], "carrier": other.get_path()})
 	_check(chimp2.order.type != "board", "and nobody joins it there")
+	# A giraffe likewise: not onto the rhino's raft; onto an empty one on its own, and then nobody joins it.
+	commander.submit({"type": "board", "units": [tall.unit_id], "carrier": other.get_path()})
+	_check(tall.order.type != "board", "a giraffe can't get onto a raft with a rhino on it")
+	var third := _unit("hippo", at + Vector3(-16.0, 0.0, 2.0))
+	await _frames(20)
+	commander.submit({"type": "board", "units": [tall.unit_id], "carrier": third.get_path()})
+	for k in 30 * 30:
+		await get_tree().physics_frame
+		if third.riders.size() == 1:
+			break
+	_check(third.riders == [tall], "a giraffe boards an empty raft on its own")
+	commander.submit({"type": "board", "units": [chimp2.unit_id], "carrier": third.get_path()})
+	_check(chimp2.order.type != "board", "and nobody joins it there either")
 	commander.submit({"type": "move", "units": [hippo.unit_id], "pos": at + Vector3(0, 0, -12.0), "attack": false})
 	for k in 30 * 8:
 		await get_tree().physics_frame
@@ -606,7 +630,7 @@ func _act_board() -> void:
 	for k in 30 * 3:
 		await get_tree().physics_frame
 	_check(hippo.riders.is_empty() and rider != null and not rider.is_riding() and rider.is_on_floor(), "Space: they hop off beside it")
-	for u in [hippo, chimp, roo, dog, giraffe, rhino2, other, chimp2]:
+	for u in [hippo, chimp, roo, dog, tall, rhino2, other, chimp2, third]:
 		commander.units.erase(u.unit_id)
 		u.queue_free()
 	_acts += 1
