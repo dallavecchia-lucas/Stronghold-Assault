@@ -420,7 +420,7 @@ godot --path game --resolution 1280x720 --fixed-fps 30 res://scenes/dev/bear_sho
 godot --path game --resolution 1280x720 --write-movie bear.avi --fixed-fps 30 res://scenes/dev/bear_showcase.tscn -- --video
 ```
 
-`-- --video` films a bear swimming out and diving (`media/bear_swim_dive.mp4`): close by it running down the bank and paddling out, shot at from the north bank, `F`, the dive seen from over the water (its silhouette), a few rounds into the water where it is, and up again.
+`-- --video` films a bear swimming out and diving (`media/bear_swim_dive.mp4`, 30 s): close by it on the south bank with its LMG in its paws, running down the bank and paddling out with it slung on its back, shot at from the north bank, `F`, the dive seen from over the water (its silhouette), a few rounds into the water where it is, and up again. The first 16 s are the map loading (nothing is drawn meanwhile): cut them (`ffmpeg -ss 16.2 -i bear.avi ...`, or find where the frames stop being frozen with `-vf freezedetect`).
 
 ### Jungle Keep showcase
 
