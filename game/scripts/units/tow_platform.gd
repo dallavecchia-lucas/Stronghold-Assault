@@ -27,6 +27,11 @@ const SEATS := [Vector3(0, DECK, -1.45), Vector3(0, DECK, 1.45)]
 const ALONE_SEAT := Vector3(0, DECK, 0.15)
 ## The tow line from the carrier's hitch to the raft's front (m).
 const TOW := 1.6
+## Afloat, two rafts that come closer than this (m, deck edge to deck edge) bump: each swings away about its hitch.
+const BUMP := 0.6
+
+## Every raft there is (for the bumps).
+static var all: Array[TowPlatform] = []
 
 var carrier: AttackerUnit
 ## Out on the water (its drums afloat).
@@ -52,6 +57,7 @@ static func fits(aboard: Array, u) -> bool:
 func _ready() -> void:
 	top_level = true
 	name = "TowPlatform"
+	all.append(self)
 	_model = Props.instance(MODEL, MODEL_HEIGHT)
 	_model.rotation.y = PI * 0.5  # its length (the model's x) along the tow
 	add_child(_model)
@@ -69,6 +75,10 @@ func _ready() -> void:
 	_line.top_level = true
 	add_child(_line)
 	follow(0.0)
+
+
+func _exit_tree() -> void:
+	all.erase(self)
 
 
 ## The carrier's hitch (world): on its rear (UnitTypes tows).
@@ -92,6 +102,9 @@ func follow(delta: float) -> void:
 	dir.y = 0.0
 	dir = dir.normalized()
 	var centre := h - dir * (TOW + LENGTH * 0.5)
+	if _placed and RiverCrossing.active() and _floor(centre) < JungleLayout.WATER_Y - DRAFT:
+		dir = _bumped(h, dir)
+		centre = h - dir * (TOW + LENGTH * 0.5)
 	var ground := _floor(centre)
 	afloat = RiverCrossing.active() and ground < JungleLayout.WATER_Y - DRAFT
 	var want := JungleLayout.WATER_Y - DRAFT + sin(_t * 1.3) * 0.05 if afloat else ground
@@ -128,6 +141,32 @@ func follow(delta: float) -> void:
 static func _floor(p: Vector3) -> float:
 	var deck := FoldingBridge.deck_at(p) if RiverCrossing.active() else NAN
 	return deck if not is_nan(deck) else LevelBuilder.ground_height(p)
+
+
+## Its way back from the hitch `h` (`dir` points at it), swung away from any other raft afloat it would come
+## closer to than BUMP.
+func _bumped(h: Vector3, dir: Vector3) -> Vector3:
+	var reach := TOW + LENGTH * 0.5
+	for o in all:
+		if o == self or not o.afloat or o.global_position.distance_squared_to(h) > 400.0:
+			continue
+		var c := h - dir * reach
+		var half := o.global_basis.z * (LENGTH * 0.5)
+		var pair := AttackerUnit._closest(Vector2(c.x + dir.x * LENGTH * 0.5, c.z + dir.z * LENGTH * 0.5),
+				Vector2(c.x - dir.x * LENGTH * 0.5, c.z - dir.z * LENGTH * 0.5),
+				Vector2(o.global_position.x + half.x, o.global_position.z + half.z),
+				Vector2(o.global_position.x - half.x, o.global_position.z - half.z))
+		var off: Vector2 = pair[0] - pair[1]
+		var gap := off.length() - HALF_WIDTH * 2.0
+		if gap >= BUMP:
+			continue
+		# Swing its tail away (the centre moves off along the side of `dir` the other raft isn't on).
+		var side := Vector3(dir.z, 0.0, -dir.x)
+		var away := signf(Vector3(off.x, 0.0, off.y).dot(side))
+		if away == 0.0:
+			away = 1.0 if get_instance_id() > o.get_instance_id() else -1.0
+		dir = (dir - side * away * clampf((BUMP - gap) / reach, 0.0, 0.5)).normalized()
+	return dir
 
 
 ## Where rider `k` of the ones on it stands (world), facing ahead; a rhino in the middle.

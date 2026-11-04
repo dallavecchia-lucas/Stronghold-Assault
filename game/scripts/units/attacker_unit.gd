@@ -143,6 +143,12 @@ const HOP_HIGH := 1.4
 const FERRY_WAIT := 40.0
 ## Ripples off a swimmer every WAKE_EVERY s.
 const WAKE_EVERY := 0.32
+## Swimmers keep SWIM_CLEAR m clear of one another and of the rafts out on the water: each moves aside off its
+## way across (at most SWIM_ASIDE m, at SWIM_ASIDE_RATE of its swimming speed, so a raft in tow follows it round
+## smoothly), back onto it by the far bank.
+const SWIM_CLEAR := 3.0
+const SWIM_ASIDE := 6.0
+const SWIM_ASIDE_RATE := 0.35
 ## A unit on its way that has gone less than HEADWAY of its speed in each of the last HEADWAY_CHECKS spells of
 ## HEADWAY_EVERY s is caught on something: it takes a fresh path from where it is.
 const HEADWAY_EVERY := 1.0
@@ -364,8 +370,10 @@ var _anim_t := 0.0
 ## Navigation link being crossed (LevelBuilder): points still to climb or walk through.
 var _route: Array[Vector3] = []
 var _route_breach_in := false
-## On a swim link's route (RiverCrossing): swimming across.
+## On a swim link's route (RiverCrossing): swimming across, this far aside off it (along _swim_side).
 var _route_swim := false
+var _swim_aside := 0.0
+var _swim_side := Vector3.ZERO
 var _wake_cd := 0.0
 ## Riding: the carrier it is on (null on foot), and what it does once it is off again; the hop up onto its raft.
 var carrier: AttackerUnit = null
@@ -2439,6 +2447,9 @@ func swim_to(to: Vector3) -> void:
 		return
 	_route = RiverCrossing.swim_route(global_position, to, stats.swim_sink)
 	_route_swim = true
+	_swim_aside = 0.0
+	var across := Vector3(to.x - global_position.x, 0.0, to.z - global_position.z)
+	_swim_side = across.normalized().cross(Vector3.UP) if across.length() > 0.01 else Vector3.RIGHT
 	_route_breach_in = false
 	_crossed = false
 	if is_sneaking():
@@ -2612,6 +2623,82 @@ func _tow(delta: float) -> void:
 	_platform.follow(delta)
 	if not riders.is_empty():
 		_place_riders()
+
+
+## The next point of its way across, moved aside off it to keep clear of the swimmers and the rafts round it
+## (_swim_aside, eased back to none by the far bank).
+func _swim_point(delta: float) -> Vector3:
+	var p := _route[0]
+	if in_water():
+		_swim_aside += clampf(_swim_push(), -1.0, 1.0) * stats.swim_speed * SWIM_ASIDE_RATE * delta
+	# Back onto its way as it comes to the far bank: no further aside than half the way left.
+	var left := _route.size() * 2.0
+	_swim_aside = clampf(_swim_aside, -minf(SWIM_ASIDE, left * 0.5), minf(SWIM_ASIDE, left * 0.5))
+	if absf(_swim_aside) < 0.01 or _route.size() <= 1:
+		return p
+	var q := p + _swim_side * _swim_aside
+	q.y = maxf(RiverCrossing.ground(Vector2(q.x, q.z)), JungleLayout.WATER_Y - stats.swim_sink)
+	return q
+
+
+## Which way off its way across it wants to move (along _swim_side, -1..1): away from the other swimmers close
+## by and from the rafts out on the water, from where it is, a little way ahead, and from its own raft (it steers
+## for its raft too). Ones dead ahead it passes on the side its unit id gives (the other one the other side).
+func _swim_push() -> float:
+	var mine: Array = [[global_position, global_position, stats.radius],
+			[global_position + Vector3.UP.cross(_swim_side) * 3.0, global_position + Vector3.UP.cross(_swim_side) * 3.0, stats.radius]]
+	if _platform and _platform.afloat:
+		mine.append(_raft_line(_platform))
+	var best := 0.0
+	for u in get_tree().get_nodes_in_group("attacker_units"):
+		if u == self or not u.is_alive() or Vector2(u.global_position.x - global_position.x, u.global_position.z - global_position.z).length_squared() > 900.0:
+			continue
+		var theirs: Array = []
+		if u.is_swimming():
+			theirs.append([u.global_position, u.global_position, u.stats.radius])
+		var raft: TowPlatform = u.platform()
+		if raft and raft.afloat:
+			theirs.append(_raft_line(raft))
+		for a in mine:
+			for b in theirs:
+				var w := _clear_of(a, b, u.unit_id)
+				if absf(w) > absf(best):
+					best = w
+	return best
+
+
+## A raft as a line along its deck's middle and its half width: [one end, the other, half width].
+static func _raft_line(raft: TowPlatform) -> Array:
+	var half := raft.global_basis.z * (TowPlatform.LENGTH * 0.5)
+	return [raft.global_position - half, raft.global_position + half, TowPlatform.HALF_WIDTH]
+
+
+## The push (along _swim_side, -1..1) off obstacle `b` for `a` (each [end, end, half width] on the flat), one of
+## unit `id`'s: stronger the closer they are, none past SWIM_CLEAR between them.
+func _clear_of(a: Array, b: Array, id: int) -> float:
+	var pair := _closest(Vector2(a[0].x, a[0].z), Vector2(a[1].x, a[1].z), Vector2(b[0].x, b[0].z), Vector2(b[1].x, b[1].z))
+	var off: Vector2 = pair[0] - pair[1]
+	var gap: float = off.length() - a[2] - b[2]
+	if gap >= SWIM_CLEAR:
+		return 0.0
+	var w := 1.0 - maxf(gap, 0.0) / SWIM_CLEAR
+	var side := off.dot(Vector2(_swim_side.x, _swim_side.z)) / maxf(off.length(), 0.001)
+	if absf(side) < 0.3:
+		side = 1.0 if unit_id > id else -1.0
+	return w * signf(side)
+
+
+## The closest points of segments a0-a1 and b0-b1 (flat): [on a, on b].
+static func _closest(a0: Vector2, a1: Vector2, b0: Vector2, b1: Vector2) -> Array:
+	var best := [a0, b0]
+	var d := INF
+	for c in [[a0, Geometry2D.get_closest_point_to_segment(a0, b0, b1)], [a1, Geometry2D.get_closest_point_to_segment(a1, b0, b1)],
+			[Geometry2D.get_closest_point_to_segment(b0, a0, a1), b0], [Geometry2D.get_closest_point_to_segment(b1, a0, a1), b1]]:
+		var l: float = (c[0] - c[1]).length()
+		if l < d:
+			d = l
+			best = c
+	return best
 
 
 ## Ripples spreading off it where it swims.
@@ -2928,7 +3015,10 @@ func _next_waypoint() -> Vector3:
 
 ## Moves straight from point to point, through the stair steps and ladder rungs: no collisions.
 func _follow_route(delta: float) -> void:
-	var to := _route[0] - global_position
+	var next := _route[0]
+	if _route_swim:
+		next = _swim_point(delta)
+	var to := next - global_position
 	var climbing := not _route_swim and absf(to.y) > Vector2(to.x, to.z).length()
 	var speed: float = stats.get("climb_speed", stats.speed * 0.5) if climbing else stats.speed * 0.8
 	if _route_swim:
@@ -2938,7 +3028,8 @@ func _follow_route(delta: float) -> void:
 		speed = 7.0  # hopping down off a carrier's raft
 	var step := speed * delta
 	if to.length() <= step:
-		global_position = _route.pop_front()
+		_route.pop_front()
+		global_position = next
 		if _route.is_empty():
 			velocity = Vector3.ZERO
 			if _route_swim and not riders.is_empty():

@@ -33,13 +33,13 @@ extends Node3D
 ## of another; with no bridge the giraffe can't get across and goes only to the south bank; the bears, the snake, the
 ## hippos and the elephant swim over (no shot fired nor skill used while in the water); the kangaroos, the chimp, the
 ## lioness and the dog hop onto two of the rafts the carriers tow, two to a raft, the rhino onto the third on its own,
-## the one left over stays behind, and the riders get off on the north bank and go to their spots; the eagles fly
-## over; the bridge comes down where its preview showed it, the navmesh and the wall at the water's edge open over it,
-## and the giraffe, the bison, the mule and a rhino walk over it; a defender on it sets the alarm off until it is off
-## it again; on dry land (--test) two of three riders board a raft, a giraffe can't, a rhino can't join riders nor
-## anyone a rhino, and Space lets them off; shots and shells on it set no alarm off and take ARMOR off every hit;
-## brought down, the bridge sinks, the chimp on it drowns, the bear on it swims to the bank, and the way over is gone
-## again.
+## the one left over stays behind, out on the water the rafts keep clear of one another, and the riders get off on
+## the north bank and go to their spots; the eagles fly over; the bridge comes down where its preview showed it, the
+## navmesh and the wall at the water's edge open over it, and the giraffe, the bison, the mule and a rhino walk over
+## it; a defender on it sets the alarm off until it is off it again; on dry land (--test) two of three riders board a
+## raft, a giraffe can't, a rhino can't join riders nor anyone a rhino, and Space lets them off; shots and shells on
+## it set no alarm off and take ARMOR off every hit; brought down, the bridge sinks, the chimp on it drowns, the bear
+## on it swims to the bank, and the way over is gone again.
 
 ## The river (main) here: where the army stands on its south bank, where it goes on the north bank.
 const SOUTH := Vector3(-322.0, 0.0, 509.0)
@@ -241,6 +241,7 @@ func _act_cross() -> void:
 	var skills_used := false
 	var fire_cd := {}
 	var crossing_before := {}
+	var raft_gap := INF
 	for frame in 30 * 150:
 		await get_tree().physics_frame
 		for u in swimmers + carriers:
@@ -248,6 +249,11 @@ func _act_cross() -> void:
 				swam[u] = true
 		for c in carriers:
 			most_aboard = maxi(most_aboard, c.riders.size())
+			# Out in the deep water the rafts keep clear of one another (the carriers swim aside; by the far bank
+			# they come back onto their ways, which may meet there).
+			for o in carriers:
+				if o != c and _out_on_the_water(c) and _out_on_the_water(o):
+					raft_gap = minf(raft_gap, _raft_gap(c.platform(), o.platform()))
 			shared = shared or (c.riders.size() > 1 and c.riders.any(func(r): return r.rides_alone()))
 		for r in riders:
 			if r.is_riding():
@@ -280,6 +286,7 @@ func _act_cross() -> void:
 	_check(rode.size() == 5, "5 riders rode across on the rafts: %d" % rode.size())
 	_check(most_aboard <= 2, "never more than 2 on a raft: %d" % most_aboard)
 	_check(rode.has(rhino) and not shared, "the rhino rode across on its own")
+	_check(raft_gap > 0.5, "out on the water the rafts keep clear of one another (%.1f m at the closest)" % raft_gap)
 	if armed:
 		_check(not shot_while_swimming, "nobody fired swimming or riding (the defender on the bank in reach)%s" % ((": " + shooter) if shooter else ""))
 	_check(skill_tried and not skills_used, "no skill used out on the water (the hippo's smoke, a riding kangaroo's flash refused)")
@@ -334,7 +341,30 @@ func _shots_on_the_way(_frame: int) -> void:
 	var jumbo: AttackerUnit = carriers[1]
 	if not _taken.has("elephant_trunk") and jumbo.in_water() and _mid_river(jumbo) and _sunny(jumbo) and jumbo._turrets.snorkel >= 1.0:
 		_taken["elephant_trunk"] = true
-		await _shot_at("elephant_trunk", jumbo, Vector3(4.5, 1.0 + jumbo.stats.swim_sink, -7.0), Vector3(0, 2.0, -2.2), 48.0)
+		# Its head and trunk in profile, from the side away from the nearest other swimmer (the hippos keep close).
+		var side := 1.0
+		var best := INF
+		for c in carriers:
+			var d: float = c.global_position.distance_to(jumbo.global_position)
+			if c != jumbo and d < best:
+				best = d
+				side = -signf((jumbo.global_transform.affine_inverse() * c.global_position).x)
+		await _shot_at("elephant_trunk", jumbo, Vector3(5.5 * (side if side != 0.0 else 1.0), 0.8 + jumbo.stats.swim_sink, -2.6), Vector3(0, 2.2, -2.8), 50.0)
+
+
+## A carrier swimming with its raft afloat, out in the deep water, well short of the far bank.
+func _out_on_the_water(c: AttackerUnit) -> bool:
+	return c.platform().afloat and c.is_swimming() and c._route.size() * 2.0 > 14.0 and _mid_river(c)
+
+
+## The gap between two rafts (flat, m): between their decks' long middle lines, less their widths.
+func _raft_gap(a: TowPlatform, b: TowPlatform) -> float:
+	var ends := func(r: TowPlatform) -> Array:
+		var half := r.global_basis.z * (TowPlatform.LENGTH * 0.5)
+		return [Vector2(r.global_position.x + half.x, r.global_position.z + half.z), Vector2(r.global_position.x - half.x, r.global_position.z - half.z)]
+	var ea: Array = ends.call(a)
+	var eb: Array = ends.call(b)
+	return FoldingBridge._seg_dist(ea[0], ea[1], eb[0], eb[1]) - TowPlatform.HALF_WIDTH * 2.0
 
 
 func _centre(list: Array) -> Vector3:
