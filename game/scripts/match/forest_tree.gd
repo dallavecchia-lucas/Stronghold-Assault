@@ -181,6 +181,23 @@ func _materialize() -> void:
 	_proxies.clear()
 
 
+## Crushed flat by something that came down on it (a bridge): gone at once, its instances in the batches hidden.
+## A tree a snake is up, or one burning, is left alone (false).
+func flatten() -> bool:
+	if state != State.STANDING or nest_by != null or claimed_by != null:
+		return false
+	for pr in _proxies:
+		var mm: MultiMesh = pr[0]
+		mm.set_instance_transform(pr[1], Transform3D(Basis().scaled(Vector3.ZERO), Vector3(0, -1000, 0)))
+	_proxies.clear()
+	state = State.FALLEN
+	remove_from_group("trees")
+	# Out of the tree now, before the navmesh is rebaked round it.
+	get_parent().remove_child(self)
+	queue_free()
+	return true
+
+
 func _ready() -> void:
 	add_to_group("trees")
 	set_physics_process(false)

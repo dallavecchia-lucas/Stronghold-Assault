@@ -1,7 +1,8 @@
 class_name JungleLevel
 extends LevelBuilder
 ## The Jungle Keep map (JungleLayout): the stronghold in a clearing in a 1.6 km forest, the rivers (too
-## deep to cross: no ford, no bridge yet), the ridges, the prison on its plateau behind the cliff, the Quarry and Outpost
+## deep to wade: swimmers swim them, riders ride across on the rafts the hippos and elephants tow, and the attackers drop bridges over them:
+## RiverCrossing, FoldingBridge), the ridges, the prison on its plateau behind the cliff, the Quarry and Outpost
 ## helipads, and the Mobile Command Citadel at the south edge, the attackers' main spawn. The stronghold
 ## itself (gates, keep, posts, AA turrets, climbs) is the classic map's (LevelBuilder).
 ##
@@ -14,7 +15,8 @@ extends LevelBuilder
 ## The navmesh is baked in NAV_TILE squares (the map is far too big for one bake): the static colliders
 ## are parsed once, the ground (JungleTerrain.nav_faces, the water cut out) added, and every tile baked
 ## on the worker threads with a border so the tiles meet edge to edge. A burnt tree that falls rebakes
-## only its tile.
+## only its tile; a bridge that lands or falls, the tiles under it, at once (rebake_rect). Once the navmesh is in
+## the map the swim links go across the water (RiverCrossing.build_links).
 
 const PRISON_MODEL := "res://assets/structures/violet_fortress/violet_fortress.glb"
 const CITADEL_MODEL := "res://assets/structures/mobile_command_citadel/mobile_command_citadel.glb"
@@ -26,6 +28,9 @@ const PRISON_YAW := 0.0
 const CITADEL_YAW := PI * 0.5
 ## Units spawned at the main spawn come out this far in front (north) of the citadel's hull.
 const SPAWN_AHEAD := 14.0
+## The flat land past the terrain's edge, out to the horizon: how high it lies and how far it reaches (m).
+const SKIRT_Y := -0.3
+const SKIRT_FAR := 30000.0
 const NAV_TILE := 200.0
 const NAV_BORDER := 3.0
 ## Tiles round the stronghold bake only up to its roofs (the mountain above is out of reach); the rest
@@ -60,6 +65,7 @@ func build() -> void:
 	edge_spawns = {"south": 0, "east": 0, "west": 0}
 	_build_all()
 	terrain = ground
+	navigation_ready.connect(func(): RiverCrossing.build_links(self), CONNECT_ONE_SHOT)
 
 
 func _build_all() -> void:
@@ -144,15 +150,22 @@ func _build_ground() -> void:
 	add_child(ground)
 	ground.build()
 	terrain = ground
-	# Past the terrain's edge, flat land under the haze to the horizon.
-	var skirt := MeshInstance3D.new()
-	var pm := PlaneMesh.new()
-	pm.size = Vector2(60000, 60000)
-	skirt.mesh = pm
-	skirt.material_override = Mats.flat(Color(0.1, 0.13, 0.07), 0.0, 1.0)
-	skirt.position.y = -0.3
-	skirt.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(skirt)
+	# Past the terrain's edge, flat land under the haze to the horizon: a frame round the terrain (a sheet
+	# under all of it would cover the rivers, which dip below it, over their water). The terrain's edge
+	# stands above it all the way round.
+	var mat := Mats.flat(Color(0.1, 0.13, 0.07), 0.0, 1.0)
+	var far := SKIRT_FAR
+	var h := JungleTerrain.HALF - 1.0
+	for strip in [Rect2(-far, -far, far * 2.0, far - h), Rect2(-far, h, far * 2.0, far - h),
+			Rect2(-far, -h, far - h, h * 2.0), Rect2(h, -h, far - h, h * 2.0)]:
+		var skirt := MeshInstance3D.new()
+		var pm := PlaneMesh.new()
+		pm.size = strip.size
+		skirt.mesh = pm
+		skirt.material_override = mat
+		skirt.position = Vector3(strip.get_center().x, SKIRT_Y, strip.get_center().y)
+		skirt.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(skirt)
 
 
 # ---------------------------------------------------------------- the sites
@@ -369,8 +382,15 @@ func rebake_navigation() -> void:
 	# The static colliders (the stronghold, structures, rocks, the big trunks), then the ground.
 	_source = NavigationMeshSourceGeometryData3D.new()
 	NavigationServer3D.parse_source_geometry_data(_nav_template, _source, nav_region)
-	var faces := ground.nav_faces(Rect2(-map_half - NAV_TILE * 0.1, -map_half - NAV_TILE * 0.1, map_half * 2.0 + NAV_TILE * 0.2, map_half * 2.0 + NAV_TILE * 0.2))
-	_source.add_faces(faces, Transform3D.IDENTITY)
+	# The ground: all of it the first time, afterwards only under the tiles being rebaked.
+	var area := Rect2(-map_half - NAV_TILE * 0.1, -map_half - NAV_TILE * 0.1, map_half * 2.0 + NAV_TILE * 0.2, map_half * 2.0 + NAV_TILE * 0.2)
+	if _first_bake_done:
+		var first := true
+		for t in _dirty:
+			var r := _tile_rect(t).grow(NAV_BORDER + 4.0)
+			area = r if first else area.merge(r)
+			first = false
+	_source.add_faces(ground.nav_faces(area), Transform3D.IDENTITY)
 	_queue.clear()
 	for t in _dirty:
 		_queue.append(t)
@@ -451,6 +471,14 @@ func _await_map() -> void:
 	for t in _tiles:
 		NavigationServer3D.region_set_use_async_iterations(_tiles[t].get_rid(), true)
 	navigation_ready.emit()
+
+
+## A bridge has landed or fallen over `rect` (flat): the tiles under it are rebaked now.
+func rebake_rect(rect: Rect2) -> void:
+	for t in _tiles:
+		if _tile_rect(t).grow(NAV_BORDER).intersects(rect):
+			_dirty[t] = true
+	rebake_navigation()
 
 
 ## A burnt tree has fallen at `at`: its tile is rebaked (soon, once for a run of them).

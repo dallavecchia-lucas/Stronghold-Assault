@@ -232,8 +232,8 @@ func _release_tree() -> void:
 ## Attackers in the jet burn, and keep burning a moment after.
 func _hurt(from: Vector3, dir: Vector3, reach: float, delta: float) -> void:
 	for u in get_tree().get_nodes_in_group("attacker_units"):
-		if not u.is_alive() or u.team == team:
-			continue
+		if not u.is_alive() or u.team == team or u.is_submerged():
+			continue  # (fire doesn't reach a bear down under the water)
 		var p := Combat.aim_point(u)
 		var t := (p - from).dot(dir)
 		if t < -0.3 or t > reach + 0.4:

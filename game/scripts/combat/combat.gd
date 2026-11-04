@@ -18,12 +18,16 @@ static var _flash_mat: StandardMaterial3D
 static var _smoke_mat: StandardMaterial3D
 
 
-## Walks up from a physics collider to the node that can take damage.
+## Walks up from a physics collider to the node that can take damage. A collider kept elsewhere in the tree (a
+## bridge's body is under the navigation region, to be baked into the navmesh) names it in its "damageable" meta.
 static func find_damageable(collider: Object) -> Node:
 	var n := collider as Node
 	while n:
 		if n.is_in_group("damageable"):
 			return n
+		if n.has_meta("damageable"):
+			var d = n.get_meta("damageable")
+			return d if is_instance_valid(d) and d.is_in_group("damageable") else null
 		n = n.get_parent()
 	return null
 
@@ -62,8 +66,11 @@ static func wall_approach(post: Vector3) -> Vector3:
 
 
 ## True if nothing static blocks the line between two points (ignores `target` itself).
-## Smoke screens block it too.
+## Smoke screens block it too, and the murky water over a bear diving under it (AttackerUnit.is_submerged):
+## nobody picks it out down there, though a round that goes in where it is still hits it.
 static func has_line_of_sight(ctx: Node3D, from: Vector3, to: Vector3, target: Object = null) -> bool:
+	if target != null and is_instance_valid(target) and target.has_method("is_submerged") and target.is_submerged():
+		return false
 	if SmokeCloud.blocks(from, to):
 		return false
 	var q := PhysicsRayQueryParameters3D.create(from, to, GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES)
@@ -117,7 +124,8 @@ static func damage_area(ctx: Node, pos: Vector3, radius: float, damage: float, t
 	for d in ctx.get_tree().get_nodes_in_group("damageable"):
 		if d.team == team or not d.is_alive():
 			continue
-		var dist := pos.distance_to(aim_point(d))
+		# Something long (a bridge) says how far the blast is from it.
+		var dist: float = d.blast_distance(pos) if d.has_method("blast_distance") else pos.distance_to(aim_point(d))
 		var r: float = radius + float(d.get("target_radius") if d.get("target_radius") != null else 0.0)
 		if dist > r:
 			continue

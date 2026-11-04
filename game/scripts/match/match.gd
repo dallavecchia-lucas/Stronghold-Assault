@@ -33,6 +33,7 @@ func _ready() -> void:
 	commander = AttackerCommander.new()
 	commander.name = "AttackerCommander"
 	commander.units_root = units_root
+	commander.level = level
 	commander.spawn_points = level.spawn_points
 	commander.spawn_bases = level.spawn_bases
 	add_child(commander)

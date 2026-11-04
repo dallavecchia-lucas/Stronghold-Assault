@@ -7,7 +7,8 @@ extends RefCounted
 ## crosses the whole map south of it, west to east; a tributary comes down out of the north-west
 ## into a lake and on into it; another runs down the east side of the clearing from the north edge.
 ## The rivers and the lake are deep (RIVER_BED, LAKE_BED) and nothing walks into them (JungleTerrain's
-## water's edge): there is no ford and, for now, no bridge. The attackers come from the Mobile Command Citadel (the main spawn) at the south edge, across the
+## water's edge): there is no ford; swimmers swim them, riders ride across, and the attackers drop bridges over the
+## rivers (RiverCrossing, FoldingBridge). The attackers come from the Mobile Command Citadel (the main spawn) at the south edge, across the
 ## river, or from the Quarry helipad west of the Keep and the Outpost helipad east of it, across the
 ## east river. The prison stands on a plateau to the north, behind a cliff that faces the Keep; the
 ## plateau slopes down to the forest round the cliff's ends. Four wooded ridges rise near the corners

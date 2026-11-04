@@ -7,10 +7,10 @@ extends Node3D
 ## JungleLayout.WATER_Y that only shows where the land dips under it (the rivers and the lake): opaque
 ## and glossy, so it mirrors the forest (screen-space reflections, Forward+).
 ##
-## The water can't be crossed: the navmesh gets the same ground with all of it cut out (nav_faces()),
+## The water can't be waded: the navmesh gets the same ground with all of it cut out (nav_faces()),
 ## and an invisible wall stands along the water's edge (_build_water_edge(), LAYER_WATER_EDGE) that every
 ## walker collides with, the player's soldier too, and nothing else does (shots, rays and the navmesh
-## bake go through it).
+## bake go through it). Where a bridge stands (FoldingBridge) the wall has a gap under it (cut_water_edge()).
 
 const CELL := 2.0
 const HALF := 880.0
@@ -36,6 +36,9 @@ var splat: Image
 var material: ShaderMaterial
 var body: StaticBody3D
 var edge_body: StaticBody3D
+## The water's edge wall as segments (two points each, x z), and its shape (rebuilt round the bridges).
+var _edge_segs := PackedVector2Array()
+var _edge_shape: ConcavePolygonShape3D
 
 
 func build() -> void:
@@ -422,9 +425,7 @@ func nav_faces(rect: Rect2) -> PackedVector3Array:
 ## on it, which only walkers' masks have.
 func _build_water_edge() -> void:
 	var iso := JungleLayout.WATER_Y + EDGE_UP
-	var y0: float = JungleLayout.WATER_Y + EDGE_WALL[0]
-	var y1: float = JungleLayout.WATER_Y + EDGE_WALL[1]
-	var faces := PackedVector3Array()
+	_edge_segs = PackedVector2Array()
 	for j in n - 1:
 		var z := -HALF + j * CELL
 		var top := heights.slice(j * n, j * n + n)
@@ -447,21 +448,77 @@ func _build_water_edge() -> void:
 				Vector2(x, z + CELL * (iso - ha) / (hd - ha)) if (hd < iso) != (ha < iso) else Vector2.ZERO,
 			]
 			for seg in EDGE_SEGMENTS[code]:
-				var p: Vector2 = e[seg[0]]
-				var q: Vector2 = e[seg[1]]
-				faces.append_array([Vector3(p.x, y0, p.y), Vector3(q.x, y0, q.y), Vector3(q.x, y1, q.y),
-						Vector3(p.x, y0, p.y), Vector3(q.x, y1, q.y), Vector3(p.x, y1, p.y)])
-	var shape := ConcavePolygonShape3D.new()
-	shape.backface_collision = true
-	shape.set_faces(faces)
+				_edge_segs.append(e[seg[0]])
+				_edge_segs.append(e[seg[1]])
+	_edge_shape = ConcavePolygonShape3D.new()
+	_edge_shape.backface_collision = true
 	edge_body = StaticBody3D.new()
 	edge_body.name = "WaterEdge"
 	edge_body.collision_layer = GameConfig.LAYER_WATER_EDGE
 	edge_body.collision_mask = 0
 	var cs := CollisionShape3D.new()
-	cs.shape = shape
+	cs.shape = _edge_shape
 	edge_body.add_child(cs)
 	add_child(edge_body)
+	cut_water_edge([])
+
+
+## (Re)builds the wall along the water's edge, with a gap where each bridge stands: `cuts` are [middle (Vector2),
+## along (Vector2, unit), half length, half width] (FoldingBridge.cut), and every bit of the wall inside one of
+## those rectangles is left out.
+func cut_water_edge(cuts: Array) -> void:
+	var y0: float = JungleLayout.WATER_Y + EDGE_WALL[0]
+	var y1: float = JungleLayout.WATER_Y + EDGE_WALL[1]
+	var faces := PackedVector3Array()
+	for k in range(0, _edge_segs.size(), 2):
+		var pieces := [[_edge_segs[k], _edge_segs[k + 1]]]
+		for c in cuts:
+			var kept := []
+			for piece in pieces:
+				kept.append_array(_clip_out(piece[0], piece[1], c))
+			pieces = kept
+		for piece in pieces:
+			var p: Vector2 = piece[0]
+			var q: Vector2 = piece[1]
+			faces.append_array([Vector3(p.x, y0, p.y), Vector3(q.x, y0, q.y), Vector3(q.x, y1, q.y),
+					Vector3(p.x, y0, p.y), Vector3(q.x, y1, q.y), Vector3(p.x, y1, p.y)])
+	_edge_shape.set_faces(faces)
+
+
+## The parts of the segment p-q outside the rectangle `cut` ([middle, along, half length, half width]).
+static func _clip_out(p: Vector2, q: Vector2, cut: Array) -> Array:
+	var c: Vector2 = cut[0]
+	var u: Vector2 = cut[1]
+	var v := Vector2(-u.y, u.x)
+	var hl: float = cut[2]
+	var hw: float = cut[3]
+	# The segment's coordinates along and across the bridge, linear in t (0 at p, 1 at q).
+	var pu := (p - c).dot(u)
+	var qu := (q - c).dot(u)
+	var pv := (p - c).dot(v)
+	var qv := (q - c).dot(v)
+	var t0 := 0.0
+	var t1 := 1.0
+	for lim in [[pu, qu, hl], [pv, qv, hw]]:
+		var a: float = lim[0]
+		var b: float = lim[1]
+		var h: float = lim[2]
+		if absf(b - a) < 1e-6:
+			if absf(a) > h:
+				return [[p, q]]
+			continue
+		var ta := (-h - a) / (b - a)
+		var tb := (h - a) / (b - a)
+		t0 = maxf(t0, minf(ta, tb))
+		t1 = minf(t1, maxf(ta, tb))
+	if t0 >= t1:
+		return [[p, q]]
+	var out := []
+	if t0 > 1e-4:
+		out.append([p, p.lerp(q, t0)])
+	if t1 < 1.0 - 1e-4:
+		out.append([p.lerp(q, t1), q])
+	return out
 
 
 ## Marching squares: for each corner code, the sides the contour runs between (see _build_water_edge).

@@ -26,7 +26,7 @@ extends Node3D
 ##   fps_roof_west
 ##   fps_scope_south  the same on the south gun deck through the rifle's smart scope (RMB) at the treeline
 ##
-## The checks: the water can't be crossed (no ford, no bridge yet). On the navmesh the main spawn has no
+## The checks: the water can't be crossed on foot (no ford; the swim links and the bridges are bridge_showcase's). On the navmesh the main spawn has no
 ## way to any gate (its paths end on the river's south bank), nor the Outpost helipad to the east gate
 ## (the east river is in the way); the Quarry helipad has one to the west gate; none of them goes into the
 ## water. And with no navmesh to keep it out, a walker driven straight at the water stops at its edge

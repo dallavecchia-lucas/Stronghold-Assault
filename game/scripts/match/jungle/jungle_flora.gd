@@ -189,6 +189,44 @@ func _edge(p: Vector2) -> float:
 	return 1.0 - smoothstep(0.0, 40.0, absf(p.length() - JungleLayout.CLEARING_R - JungleLayout.CLEARING_EDGE * 0.5))
 
 
+## Clears the forest off a rectangle something came down on (a bridge: FoldingBridge): `xf` its middle, `half` its
+## half size along its x and z. The trees in it are flattened (ForestTree.flatten), the rocks' bodies and the bushes
+## taken away, and every plant drawn there hidden.
+func clear_footprint(xf: Transform3D, half: Vector2) -> void:
+	var inv := xf.affine_inverse()
+	var inside := func(p: Vector3) -> bool:
+		var l := inv * p
+		return absf(l.x) <= half.x and absf(l.z) <= half.y
+	var reach := half.length()
+	var hidden := 0
+	for tree in ForestTree.near(xf.origin, reach):
+		if inside.call(tree.global_position) and tree.flatten():
+			hidden += 1
+	for parent_name in ["ForestRocks"]:
+		var parent := level.nav_region.get_node_or_null(parent_name)
+		if parent:
+			for body: Node3D in parent.get_children():
+				if body.global_position.distance_to(xf.origin) < reach + 4.0 and inside.call(body.global_position):
+					parent.remove_child(body)
+					body.queue_free()
+	var bushes := get_node_or_null("ForestBushes")
+	if bushes:
+		for b: Node3D in bushes.get_children():
+			if b.get("coiled_by") == null and b.global_position.distance_to(xf.origin) < reach + 4.0 and inside.call(b.global_position):
+				b.queue_free()
+	var box := AABB(xf.origin - Vector3(reach, 60, reach), Vector3(reach, 60, reach) * 2.0)
+	for mmi: MultiMeshInstance3D in get_tree().get_nodes_in_group("flora_batches"):
+		var mm := mmi.multimesh
+		if mm == null or not mmi.get_aabb().intersects(box):
+			continue
+		for k in mm.instance_count:
+			var t := mm.get_instance_transform(k)
+			if t.basis.get_scale().x > 0.0 and inside.call(t.origin):
+				mm.set_instance_transform(k, Transform3D(Basis().scaled(Vector3.ZERO), Vector3(0, -1000, 0)))
+				hidden += 1
+	print("JungleFlora: cleared %d under a bridge" % hidden)
+
+
 ## Off the sites' lots (for the clearing's ground cover).
 func _site_free(p: Vector2) -> bool:
 	for f in JungleLayout.FLATTEN:
