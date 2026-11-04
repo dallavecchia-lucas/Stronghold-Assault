@@ -9,9 +9,9 @@ extends RefCounted
 ##     bank to the other. A swimmer whose path takes one swims straight across (AttackerUnit, swim_route()): down
 ##     the bank, its feet sinking to swim_sink under the surface out in the deep water, up the far bank. A swim
 ##     costs SWIM_COST times its length, so a bridge close by is taken instead.
-##   - Riding. The other units, but the ones too big or awkward to (UnitTypes no_ride), hop onto a hippo's or an
-##     elephant's back, two at most each (UnitTypes seats), and get off on the far side (AttackerCommander's ferry,
-##     AttackerUnit board / riders).
+##   - Riding. Every hippo and elephant tows a pontoon raft (TowPlatform, UnitTypes tows); the other units, but the
+##     ones too big or awkward to (UnitTypes no_ride), climb onto it, two at most, or a Combat Rhino on its own
+##     (UnitTypes ride_alone), and get off on the far side (AttackerCommander's ferry, AttackerUnit board / riders).
 ##   - The bridges the attackers drop across the rivers (FoldingBridge): everyone walks over, the defenders too.
 ## Swimming or riding, a unit can't attack or use its skills: it is completely vulnerable.
 

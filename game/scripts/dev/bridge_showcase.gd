@@ -7,18 +7,21 @@ extends Node3D
 ##   godot --path game --resolution 1280x720 --fixed-fps 30 res://scenes/dev/bridge_showcase.tscn -- --shots=DIR [--only=a,b]
 ##       the same run, with stills (.png) in DIR on the way (--only: just those, and it stops after the last):
 ##   swim_bears        bears and a Serpent Sniper swimming across, only their heads and backs over the water
-##   swim_carriers     a hippo and an elephant swimming across, two riders on each one's back
-##   riders_close      close by the hippo: a kangaroo and a chimp riding on its back across the river
-##   riders_elephant   close by the elephant: a lioness and a Wolf Medic on its back
-##   left_behind       the giraffe and the rhino left on the south bank (they can't swim or ride), a kangaroo
-##                     with no seat left beside them, the eagles flying over
+##   rafts_crossing    two hippos and an elephant swimming across, towing their rafts: two riders on each of two,
+##                     a Combat Rhino alone on the third
+##   raft_riders       close by the first hippo's raft: its two riders on its deck, out on the river
+##   raft_rhino        close by the rhino on its raft of its own
+##   hippo_head        a swimming hippo, its head over the water
+##   elephant_trunk    the swimming elephant, its trunk raised out of the water to breathe through
+##   left_behind       the giraffe left on the south bank (it can't swim or ride), the one rider with no place left
+##                     beside it, the eagles gone over
 ##   preview           the RTS view: the cyan preview across the river under the cursor
 ##   preview_bad       red where it can't go (the river too wide where the lake's outlet comes in)
 ##   drop_fall         it comes down out of the sky folded
 ##   drop_thrusters    the thrusters braking it
 ##   drop_unfold       unfolding in the hover
 ##   bridge_down       down across the river
-##   bridge_crossing   the giraffe, the rhino, a Bison Field Gun and the Mule Artillery crossing it
+##   bridge_crossing   the giraffe, a Bison Field Gun, the Mule Artillery and a rhino with no raft crossing it
 ##   alarm             defenders on it: the red lights flashing along its railings, the alarm on the RTS HUD
 ##   under_fire        shells bursting on it: no alarm, its health barely down
 ##   godot --path game --resolution 1280x720 --write-movie bridge.avi --fixed-fps 30 res://scenes/dev/bridge_showcase.tscn -- --video
@@ -27,14 +30,16 @@ extends Node3D
 ##       onto the banks; the RTS view again, one bridge fewer left.
 ##
 ## The checks: 30 bridges and no more; no bridge on dry land, across the lake's outlet where it is too wide, or on top
-## of another; with no bridge the giraffe, the rhino, the bison and the mule can't get across and go only to the
-## south bank; the bears, the snake, the hippo and the elephant swim over (no shot fired nor skill used while in the
-## water); the kangaroos, the chimp, the lioness and the dog hop onto the hippo and the elephant, two each, the one
-## left over stays behind, and the riders get off on the north bank and go to their spots; the eagles fly over; the
-## bridge comes down where its preview showed it, the navmesh and the wall at the water's edge open over it, and the
-## four that can't swim or ride walk over it; a defender on it sets the alarm off until it is off it again; shots
-## and shells on it set no alarm off and take ARMOR off every hit; brought down, the bridge sinks, the chimp on it
-## drowns, the bear on it swims to the bank, and the way over is gone again.
+## of another; with no bridge the giraffe can't get across and goes only to the south bank; the bears, the snake, the
+## hippos and the elephant swim over (no shot fired nor skill used while in the water); the kangaroos, the chimp, the
+## lioness and the dog hop onto two of the rafts the carriers tow, two to a raft, the rhino onto the third on its own,
+## the one left over stays behind, and the riders get off on the north bank and go to their spots; the eagles fly
+## over; the bridge comes down where its preview showed it, the navmesh and the wall at the water's edge open over it,
+## and the giraffe, the bison, the mule and a rhino walk over it; a defender on it sets the alarm off until it is off
+## it again; on dry land (--test) two of three riders board a raft, a giraffe can't, a rhino can't join riders nor
+## anyone a rhino, and Space lets them off; shots and shells on it set no alarm off and take ARMOR off every hit;
+## brought down, the bridge sinks, the chimp on it drowns, the bear on it swims to the bank, and the way over is gone
+## again.
 
 ## The river (main) here: where the army stands on its south bank, where it goes on the north bank.
 const SOUTH := Vector3(-322.0, 0.0, 509.0)
@@ -172,20 +177,26 @@ var carriers: Array = []
 var walkers: Array = []
 var eagles: Array = []
 var spare: AttackerUnit
+var rhino: AttackerUnit
 var dummy: FlameTrooper
 
 
 func _act_cross() -> void:
-	# Bears and a snake to swim, a hippo and an elephant to carry, the riders, the ones that can do neither, eagles.
+	# Bears and a snake to swim, two hippos and an elephant towing their rafts, the riders (a rhino among them, next to
+	# the second hippo's raft), the giraffe that can do neither, eagles.
 	for k in 2:
 		swimmers.append(_unit("rifleman", SOUTH + Vector3(-6.0 + k * 4.0, 0, 0)))
 	swimmers.append(_unit("serpent", SOUTH + Vector3(6.0, 0, 2.0)))
 	carriers.append(_unit("hippo", SOUTH + Vector3(-4.0, 0, 6.0)))
 	carriers.append(_unit("elephant", SOUTH + Vector3(5.0, 0, 7.0)))
-	for t in ["kangaroo", "chimp", "lioness", "medic", "kangaroo"]:
-		riders.append(_unit(t, SOUTH + Vector3(-8.0 + riders.size() * 4.0, 0, 12.0)))
-	for t in ["giraffe", "rhino"]:
-		walkers.append(_unit(t, LEFT_AT + Vector3(walkers.size() * 6.0, 0, 0)))
+	carriers.append(_unit("hippo", SOUTH + Vector3(17.0, 0, 6.0)))
+	# A walk from the rafts; the second kangaroo the furthest from them all (the one left over).
+	for t in ["kangaroo", "chimp", "lioness", "medic"]:
+		riders.append(_unit(t, SOUTH + Vector3(-8.0 + riders.size() * 4.0, 0, 20.0)))
+	riders.append(_unit("kangaroo", SOUTH + Vector3(-13.0, 0, 25.0)))
+	rhino = _unit("rhino", SOUTH + Vector3(17.0, 0, 20.0))
+	riders.append(rhino)
+	walkers.append(_unit("giraffe", LEFT_AT))
 	for k in 2:
 		eagles.append(_unit("talon", EAGLES_AT + Vector3(k * 5.0, 0, 0)))
 	# A defender on the north bank in their reach (not for the stills: the shots' tracers would pile up while
@@ -208,22 +219,28 @@ func _act_cross() -> void:
 	var everyone: Array = swimmers + carriers + riders + walkers + eagles
 	commander.submit({"type": "move", "units": _ids(everyone), "pos": NORTH, "attack": true})
 	await _frames(2)
-	var boarding := riders.filter(func(u): return u.order.type == "board")
-	_check(boarding.size() == 4, "4 of the 5 riders go to board the hippo and the elephant (2 seats each): %d" % boarding.size())
-	spare = null
-	for r in riders:
-		if r.order.type != "board":
-			spare = r
-	_check(spare != null, "the one left over has no seat: the %s" % (spare.stats.name if spare else "none"))
-	_check(walkers.all(func(u): return u.order.type != "board"), "the giraffe and the rhino don't board (they can't ride)")
-	# Swimming and riding: nobody fires or uses a skill; never more than two on a back.
+	# Where each is going (or already is, if it was close enough to hop straight on).
+	var raft_of := func(u): return u.carrier if u.carrier != null else (u.order.get("carrier") if u.order.type == "board" else null)
+	var boarding := riders.filter(func(u): return raft_of.call(u) != null)
+	_check(boarding.size() == 5, "5 of the 6 riders go to board the three rafts (two to a raft, the rhino alone): %d" % boarding.size())
+	var rhino_raft = raft_of.call(rhino)
+	_check(rhino_raft != null and boarding.all(func(u): return u == rhino or raft_of.call(u) != rhino_raft),
+			"the rhino has a raft to itself")
+	var spares := riders.filter(func(u): return raft_of.call(u) == null)
+	spare = spares[0] if spares.size() == 1 else null
+	_check(spare == riders[4], "the one left over has no place: the %s (the furthest from the rafts)" % (spare.stats.name if spare else "none"))
+	_check(walkers.all(func(u): return u.order.type != "board"), "the giraffe doesn't board (it can't ride)")
+	# Swimming and riding: nobody fires or uses a skill; never more than two on a raft, nobody with the rhino.
 	var shot_while_swimming := false
+	var shooter := ""
+	var shared := false
 	var most_aboard := 0
 	var swam := {}
 	var rode := {}
 	var skill_tried := false
 	var skills_used := false
 	var fire_cd := {}
+	var crossing_before := {}
 	for frame in 30 * 150:
 		await get_tree().physics_frame
 		for u in swimmers + carriers:
@@ -231,14 +248,19 @@ func _act_cross() -> void:
 				swam[u] = true
 		for c in carriers:
 			most_aboard = maxi(most_aboard, c.riders.size())
+			shared = shared or (c.riders.size() > 1 and c.riders.any(func(r): return r.rides_alone()))
 		for r in riders:
 			if r.is_riding():
 				rode[r] = true
-		# A shot resets the shooter's fire cooldown: none of them may fire swimming or riding.
+		# A shot resets the shooter's fire cooldown (so does the elephant's and the rhino's anti-air watch, every few
+		# frames): none of them may fire swimming or riding. Crossing since the frame before: one that fired as it
+		# set off, in the frame it went into the water or onto its raft, did so before it was crossing.
 		for u in swimmers + carriers + riders:
-			if u.is_crossing() and u._fire_cd > float(fire_cd.get(u, 0.0)) + 0.01:
+			if u.is_crossing() and crossing_before.get(u, false) and u._fire_cd > float(fire_cd.get(u, 0.0)) + 0.01:
 				shot_while_swimming = true
+				shooter = "%s (riding %s, swimming %s, in the water %s, z %.1f)" % [u.stats.name, u.is_riding(), u.is_swimming(), u.in_water(), u.global_position.z]
 			fire_cd[u] = u._fire_cd
+			crossing_before[u] = u.is_crossing()
 		# In the water the hippo's smoke and the kangaroo's flash are refused.
 		if not skill_tried and carriers[0].is_swimming() and carriers[0].in_water() and carriers[0].riders.size() > 0:
 			skill_tried = true
@@ -254,17 +276,19 @@ func _act_cross() -> void:
 		if over.all(func(u): return _flat(u.global_position, NORTH) < 40.0 and not u.is_crossing() and u.global_position.z < 445.0) \
 				and riders.all(func(r): return not r.is_riding()) and frame > 120:
 			break
-	_check(swam.size() == 5, "the bears, the snake, the hippo and the elephant swam across (%d of 5 seen in the water)" % swam.size())
-	_check(rode.size() == 4, "4 riders rode across on the carriers' backs: %d" % rode.size())
-	_check(most_aboard <= 2, "never more than 2 on a back: %d" % most_aboard)
+	_check(swam.size() == 6, "the bears, the snake, the hippos and the elephant swam across (%d of 6 seen in the water)" % swam.size())
+	_check(rode.size() == 5, "5 riders rode across on the rafts: %d" % rode.size())
+	_check(most_aboard <= 2, "never more than 2 on a raft: %d" % most_aboard)
+	_check(rode.has(rhino) and not shared, "the rhino rode across on its own")
 	if armed:
-		_check(not shot_while_swimming, "nobody fired swimming or riding (the defender on the bank in reach)")
+		_check(not shot_while_swimming, "nobody fired swimming or riding (the defender on the bank in reach)%s" % ((": " + shooter) if shooter else ""))
 	_check(skill_tried and not skills_used, "no skill used out on the water (the hippo's smoke, a riding kangaroo's flash refused)")
 	for u in swimmers + carriers + riders.filter(func(r): return r != spare):
 		_check(u.global_position.z < 445.0 and not u.is_crossing(), "%s got over to the north bank (z %.0f)" % [u.stats.name, u.global_position.z])
 	for u in eagles:
 		_check(u.global_position.z < 445.0, "%s flew over (z %.0f)" % [u.stats.name, u.global_position.z])
-	_check(spare.global_position.z > 480.0, "the %s with no seat stayed on the south bank (z %.0f)" % [spare.stats.name, spare.global_position.z])
+	if spare:
+		_check(spare.global_position.z > 480.0, "the %s with no seat stayed on the south bank (z %.0f)" % [spare.stats.name, spare.global_position.z])
 	for u in walkers:
 		_check(u.global_position.z > 480.0 and not RiverCrossing.wet(u.global_position), "%s went only as far as the south bank (z %.0f)" % [u.stats.name, u.global_position.z])
 	if armed:
@@ -272,7 +296,7 @@ func _act_cross() -> void:
 		_check(dummy.hp < start_hp, "out of the water they fire at the defender on the bank (%d hp off it)" % int(start_hp - dummy.hp))
 		dummy.queue_free()
 	else:
-		# From over the water, the giraffe and the rhino on the south bank, the eagles gone over.
+		# From over the water, the giraffe on the south bank, the eagles gone over.
 		cam.fov = 56.0
 		var g: Vector3 = walkers[0].global_position
 		await _shoot("left_behind", Vector3(g.x + 14.0, JungleLayout.WATER_Y + 4.0, g.z - 30.0), g + Vector3(-4.0, 2.5, 0.0))
@@ -290,18 +314,27 @@ func _shots_on_the_way(_frame: int) -> void:
 		var c: Vector3 = bears_in[0].global_position
 		cam.fov = 44.0
 		await _shoot("swim_bears", Vector3(c.x + 6.0, JungleLayout.WATER_Y + 1.2, c.z - 6.0), Vector3(c.x - 0.5, JungleLayout.WATER_Y + 0.6, c.z + 1.5))
-	var full := carriers.filter(func(c): return c.riders.size() == 2 and c.in_water())
-	if not _taken.has("swim_carriers") and full.size() == 2 and full.all(func(u): return _mid_river(u) and _sunny(u)):
-		_taken["swim_carriers"] = true
-		var c := _centre(full)
-		cam.fov = 48.0
-		await _shoot("swim_carriers", Vector3(c.x + 10.0, JungleLayout.WATER_Y + 2.6, c.z - 11.0), Vector3(c.x, JungleLayout.WATER_Y + 1.0, c.z))
-	if not _taken.has("riders_close") and carriers[0].riders.size() == 2 and _mid_river(carriers[0]) and _sunny(carriers[0]):
-		_taken["riders_close"] = true
-		await _shot_close("riders_close", carriers[0], Vector3(7.5, 1.8, -5.5), 48.0)
-	if not _taken.has("riders_elephant") and carriers[1].riders.size() == 2 and _mid_river(carriers[1]) and _sunny(carriers[1]):
-		_taken["riders_elephant"] = true
-		await _shot_close("riders_elephant", carriers[1], Vector3(-8.5, 2.6, -6.5), 48.0)
+	var towing := carriers.filter(func(c): return not c.riders.is_empty() and c.platform().afloat)
+	if not _taken.has("rafts_crossing") and towing.size() == 3 and towing.all(func(u): return _mid_river(u) and _sunny(u)):
+		_taken["rafts_crossing"] = true
+		var c := _centre(towing)
+		cam.fov = 52.0
+		await _shoot("rafts_crossing", Vector3(c.x + 22.0, JungleLayout.WATER_Y + 7.0, c.z - 20.0), Vector3(c.x, JungleLayout.WATER_Y + 0.8, c.z + 3.0))
+	var hippo: AttackerUnit = carriers[0]
+	if not _taken.has("raft_riders") and hippo.riders.size() == 2 and hippo.platform().afloat and _sunny(hippo) and _mid_river(hippo):
+		_taken["raft_riders"] = true
+		await _shot_at("raft_riders", hippo.platform(), Vector3(7.5, 2.6, -4.5), Vector3(0, 1.6, 0.0), 50.0)
+	var lone = rhino.carrier
+	if lone != null and not _taken.has("raft_rhino") and lone.platform().afloat and _sunny(lone) and _mid_river(lone):
+		_taken["raft_rhino"] = true
+		await _shot_at("raft_rhino", lone.platform(), Vector3(-7.5, 2.4, -5.0), Vector3(0, 1.8, 0.5), 50.0)
+	if not _taken.has("hippo_head") and hippo.in_water() and _mid_river(hippo) and _sunny(hippo):
+		_taken["hippo_head"] = true
+		await _shot_at("hippo_head", hippo, Vector3(3.2, 0.9 + hippo.stats.swim_sink, -5.0), Vector3(0, 1.1, -1.4), 46.0)
+	var jumbo: AttackerUnit = carriers[1]
+	if not _taken.has("elephant_trunk") and jumbo.in_water() and _mid_river(jumbo) and _sunny(jumbo) and jumbo._turrets.snorkel >= 1.0:
+		_taken["elephant_trunk"] = true
+		await _shot_at("elephant_trunk", jumbo, Vector3(4.5, 1.0 + jumbo.stats.swim_sink, -7.0), Vector3(0, 2.0, -2.2), 48.0)
 
 
 func _centre(list: Array) -> Vector3:
@@ -329,8 +362,8 @@ var heavies: Array = []
 func _act_bridge() -> void:
 	# The bison and the mule join the giraffe and the rhino on the south bank by the bridge.
 	heavies = walkers.duplicate()
-	for t in ["bison_gun", "mule"]:
-		heavies.append(_unit(t, HEAVY_AT + Vector3(heavies.size() * 7.0 - 10.0, 0, 0)))
+	for t in [["bison_gun", 4.0], ["mule", 11.0], ["rhino", -3.0]]:
+		heavies.append(_unit(t[0], HEAVY_AT + Vector3(t[1], 0, 0)))
 	commander.submit({"type": "move", "units": _ids(walkers), "pos": HEAVY_AT + Vector3(6, 0, 4), "attack": false})
 	_check(not RiverCrossing.reaches(self, HEAVY_AT, OVER_TO), "no way over on foot before the bridge")
 	# The preview, then the drop where it showed.
@@ -382,7 +415,8 @@ func _act_bridge() -> void:
 	commander.submit({"type": "move", "units": _ids(heavies), "pos": OVER_TO, "attack": false})
 	var on_it := {}
 	var shot_crossing := false
-	for frame in 30 * 200:
+	# The mule walks at 1 m/s: 110 m to go (physics runs at 60 frames a second).
+	for frame in 60 * 200:
 		await get_tree().physics_frame
 		for u in heavies:
 			if bridge.carries(u.global_position):
@@ -511,18 +545,35 @@ func _act_board() -> void:
 		await get_tree().physics_frame
 		if hippo.riders.size() == 2:
 			break
-	_check(hippo.riders.size() == 2, "they hop onto its back: %d" % hippo.riders.size())
+	_check(hippo.riders.size() == 2, "they hop onto its raft: %d" % hippo.riders.size())
 	var rider: AttackerUnit = hippo.riders[0] if not hippo.riders.is_empty() else null
+	# A rhino: not onto a raft with riders on it; onto an empty one on its own, and then nobody joins it.
+	var rhino2 := _unit("rhino", at + Vector3(10.0, 0.0, 10.0))
+	var other := _unit("hippo", at + Vector3(18.0, 0.0, 0.0))
+	var chimp2 := _unit("chimp", at + Vector3(14.0, 0.0, 12.0))
+	await _frames(20)
+	commander.submit({"type": "board", "units": [rhino2.unit_id], "carrier": hippo.get_path()})
+	_check(rhino2.order.type != "board", "a rhino can't get onto a raft with riders on it")
+	commander.submit({"type": "board", "units": [rhino2.unit_id], "carrier": other.get_path()})
+	for k in 30 * 20:
+		await get_tree().physics_frame
+		if other.riders.size() == 1:
+			break
+	_check(other.riders == [rhino2], "a rhino boards an empty raft on its own")
+	commander.submit({"type": "board", "units": [chimp2.unit_id], "carrier": other.get_path()})
+	_check(chimp2.order.type != "board", "and nobody joins it there")
 	commander.submit({"type": "move", "units": [hippo.unit_id], "pos": at + Vector3(0, 0, -12.0), "attack": false})
 	for k in 30 * 8:
 		await get_tree().physics_frame
 	_check(hippo.riders.size() == 2, "on dry land they stay on while it walks (no water crossed)")
-	_check(rider != null and rider.global_position.distance_to(hippo.seat_transform(0).origin) < 0.5, "riding on its back as it goes")
+	_check(rider != null and rider.global_position.distance_to(hippo.seat_transform(0).origin) < 0.5, "riding on its raft as it tows it")
+	_check(rider != null and rider.global_position.distance_to(hippo.platform().global_position) < TowPlatform.LENGTH and rider.global_position.distance_to(hippo.global_position) > 3.0,
+			"the raft trails behind the hippo")
 	commander.submit({"type": "unload", "units": [hippo.unit_id]})
 	for k in 30 * 3:
 		await get_tree().physics_frame
 	_check(hippo.riders.is_empty() and rider != null and not rider.is_riding() and rider.is_on_floor(), "Space: they hop off beside it")
-	for u in [hippo, chimp, roo, dog, giraffe]:
+	for u in [hippo, chimp, roo, dog, giraffe, rhino2, other, chimp2]:
 		commander.units.erase(u.unit_id)
 		u.queue_free()
 	_acts += 1
@@ -760,6 +811,14 @@ func _shot(name: String, follow: Node3D = null) -> void:
 		eye = at + off
 	cam.fov = c[2]
 	await _shoot(name, eye, at)
+
+
+## A still of `node`: the camera at `eye`, looking at `at` (both in its own frame, turned with it).
+func _shot_at(name: String, node: Node3D, eye: Vector3, at: Vector3, fov: float) -> void:
+	var b := Basis(Vector3.UP, node.global_rotation.y)
+	var o := node.global_position
+	cam.fov = fov
+	await _shoot(name, o + b * eye, o + b * at)
 
 
 ## A still close by `node`: the camera `off` from it in its own frame.

@@ -31,13 +31,13 @@ extends CharacterBody3D
 ##
 ## The Jungle Keep's water (RiverCrossing): bears, snakes, hippos and elephants swim it (their agents take the swim
 ## links; across one they follow a route of their own, down the bank, afloat in the deep water, up the far bank:
-## swim_route). The others but for the Mule Artillery, bisons, giraffes and rhinos (no_ride) ride across on a hippo's
-## or an elephant's back, two to a carrier:
-##   {"type": "board", "carrier": AttackerUnit, "then": order or null}   it goes up to the carrier and hops onto its
-##            back (mount); `then` is what it does once it gets off again (AttackerCommander's ferry hands these out).
-## A carrier with riders on the way to it waits for them (_ferry_wait); with riders on its back it lets them off
-## once it has stopped on dry land after a swim (unload), or when told to. Swimming or riding a unit can't attack or
-## use its skills (is_crossing). A carrier that dies out on the water takes its riders down with it (drown).
+## swim_route). Every hippo and elephant tows a pontoon raft (TowPlatform); the others but for the Mule Artillery,
+## bisons and giraffes (no_ride) ride across on one: two animals to a raft, or a Combat Rhino on its own (ride_alone):
+##   {"type": "board", "carrier": AttackerUnit, "then": order or null}   it goes up to the carrier's raft and hops onto
+##            its deck (mount); `then` is what it does once it gets off again (AttackerCommander's ferry hands these out).
+## A carrier with riders on the way to it waits for them (_ferry_wait); with riders on its raft it lets them off once
+## the raft is ashore after a swim (unload), or when told to. Swimming or riding a unit can't attack or use its skills
+## (is_crossing). A carrier that dies out on the water drags its raft under, and its riders drown (drown).
 ##
 ## The Mule Artillery (UnitTypes setup_*) sets its gun up to fire and packs it up to move (set_gun): setup_time
 ## seconds each way (its Setup clip, played backward to pack up), and it can't move unless the gun is packed.
@@ -379,6 +379,7 @@ var _ferry_wait: Array = []
 var _ferry_t := 0.0
 var _crossed := false
 var _walk_mask := 0
+var _platform: TowPlatform
 ## The point of its path it makes for, at or after the agent's own (_next_waypoint).
 var _wp := 0
 ## Headway: where it was HEADWAY_EVERY s ago, and how many of those checks in a row it has hardly moved.
@@ -414,22 +415,34 @@ func swims() -> bool:
 	return stats.has("swim_speed")
 
 
-## Hippos and elephants carry riders across the water on their backs.
+## Hippos and elephants tow a raft that carries riders across the water (TowPlatform), where there is water.
 func can_carry() -> bool:
-	return stats.has("seats") and is_alive()
+	return _platform != null and is_alive()
 
 
-## Places left on its back (riders on it and on their way to it count).
-func seats_free() -> int:
-	if not can_carry():
-		return 0
-	return stats.seats.size() - riders.size() - _ferry_wait.filter(func(u): return is_instance_valid(u) and u.carrier != self).size()
+## The ones on its raft and on their way to it.
+func aboard() -> Array:
+	return riders + _ferry_wait.filter(func(u): return is_instance_valid(u) and u.carrier != self and not u in riders)
 
 
-## Hops onto a carrier to get across the water: everyone who neither swims, flies nor carries, but the Mule Artillery,
-## bisons, giraffes and rhinos (no_ride).
+## True if `u` may get onto its raft (TowPlatform.fits: two animals, or a rhino alone), `plus` counted as aboard too.
+func can_take(u: AttackerUnit, plus: Array = []) -> bool:
+	return can_carry() and TowPlatform.fits(aboard() + plus, u)
+
+
+## Its raft (null for units that don't tow one).
+func platform() -> TowPlatform:
+	return _platform
+
+
+## Hops onto a carrier's raft to get across the water: everyone who neither swims, flies nor carries, but the Mule
+## Artillery, bisons and giraffes (no_ride). A Combat Rhino has a raft to itself (rides_alone).
 func can_ride() -> bool:
-	return not swims() and not is_flying() and not stats.has("seats") and not stats.get("no_ride", false)
+	return not swims() and not is_flying() and not stats.has("tows") and not stats.get("no_ride", false)
+
+
+func rides_alone() -> bool:
+	return stats.get("ride_alone", false)
 
 
 func is_riding() -> bool:
@@ -899,6 +912,11 @@ func _ready() -> void:
 	_build_model()
 	_build_ring()
 	_build_hp_bar()
+	# Its raft, on a map with water to cross (the Jungle Keep's).
+	if stats.has("tows") and RiverCrossing.active():
+		_platform = TowPlatform.new()
+		_platform.carrier = self
+		add_child(_platform)
 	_retarget_cd = randf() * 0.3
 	_circle_at = global_position
 	_last_yaw = rotation.y
@@ -1118,8 +1136,8 @@ func _die() -> void:
 	if carrier != null:
 		carrier.riders.erase(self)
 		carrier = null
-	# A carrier lets its riders off where it falls; out on the water they go down with it.
-	var wet := in_water()
+	# A carrier lets its riders off where it falls; out on the water it drags its raft under, and they go down too.
+	var wet := in_water() or (_platform != null and _platform.afloat)
 	for r in riders.duplicate():
 		if wet:
 			r.drown()
@@ -1127,6 +1145,9 @@ func _die() -> void:
 			r.dismount()
 	riders.clear()
 	_ferry_wait.clear()
+	if _platform:
+		_platform.abandon(wet)
+		_platform = null
 	if _turrets:
 		_turrets.target = null
 	if _flight:
@@ -2437,10 +2458,12 @@ func drown() -> void:
 	_die()
 
 
-## Where carrier seat `i` is (world): on its back, facing the way it faces.
+## Where rider `i` of its riders stands (world): on its raft's deck, facing ahead (a rhino in the middle).
 func seat_transform(i: int) -> Transform3D:
-	var seats: Array = stats.get("seats", [Vector3.UP * stats.height])
-	return global_transform * Transform3D(Basis.IDENTITY, seats[clampi(i, 0, seats.size() - 1)])
+	if _platform == null:
+		return global_transform * Transform3D(Basis.IDENTITY, Vector3.UP * stats.height)
+	var r = riders[i] if i >= 0 and i < riders.size() else null
+	return _platform.seat_transform(i, r != null and r.rides_alone())
 
 
 ## Riders `list` are on their way to its back: it waits for them (FERRY_WAIT s at most) before it goes.
@@ -2449,9 +2472,9 @@ func wait_for(list: Array) -> void:
 	_ferry_t = 0.0
 
 
-## Lets its riders off beside it (on dry land only). They carry on with what they were sent to do.
+## Lets its riders off beside its raft (on dry land only). They carry on with what they were sent to do.
 func unload() -> bool:
-	if riders.is_empty() or in_water() or is_swimming():
+	if riders.is_empty() or in_water() or is_swimming() or (_platform and _platform.afloat):
 		return false
 	for r in riders.duplicate():
 		r.dismount()
@@ -2459,18 +2482,20 @@ func unload() -> bool:
 	return true
 
 
-## Where a rider gets down: beside the carrier, its side of it, on the navmesh.
+## Where a rider gets down: off its raft's side, on the navmesh.
 func drop_spot(r: AttackerUnit) -> Vector3:
 	var k := riders.find(r)
-	var side := -1.0 if k % 2 == 0 else 1.0
-	var at: Vector3 = global_position + global_basis.x * side * (stats.radius + r.stats.radius + 0.9) + global_basis.z * (0.6 * (k / 2))
-	var snap := LevelBuilder.nav_closest(get_world_3d().navigation_map, at)
-	return snap if snap.distance_to(at) < 3.0 else global_position + global_basis.z * (stats.radius + r.stats.radius + 0.6)
+	var at: Vector3 = _platform.drop_spot(k, r) if _platform else global_position + global_basis.x * (stats.radius + r.stats.radius + 0.9)
+	var map := get_world_3d().navigation_map
+	var snap := LevelBuilder.nav_closest(map, at)
+	if snap.distance_to(at) < 3.0:
+		return snap
+	return LevelBuilder.nav_closest(map, global_position + global_basis.x * (stats.radius + r.stats.radius + 1.0) * (-1.0 if k % 2 == 0 else 1.0))
 
 
-## Hops onto `c`'s back.
+## Hops onto `c`'s raft.
 func mount(c: AttackerUnit) -> void:
-	if c.riders.size() >= c.stats.seats.size():
+	if not c.can_take(self):
 		return
 	carrier = c
 	c.riders.append(self)
@@ -2534,22 +2559,23 @@ func place_on() -> void:
 		global_transform = xf
 
 
-## A board order: up to its carrier and onto its back. Where to walk meanwhile, or null once on (or given up: the
-## carrier is gone, full or out on the water, and it carries on with what it was to do after).
+## A board order: up to its carrier's raft and onto its deck. Where to walk meanwhile, or null once on (or given up:
+## the carrier is gone, its raft full or out on the water, and it carries on with what it was to do after).
 func _board_step():
 	var c = order.get("carrier")
-	if not is_instance_valid(c) or not c.can_carry() or c.in_water() or c.is_swimming() \
-			or (c.riders.size() >= c.stats.seats.size()):
+	if not is_instance_valid(c) or not c.can_carry() or c.in_water() or c.is_swimming() or not c.can_take(self) \
+			or c.platform() == null or c.platform().afloat:
 		var then = order.get("then")
 		order = {"type": "idle"}
 		if then != null:
 			set_order(then)
 		return null
-	var gap := Vector2(c.global_position.x - global_position.x, c.global_position.z - global_position.z).length()
-	if gap <= c.stats.radius + stats.radius + BOARD_REACH:
+	var raft: TowPlatform = c.platform()
+	var gap := Vector2(raft.global_position.x - global_position.x, raft.global_position.z - global_position.z).length()
+	if gap <= TowPlatform.LENGTH * 0.5 + stats.radius + BOARD_REACH:
 		mount(c)
 		return null
-	return c.global_position
+	return raft.global_position
 
 
 ## A carrier: waits for the riders on their way to it; lets the ones on its back off once it has stopped on dry land
@@ -2562,8 +2588,8 @@ func _carry_tick(delta: float) -> void:
 				and u.order.type == "board" and u.order.get("carrier") == self)
 		if _ferry_t > FERRY_WAIT:
 			_ferry_wait.clear()
-	if riders.is_empty() or not _route.is_empty() or in_water():
-		return
+	if riders.is_empty() or not _route.is_empty() or in_water() or (_platform and _platform.afloat):
+		return  # its raft not ashore yet
 	if _crossed:
 		# Out of the water on the far side: the riders get off, but for any that still have water to cross to get
 		# where they are going (they stay on for the next swim).
@@ -2579,6 +2605,13 @@ func _place_riders() -> void:
 	for r in riders:
 		if is_instance_valid(r):
 			r.place_on()
+
+
+## Its raft trails it, every frame once it has moved; then the riders on it.
+func _tow(delta: float) -> void:
+	_platform.follow(delta)
+	if not riders.is_empty():
+		_place_riders()
 
 
 ## Ripples spreading off it where it swims.
@@ -3011,8 +3044,10 @@ func _face(point: Vector3, delta: float) -> void:
 func _process(delta: float) -> void:
 	if hp <= 0.0:
 		return
-	if not riders.is_empty():
-		_place_riders()
+	if _platform:
+		_tow(delta)
+	if _turrets:
+		_turrets.snorkel = move_toward(_turrets.snorkel, 1.0 if is_swimming() else 0.0, delta * 1.4)
 	# Procedural animation until models are rigged.
 	var spd := velocity.length() if not _route.is_empty() else Vector2(velocity.x, velocity.z).length()
 	if has_setup():

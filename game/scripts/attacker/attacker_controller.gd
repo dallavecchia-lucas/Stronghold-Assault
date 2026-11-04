@@ -31,8 +31,8 @@ extends CanvasLayer
 ## Shift+B (or the HUD's BRIDGE button): drop a folding bridge across a river (the Jungle Keep): a cyan see-through
 ##    preview of it follows the cursor, snapped across the river nearest it (red where it can't go, and why); LMB
 ##    drops it (it comes down out of the sky and unfolds), RMB/Shift+B cancel. 30 a match (AttackerCommander).
-## RMB a hippo or an elephant with riders selected: they hop onto its back (two to a carrier); sent across the water
-##    the riders get onto the carriers moved with them by themselves. Space with no ram selected: the selected
+## RMB a hippo or an elephant with riders selected: they climb onto the raft it tows (two to a raft, or a rhino
+##    alone); sent across the water the riders get onto the rafts of the carriers moved with them by themselves. Space with no ram selected: the selected
 ##    carriers let their riders off.
 ## A defender on a bridge sets off its alarm: the banner at the top (click it to look) for as long as one is on it.
 ## The fog of war (AttackerVision) dims the land the army doesn't see (FogOverlay); defenders in it
@@ -1028,7 +1028,7 @@ func _build_hud() -> void:
 	row.add_child(sp)
 	set_spawn_point(0)
 
-	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nBisons: G bombardment (LMB fire, RMB cancel), onto the gun decks and roofs too\nMule Artillery: T sets the gun up / disarms it (it can't move unless disarmed) · armed, G bombardment (LMB fire): further, harder and wider than the bisons'\nTalons: F strafe run (press LMB on the target, drag the way to fly, let go) · G bomb strike (LMB fire) · RMB cancels\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nGiraffes: see furthest through the fog · P ping: marks every defender it reaches, even under camo, and reveals infiltrators out of camo\nKangaroos: R flash grenade (LMB fire, RMB cancel) when no hippo's smoke is ready · they resupply units nearby\nLionesses: F sneak (then RMB a defender: they pounce) · G fire blast · T firing lines on/off when moved together\nSerpent Snipers: F sniper nest (LMB a tree: up it they see and shoot further; any move order climbs them down) · G bush trap (LMB a bush: coiled, they strike and crush a defender who comes close)\nWolf Medics: T healing (2 units each) / minesweeping (they find the hidden mines and dig them out; RMB sweeps on the way, Ctrl+RMB doesn't)\nChimps / Rams / Kangaroos: RMB next to a broken gate to send them in\nRivers: Shift+B drop a bridge (LMB, RMB cancel; 30 a match) · bears, snakes, hippos, elephants swim · the rest but mules, bisons, giraffes, rhinos ride hippos/elephants (RMB one, or send them across with it; Space lets them off)\nHelipads (S/E/W Pad): spawn there and +%.1f supply/s each while you hold them · sabotaged, stand ground units by one to retake it" % AttackerBase.INCOME,
+	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nBisons: G bombardment (LMB fire, RMB cancel), onto the gun decks and roofs too\nMule Artillery: T sets the gun up / disarms it (it can't move unless disarmed) · armed, G bombardment (LMB fire): further, harder and wider than the bisons'\nTalons: F strafe run (press LMB on the target, drag the way to fly, let go) · G bomb strike (LMB fire) · RMB cancels\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nGiraffes: see furthest through the fog · P ping: marks every defender it reaches, even under camo, and reveals infiltrators out of camo\nKangaroos: R flash grenade (LMB fire, RMB cancel) when no hippo's smoke is ready · they resupply units nearby\nLionesses: F sneak (then RMB a defender: they pounce) · G fire blast · T firing lines on/off when moved together\nSerpent Snipers: F sniper nest (LMB a tree: up it they see and shoot further; any move order climbs them down) · G bush trap (LMB a bush: coiled, they strike and crush a defender who comes close)\nWolf Medics: T healing (2 units each) / minesweeping (they find the hidden mines and dig them out; RMB sweeps on the way, Ctrl+RMB doesn't)\nChimps / Rams / Kangaroos: RMB next to a broken gate to send them in\nRivers: Shift+B drop a bridge (LMB, RMB cancel; 30 a match) · bears, snakes, hippos, elephants swim · the rest but mules, bisons, giraffes ride the rafts hippos/elephants tow, 2 each or a rhino alone (RMB one, or send them across with it; Space lets them off)\nHelipads (S/E/W Pad): spawn there and +%.1f supply/s each while you hold them · sabotaged, stand ground units by one to retake it" % AttackerBase.INCOME,
 			13, Color(0.85, 0.85, 0.85, 0.75))
 	help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	help.grow_vertical = Control.GROW_DIRECTION_BEGIN
@@ -1046,7 +1046,7 @@ func _build_hud() -> void:
 		_bridge_button.toggle_mode = true
 		_bridge_button.focus_mode = Control.FOCUS_NONE
 		_bridge_button.custom_minimum_size = Vector2(150, 34)
-		_bridge_button.tooltip_text = "Airdrop a folding bridge across a river: everyone can cross it (the defenders too: its alarm goes off)\nBears, snakes, hippos and elephants swim; the rest but the Mule Artillery, bisons, giraffes and rhinos ride across on hippos and elephants (2 each)"
+		_bridge_button.tooltip_text = "Airdrop a folding bridge across a river: everyone can cross it (the defenders too: its alarm goes off)\nBears, snakes, hippos and elephants swim; the rest but the Mule Artillery, bisons and giraffes ride across on the rafts hippos and elephants tow (2 each, or a rhino alone)"
 		_bridge_button.pressed.connect(toggle_bridge)
 		info.add_child(_bridge_button)
 	# Defenders on a bridge: a banner at the top while the alarm goes off (click it to look).
@@ -1157,9 +1157,8 @@ func _process(_delta: float) -> void:
 				_selection_label.text += "  %ds" % ceili(soonest)
 	var carriers := selected.filter(func(u): return is_instance_valid(u) and u.can_carry())
 	if not carriers.is_empty():
-		var seats: int = carriers.reduce(func(n, u): return n + u.stats.seats.size(), 0)
 		var aboard: int = carriers.reduce(func(n, u): return n + u.riders.size(), 0)
-		_selection_label.text += "\nRiders %d/%d · RMB a carrier to board · Space lets them off" % [aboard, seats]
+		_selection_label.text += "\nOn their rafts %d (2 each, or a rhino alone) · RMB a carrier to board · Space lets them off" % aboard
 	var crossing := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.is_crossing())
 	if not crossing.is_empty():
 		var riding := crossing.filter(func(u): return u.is_riding()).size()

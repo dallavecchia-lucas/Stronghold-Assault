@@ -134,10 +134,11 @@ extends RefCounted
 ## steer: only move where the model faces, turning at turn_rate (rad/s), no strafing.
 ## swim_*: swims across the Jungle Keep's rivers and its lake (RiverCrossing): bears, snakes, hippos and elephants.
 ##   swim_speed m/s in the water, its feet swim_sink m under the surface. Swimming it can't attack or use skills.
-## seats: carries riders across the water (hippos and elephants): one spot each on its back (unit frame, -Z
-##   forward), at most two. rides: hops onto a carrier's back to cross (AttackerUnit.can_ride); every unit
-##   that neither swims, flies nor carries does, but the Mule Artillery, bisons, giraffes and rhinos
-##   (no_ride): those cross by a bridge or not at all. Riding it can't attack or use skills either.
+## tows: tows a pontoon raft riders cross the water on (hippos and elephants, TowPlatform): the tow line's hitch on
+##   its rear (unit frame, -Z forward). Two animals to a raft. Every unit that neither swims, flies nor tows rides
+##   on one (AttackerUnit.can_ride), but the Mule Artillery, bisons and giraffes (no_ride): those cross by a bridge
+##   or not at all. ride_alone: a Combat Rhino has a raft to itself (only an empty one, and nobody joins it). Riding
+##   it can't attack or use skills either.
 ## model: path to a processed GLB (front facing +Z, feet at origin).
 ## gun: a hand-held gun model (HeldGun) hung on the model's `rifle` bone; its rounds' tracers leave its muzzle.
 
@@ -205,9 +206,9 @@ const DATA := {
 		"range": 0.0, "damage": 0.0, "fire_interval": 0.2, "spread": 0.0,
 		"structure_mult": 1.5, "radius": 1.6, "height": 3.8,
 		"role": "anti_air", "anim": "rigged", "hotkey": KEY_B,
-		# Carries two riders on its back across the water, behind its cannons.
-		"swim_speed": 2.0, "swim_sink": 1.05,
-		"seats": [Vector3(-0.45, 3.05, 0.85), Vector3(0.45, 3.05, 0.85)],
+		# Swims with its trunk up (a snorkel: ElephantTurrets) and tows a raft for riders.
+		"swim_speed": 2.0, "swim_sink": 1.6,
+		"tows": Vector3(0, 1.3, 1.9),
 		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 2.2,
 		# The real anti-air unit: one elephant's flak is worth about five rhinos.
 		"aa_range": 26.0, "aa_dps": 30.0, "flak": true,
@@ -324,7 +325,8 @@ const DATA := {
 		"range": 0.0, "damage": 0.0, "fire_interval": 0.25, "spread": 0.0,
 		"structure_mult": 1.2, "radius": 1.3, "height": 2.4,
 		"role": "anti_air", "anim": "rigged", "hotkey": KEY_I,
-		"no_ride": true,
+		# Rides a raft over the water on its own.
+		"ride_alone": true,
 		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 2.6,
 		# Weak on its own on purpose: it takes about five rhinos to bring a flyer down quickly.
 		"aa_range": 18.0, "aa_dps": 6.0, "scouts": true,
@@ -338,9 +340,9 @@ const DATA := {
 		"range": 26.0, "damage": 8.0, "fire_interval": 0.12, "spread": 0.02,
 		"structure_mult": 1.0, "radius": 1.4, "height": 2.6,
 		"role": "infantry", "anim": "rigged", "hotkey": KEY_K,
-		# Carries two riders on its back across the water.
-		"swim_speed": 2.4, "swim_sink": 0.8,
-		"seats": [Vector3(-0.42, 1.62, 0.6), Vector3(0.42, 1.62, 0.6)],
+		# Swims with its head over the water and tows a raft for riders.
+		"swim_speed": 2.4, "swim_sink": 0.62,
+		"tows": Vector3(0, 0.9, 1.05),
 		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 2.4,
 		# Mounted machine guns: inaccurate suppressive fire that sprays around the target.
 		"suppress_radius": 2.2, "overheat_time": 8.0, "overheat_cooldown": 2.0,

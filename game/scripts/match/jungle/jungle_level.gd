@@ -1,7 +1,7 @@
 class_name JungleLevel
 extends LevelBuilder
 ## The Jungle Keep map (JungleLayout): the stronghold in a clearing in a 1.6 km forest, the rivers (too
-## deep to wade: swimmers swim them, riders ride across on their backs, and the attackers drop bridges over them:
+## deep to wade: swimmers swim them, riders ride across on the rafts the hippos and elephants tow, and the attackers drop bridges over them:
 ## RiverCrossing, FoldingBridge), the ridges, the prison on its plateau behind the cliff, the Quarry and Outpost
 ## helipads, and the Mobile Command Citadel at the south edge, the attackers' main spawn. The stronghold
 ## itself (gates, keep, posts, AA turrets, climbs) is the classic map's (LevelBuilder).

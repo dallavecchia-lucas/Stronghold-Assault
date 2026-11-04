@@ -44,13 +44,14 @@ extends Node
 ##                                       ring the rest of it so their anti-air covers the mass
 ##   {"type": "bridge", "pos": Vector3}   airdrops a folding bridge across the river nearest pos (FoldingBridge.plan),
 ##               one of the BRIDGE_STOCK the army has for the match; returns its id (0: none left, or it can't go there)
-##   {"type": "board", "units": [ids], "carrier": NodePath}   the riders among them (AttackerUnit.can_ride) hop onto
-##               that hippo's or elephant's back, as many as it has seats left
+##   {"type": "board", "units": [ids], "carrier": NodePath}   the riders among them (AttackerUnit.can_ride) climb onto
+##               the raft that hippo or elephant tows, as many as fit (two, or a rhino alone: TowPlatform.fits)
 ##   {"type": "unload", "units": [ids]}   the carriers among them let their riders off (on dry land)
 ##
 ## Across the Jungle Keep's water (RiverCrossing), a move order ferries: the riders in it that can't walk there
-## (no bridge on the way) hop onto the hippos and elephants moved with them, two to a carrier, the nearest first; the
-## carriers wait for them, swim over and let them off at the far side, where they go on to their own spots (_ferry).
+## (no bridge on the way) climb onto the rafts the hippos and elephants moved with them tow, two to a raft or a rhino
+## alone, the nearest first; the carriers wait for them, swim over towing them and let them off at the far side,
+## where they go on to their own spots (_ferry).
 ## Units swimming or riding can't use their skills: skill commands leave them out.
 ##
 ## Lionesses moved together (two or more) form up in firing lines as they go (LionessLine), up to 8
@@ -246,7 +247,7 @@ func _move(ids: Array, pos: Vector3, attack: bool) -> void:
 	var kind := "attack_move" if attack else "move"
 	var fid := _next_formation
 	_next_formation += 1
-	# Across the water the riders hop onto the carriers moved with them (they keep their spots in the formation).
+	# Across the water the riders climb onto the rafts of the carriers moved with them (they keep their spots in the formation).
 	var ferry := _ferry(list, pos)
 	# Two or more lionesses form up in firing lines; the rest gather behind them.
 	var lionesses := list.filter(func(u): return u.stats.get("line", false) and not ferry.has(u)) if line_formation else []
@@ -267,7 +268,7 @@ func _move(ids: Array, pos: Vector3, attack: bool) -> void:
 		if not ferry.has(u):
 			u.set_order(o)
 		elif u.carrier == ferry[u]:
-			u._then = o  # already on its back: it gets off on the far side
+			u._then = o  # already on its raft: it gets off on the far side
 		else:
 			u.set_order({"type": "board", "carrier": ferry[u], "then": o})
 	var waiting := {}
@@ -280,9 +281,9 @@ func _move(ids: Array, pos: Vector3, attack: bool) -> void:
 		c.wait_for(waiting[c])
 
 
-## Which of `list` ride which carrier (of `list`) to get to `pos`: those that ride (AttackerUnit.can_ride) and
-## can't walk there (RiverCrossing.needs_ride), the nearest rider and carrier first, as many as there are seats.
-## Riders on a carrier's back that still have the water to cross stay on it; the others get off.
+## Which of `list` ride which carrier's raft (of `list`) to get to `pos`: those that ride (AttackerUnit.can_ride) and
+## can't walk there (RiverCrossing.needs_ride), the nearest rider and carrier first, as many as fit (TowPlatform.fits:
+## two to a raft, a rhino alone). Riders on a raft that still have the water to cross stay on it; the others get off.
 func _ferry(list: Array, pos: Vector3) -> Dictionary:
 	var out := {}
 	if not RiverCrossing.active():
@@ -291,9 +292,10 @@ func _ferry(list: Array, pos: Vector3) -> Dictionary:
 	# Nobody to ride on and nobody riding: nothing to work out (the path queries cost).
 	if carriers.is_empty() and not list.any(func(u): return u.carrier != null):
 		return out
-	var free := {}
+	# Who is on (or will be on) each raft.
+	var load := {}
 	for c in carriers:
-		free[c] = c.stats.seats.size() - c.riders.size()
+		load[c] = c.riders.duplicate()
 	var need := []
 	# Riders standing near one another share the answer (FERRY_CELL m squares).
 	var asked := {}
@@ -307,42 +309,42 @@ func _ferry(list: Array, pos: Vector3) -> Dictionary:
 		if u.carrier != null:
 			if needs:
 				out[u] = u.carrier
-			elif free.has(u.carrier):
-				free[u.carrier] += 1
+			elif load.has(u.carrier):
+				load[u.carrier].erase(u)
 			continue
 		if needs and not carriers.is_empty():
 			need.append(u)
 	var pairs := []
 	for u in need:
 		for c in carriers:
-			pairs.append([u.global_position.distance_to(c.global_position), u, c])
+			pairs.append([u.global_position.distance_to(c.platform().global_position), u, c])
 	pairs.sort_custom(func(a, b): return a[0] < b[0])
 	for p in pairs:
-		if out.has(p[1]) or free[p[2]] <= 0:
+		if out.has(p[1]) or not TowPlatform.fits(load[p[2]], p[1]):
 			continue
 		out[p[1]] = p[2]
-		free[p[2]] -= 1
+		load[p[2]].append(p[1])
 	return out
 
 
-## Riders hop onto `carrier_path`'s back, as many as there are seats left, the nearest first; the rest stand by it.
+## Riders hop onto `carrier_path`'s raft, as many as fit (two, or a rhino alone), the nearest first; the rest stand
+## by it.
 func _board(ids: Array, carrier_path: NodePath) -> void:
 	var c := get_node_or_null(carrier_path) as AttackerUnit
 	if c == null or not c.can_carry() or c.team != GameConfig.TEAM_ATTACKER:
 		return
-	var free := c.seats_free()
+	var raft := c.platform().global_position
 	var list := _resolve(ids).filter(func(u): return u.can_ride() and u.carrier != c and u.is_controllable())
-	list.sort_custom(func(a, b): return a.global_position.distance_to(c.global_position) < b.global_position.distance_to(c.global_position))
+	list.sort_custom(func(a, b): return a.global_position.distance_to(raft) < b.global_position.distance_to(raft))
 	var offsets := formation_offsets(list.size(), 2.2)
 	var boarding := []
 	for i in list.size():
 		var u: AttackerUnit = list[i]
-		if free > 0:
+		if c.can_take(u, boarding):
 			u.set_order({"type": "board", "carrier": c, "then": null})
 			boarding.append(u)
-			free -= 1
 		else:
-			u.set_order({"type": "move", "pos": c.global_position + c.global_basis.z * (c.stats.radius + 3.0) + offsets[i]})
+			u.set_order({"type": "move", "pos": raft + c.global_basis.x * (TowPlatform.HALF_WIDTH + 3.0) + offsets[i]})
 
 
 # ---------------------------------------------------------------- bridges

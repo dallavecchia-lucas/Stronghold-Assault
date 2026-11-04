@@ -2,7 +2,8 @@ class_name ElephantTurrets
 extends SkeletonModifier3D
 ## Poses the War Elephant's equipment after its walk / idle clips have posed the body: the two
 ## flak cannons swing round and up at the aircraft they are shooting (and kick back on every
-## shot), the missile pods lift for a salvo and the radar dish turns. Bone names come from
+## shot), the missile pods lift for a salvo and the radar dish turns. Swimming (snorkel), its trunk
+## curls forward and up out of the water to breathe through. Bone names come from
 ## tools/blender/rig_elephant.py; the model's front is +Z.
 
 const GUNS := ["gun_L", "gun_R"]
@@ -25,6 +26,10 @@ var target: Node3D = null
 var raised := false
 ## Radar dish speed (rad/s).
 var radar_speed := 0.9
+## 0: the trunk as the clips have it; 1: raised out of the water (AttackerUnit eases it in and out while swimming).
+var snorkel := 0.0
+## How far each trunk bone turns up for the snorkel (rad, base first), about the body's side-to-side axis.
+const SNORKEL := [2.3, 0.32, 0.3, 0.24, 0.16, 0.08, 0.0]
 
 var _guns: Array[int] = []
 var _muzzle_bones: Array[int] = []
@@ -39,6 +44,8 @@ var _tube_bones: Array[int] = []
 var _tubes: Array[Transform3D] = []
 var _radar := -1
 var _spin := 0.0
+var _trunk: Array[int] = []
+var _trunk_axes: Array[Vector3] = []
 ## Body axes (front, up, left) in the frame of the cannons' parent bone and of the body bone.
 var _gun_axes: Array[Vector3] = []
 var _body_axes: Array[Vector3] = []
@@ -92,6 +99,13 @@ func _process_modification_with_delta(delta: float) -> void:
 		_spin = wrapf(_spin + radar_speed * delta, 0.0, TAU)
 		var rest := skel.get_bone_rest(_radar)
 		skel.set_bone_pose_rotation(_radar, (Basis(_body_axes[1], _spin) * rest.basis).get_rotation_quaternion())
+	if snorkel > 0.0:
+		var w := smoothstep(0.0, 1.0, snorkel)
+		for k in _trunk.size():
+			var b := _trunk[k]
+			var rest := skel.get_bone_rest(b)
+			var up := (rest.basis * Basis(_trunk_axes[k], -float(SNORKEL[mini(k, SNORKEL.size() - 1)]))).get_rotation_quaternion()
+			skel.set_bone_pose_rotation(b, skel.get_bone_pose_rotation(b).slerp(up, w))
 	var xf := skel.global_transform
 	for i in _guns.size():
 		_muzzles[i] = xf * skel.get_bone_global_pose(_muzzle_bones[i]).origin
@@ -110,6 +124,11 @@ func _find_bones(skel: Skeleton3D) -> void:
 		_tube_bones.append(skel.find_bone("tube_%d" % k))
 		k += 1
 	_tubes.resize(_tube_bones.size())
+	k = 1
+	while skel.find_bone("trunk_%d" % k) >= 0:
+		_trunk.append(skel.find_bone("trunk_%d" % k))
+		_trunk_axes.append(_axes(skel, _trunk[-1])[2])
+		k += 1
 	_gun_axes = _axes(skel, skel.get_bone_parent(_guns[0]))
 	_body_axes = _axes(skel, skel.find_bone("body"))
 
