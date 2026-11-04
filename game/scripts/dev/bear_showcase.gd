@@ -380,9 +380,12 @@ func _guard(p: Vector3, look: Vector3) -> DefenderSoldier:
 	s.transform = Transform3D(Basis.looking_at(Vector3(to.x, 0.0, to.z)), at)
 	add_child(s)
 	if shots_dir != "":
-		# Stills: its skinned model's bounds go with it (they are left behind while nothing is drawn).
+		# Stills: its skinned model's bounds go with it (they are left behind while nothing is drawn), and the
+		# undergrowth round it is cleared for the view over its shoulder.
 		for mi: MeshInstance3D in s.find_children("*", "MeshInstance3D", true, false):
 			mi.custom_aabb = AABB(Vector3(-6, -6, -6), Vector3(12, 12, 12))
+		if JungleFlora.current:
+			JungleFlora.current.clear_footprint(Transform3D(Basis.IDENTITY, at + Vector3(0, 0, -3)), Vector2(5.0, 6.0))
 	s.became_unavailable.connect(func(_st): s.set("_respawn_cd", 1e9))
 	s.set_process(false)
 	s.set_physics_process(false)
