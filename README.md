@@ -382,7 +382,7 @@ The test checks that no dog ever comes within a mine's reach (2.05 m) of a live 
 
 ### Bridge showcase
 
-`game/scenes/dev/bridge_showcase.tscn` runs the river crossings on the Jungle Keep's main river, west of the citadel's way north. With no bridge yet, an army is sent over: two bears and a Serpent Sniper swim; a kangaroo, a chimp, a lioness, a dog and a second kangaroo go for the seats on a hippo and an elephant (four seats: the one left over stays on the bank), the carriers wait for them, swim over and let them off on the north bank; the giraffe and the rhino go only as far as the south bank; two Sky Talons fly over. A defender stands on the north bank in their reach: nobody fires at it, nor uses a skill, until out of the water. Then a bridge is dropped 120 m east (the preview, the drop, the thrusters, the unfolding, the landing), and the giraffe, the rhino, a Bison Field Gun and the Mule Artillery walk over it. Two Flame Troopers cross it the other way: the alarm goes off while they are on it, and stops. Shot at (rifle rounds, three shells) it sets no alarm off and barely loses any health; brought down, a chimp on it drowns, a bear on it swims to the bank, and the way over is gone again.
+`game/scenes/dev/bridge_showcase.tscn` runs the river crossings on the Jungle Keep's main river, west of the citadel's way north. With no bridge yet, an army is sent over: two bears and a Serpent Sniper swim; a kangaroo, a chimp, a lioness, a dog and a second kangaroo go for the seats on a hippo and an elephant (four seats: the one left over stays on the bank), the carriers wait for them, swim over and let them off on the north bank; the giraffe and the rhino go only as far as the south bank; two Sky Talons fly over. A defender stands on the north bank in their reach: nobody fires at it, nor uses a skill, until out of the water. Then a bridge is dropped 120 m east (the preview, the drop, the thrusters, the unfolding, the landing), and the giraffe, the rhino, a Bison Field Gun and the Mule Artillery walk over it. Two Flame Troopers cross it the other way: the alarm goes off while they are on it, and stops. Shot at (rifle rounds, three shells) it sets no alarm off and barely loses any health. On the north bank (`--test` only) a chimp, a kangaroo and a dog are told to board a hippo (as with `RMB` on it): two hop on, the third has no seat, a giraffe can't board at all; the riders stay on while it walks on dry land and `Space` (unload) lets them off beside it. Brought down, a chimp on it drowns, a bear on it swims to the bank, and the way over is gone again.
 
 ```sh
 godot --path game --headless --fixed-fps 30 res://scenes/dev/bridge_showcase.tscn -- --test  # prints and checks: BRIDGE SHOWCASE PASS / FAIL
@@ -393,11 +393,12 @@ godot --path game --resolution 1280x720 --fixed-fps 30 res://scenes/dev/bridge_s
 
 Taking stills, only the frames saved are drawn (the run in between goes at full speed); without a GPU, Mesa's software Vulkan (`mesa-vulkan-drivers`, under `xvfb-run`) renders Forward+ at about 10 s a frame.
 
-`-- --video` films the deployment (`media/bridge_deploy.mp4`): the RTS view, `Shift+B`, the preview sliding along the river with the cursor and the click, then from the bank the bridge coming out of the sky folded, its thrusters lighting, the unfolding in the hover and the landing, and the RTS view again with one bridge fewer:
+`-- --video` films the deployment (`media/bridge_deploy.mp4`, 18 s): the RTS view, `Shift+B`, the preview sliding along the river with the cursor and the click, then from over the water downstream the bridge coming out of the sky folded, its thrusters lighting, the unfolding in the hover and the landing (the run goes on to rise over it and back to the RTS view with one bridge fewer). The first frames are the map loading (nothing is drawn meanwhile): cut them at the first scene change:
 
 ```sh
 godot --path game --resolution 1280x720 --write-movie bridge.avi --fixed-fps 30 res://scenes/dev/bridge_showcase.tscn -- --video
-ffmpeg -i bridge.avi -c:v libx264 -crf 20 -pix_fmt yuv420p media/bridge_deploy.mp4
+ffmpeg -i bridge.avi -vf "select='gt(scene,0.08)',showinfo" -frames:v 1 -an -f null - 2>&1 | grep pts_time   # where it starts
+ffmpeg -ss <that time> -i bridge.avi -c:v libx264 -crf 20 -pix_fmt yuv420p -c:a aac media/bridge_deploy.mp4
 ```
 
 For the video every frame is drawn, the forest only out to 520 m and the sun's shadows to 220 m (the drop is seen from close by).
