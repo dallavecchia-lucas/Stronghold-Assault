@@ -5,8 +5,8 @@ extends Node3D
 ## amphibious" platform), LENGTH long, on a tow line TOW behind its carrier's hitch (UnitTypes tows).
 ##
 ## It follows like a trailer: its front is always TOW from the hitch, and it swings round to point at it, so it
-## trails the carrier's way round corners. On land it slides along on its floats over the ground under it; in the
-## water it floats, the drums DRAFT deep, rocking a little.
+## trails the carrier's way round corners. On land it slides along on its floats over the ground under it (over a
+## bridge, along its deck); in the water it floats, the drums DRAFT deep, rocking a little.
 ##
 ## On its deck: two animals (SEATS, one ahead of the other), or a Combat Rhino on its own (UnitTypes ride_alone,
 ## ALONE_SEAT): a rhino only boards an empty raft, and nobody joins one a rhino is on (fits()). Its riders ride where it
@@ -92,7 +92,7 @@ func follow(delta: float) -> void:
 	dir.y = 0.0
 	dir = dir.normalized()
 	var centre := h - dir * (TOW + LENGTH * 0.5)
-	var ground := LevelBuilder.ground_height(centre)
+	var ground := _floor(centre)
 	afloat = RiverCrossing.active() and ground < JungleLayout.WATER_Y - DRAFT
 	var want := JungleLayout.WATER_Y - DRAFT + sin(_t * 1.3) * 0.05 if afloat else ground
 	_y = want if not _placed else lerpf(_y, want, minf(delta * 4.0, 1.0))
@@ -107,10 +107,10 @@ func follow(delta: float) -> void:
 		# Along the ground's slope under it.
 		var fwd := Vector3(dir.x, 0.0, dir.z)
 		var side := fwd.cross(Vector3.UP)
-		var hf := LevelBuilder.ground_height(centre + fwd * LENGTH * 0.4)
-		var hb := LevelBuilder.ground_height(centre - fwd * LENGTH * 0.4)
-		var hl := LevelBuilder.ground_height(centre - side * HALF_WIDTH)
-		var hr := LevelBuilder.ground_height(centre + side * HALF_WIDTH)
+		var hf := _floor(centre + fwd * LENGTH * 0.4)
+		var hb := _floor(centre - fwd * LENGTH * 0.4)
+		var hl := _floor(centre - side * HALF_WIDTH)
+		var hr := _floor(centre + side * HALF_WIDTH)
 		pitch = atan2(hf - hb, LENGTH * 0.8)
 		roll = atan2(hl - hr, HALF_WIDTH * 2.0)
 	global_transform = Transform3D(Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, pitch) * Basis(Vector3.BACK, roll),
@@ -122,6 +122,12 @@ func follow(delta: float) -> void:
 		_line.global_transform = Transform3D(Basis.looking_at(span.normalized(), Vector3.UP) * Basis(Vector3.RIGHT, PI * 0.5),
 				h + span * 0.5)
 		_line.scale = Vector3(1.0, span.length(), 1.0)
+
+
+## What it slides along at `p`: a standing bridge's deck, or the ground.
+static func _floor(p: Vector3) -> float:
+	var deck := FoldingBridge.deck_at(p) if RiverCrossing.active() else NAN
+	return deck if not is_nan(deck) else LevelBuilder.ground_height(p)
 
 
 ## Where rider `k` of the ones on it stands (world), facing ahead; a rhino in the middle.

@@ -367,12 +367,12 @@ var _route_breach_in := false
 ## On a swim link's route (RiverCrossing): swimming across.
 var _route_swim := false
 var _wake_cd := 0.0
-## Riding: the carrier it is on (null on foot), and what it does once it is off again; the hop up onto its back.
+## Riding: the carrier it is on (null on foot), and what it does once it is off again; the hop up onto its raft.
 var carrier: AttackerUnit = null
 var _then = null
 var _hop_t := 1.0
 var _hop_from := Vector3.ZERO
-## Carrying: the riders on its back, the ones on their way to it (it waits for them), how long it has waited, and
+## Carrying: the riders on its raft, the ones on their way to it (it waits for them), how long it has waited, and
 ## whether it has swum since they got on.
 var riders: Array[AttackerUnit] = []
 var _ferry_wait: Array = []
@@ -2466,7 +2466,7 @@ func seat_transform(i: int) -> Transform3D:
 	return _platform.seat_transform(i, r != null and r.rides_alone())
 
 
-## Riders `list` are on their way to its back: it waits for them (FERRY_WAIT s at most) before it goes.
+## Riders `list` are on their way to its raft: it waits for them (FERRY_WAIT s at most) before it goes.
 func wait_for(list: Array) -> void:
 	_ferry_wait = list.duplicate()
 	_ferry_t = 0.0
@@ -2533,7 +2533,7 @@ func dismount(at := Vector3.INF) -> void:
 	order = {"type": "idle"}
 
 
-## On its carrier's back: up there with a hop, then wherever the carrier takes it (place_on()).
+## On its carrier's raft: up there with a hop, then wherever the carrier takes it (place_on()).
 func _ride_tick(delta: float) -> void:
 	if not is_instance_valid(carrier) or not carrier.is_alive():
 		carrier = null
@@ -2546,7 +2546,7 @@ func _ride_tick(delta: float) -> void:
 	place_on()
 
 
-## Puts it on its carrier's back (the carrier calls it once it has moved, every frame).
+## Puts it on its carrier's raft (the carrier calls it once it has moved, every frame).
 func place_on() -> void:
 	if carrier == null:
 		return
@@ -2578,7 +2578,7 @@ func _board_step():
 	return raft.global_position
 
 
-## A carrier: waits for the riders on their way to it; lets the ones on its back off once it has stopped on dry land
+## A carrier: waits for the riders on their way to it; lets the ones on its raft off once it is ashore
 ## after a swim (or whatever they were sent to do on the far side calls them off it).
 func _carry_tick(delta: float) -> void:
 	riders = riders.filter(func(r): return is_instance_valid(r) and r.is_alive() and r.carrier == self)
@@ -2637,7 +2637,7 @@ func _physics_process(delta: float) -> void:
 			_tags.erase(id)
 	if carrier != null:
 		_ride_tick(delta)
-		return  # on a carrier's back: no fighting, no skills
+		return  # on a carrier's raft: no fighting, no skills
 	if not riders.is_empty() or not _ferry_wait.is_empty():
 		_carry_tick(delta)
 	_fire_cd -= delta
@@ -2771,7 +2771,7 @@ func _physics_process(delta: float) -> void:
 		_fly(move_to, delta)
 		return
 	if not _ferry_wait.is_empty() and order.type in ["move", "attack_move"]:
-		move_to = null  # riders are on their way to its back: it waits for them
+		move_to = null  # riders are on their way to its raft: it waits for them
 		lined = false
 
 	_desired_velocity = Vector3.ZERO
@@ -2935,14 +2935,14 @@ func _follow_route(delta: float) -> void:
 		speed = stats.swim_speed if in_water() else minf(stats.speed * 0.7, stats.swim_speed * 1.3)
 		_wake(delta)
 	elif _hop_t < 1.0:
-		speed = 7.0  # hopping down off a carrier's back
+		speed = 7.0  # hopping down off a carrier's raft
 	var step := speed * delta
 	if to.length() <= step:
 		global_position = _route.pop_front()
 		if _route.is_empty():
 			velocity = Vector3.ZERO
 			if _route_swim and not riders.is_empty():
-				_crossed = true  # out of the water with riders on its back (_carry_tick lets them off)
+				_crossed = true  # out of the water with riders on its raft (_carry_tick lets them off once it is ashore)
 			_route_swim = false
 			_hop_t = 1.0
 			if _route_breach_in and stats.get("raider", false):

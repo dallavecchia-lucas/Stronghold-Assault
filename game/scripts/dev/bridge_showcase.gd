@@ -409,6 +409,9 @@ func _act_bridge() -> void:
 	var path := NavigationServer3D.map_get_path(get_world_3d().navigation_map, LevelBuilder.nav_closest(get_world_3d().navigation_map, _ground(HEAVY_AT)),
 			LevelBuilder.nav_closest(get_world_3d().navigation_map, _ground(OVER_TO)), true, 1)
 	_check(Array(path).any(func(p): return bridge.carries(p)), "and it goes over the bridge")
+	var mid := bridge.global_position
+	_check(absf(TowPlatform._floor(mid) - mid.y) < 0.05 and TowPlatform._floor(mid) > JungleLayout.WATER_Y,
+			"a raft towed over it slides along its deck (%.1f over the water)" % (TowPlatform._floor(mid) - JungleLayout.WATER_Y))
 	if shots_dir != "":
 		await _shot("bridge_down")
 	# The four that can't swim or ride walk over it.
@@ -540,7 +543,7 @@ func _act_board() -> void:
 	commander.submit({"type": "board", "units": _ids([chimp, roo, dog, giraffe]), "carrier": hippo.get_path()})
 	_check(giraffe.order.type != "board", "a giraffe can't board (%s)" % giraffe.order.type)
 	var boarding := [chimp, roo, dog].filter(func(u): return u.order.type == "board")
-	_check(boarding.size() == 2, "two of the three riders go to board it (2 seats): %d" % boarding.size())
+	_check(boarding.size() == 2, "two of the three riders go to board its raft (two to a raft): %d" % boarding.size())
 	for k in 30 * 20:
 		await get_tree().physics_frame
 		if hippo.riders.size() == 2:

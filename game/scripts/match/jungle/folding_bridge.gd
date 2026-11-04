@@ -362,6 +362,17 @@ func carries(p: Vector3, margin := 0.5) -> bool:
 	return absf(l.x) <= length * 0.5 + margin and absf(l.z) <= HALF_WIDTH + margin and l.y > -TRUSS - 1.0 and l.y < RAIL_H + 4.0
 
 
+## The top of the deck under `p` (world y) of a standing bridge it is over (between the railings, flat), or NAN.
+static func deck_at(p: Vector3) -> float:
+	for b in all:
+		if not b.is_standing():
+			continue
+		var l := b.global_transform.affine_inverse() * p
+		if absf(l.x) <= b.length * 0.5 and absf(l.z) <= HALF_WIDTH:
+			return (b.global_transform * Vector3(l.x, _deck_y(l.x, b.length), l.z)).y
+	return NAN
+
+
 ## The gap it opens in the wall along the water's edge: [middle, along (unit), half its length, half its width].
 func cut() -> Array:
 	var a := global_transform.basis.x
