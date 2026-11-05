@@ -116,14 +116,15 @@ func _chimp() -> void:
 	await _hold(45)
 	commander.submit({"type": "move", "units": [chimp.unit_id], "pos": way[1], "attack": false})
 	_say("Into the trees", "it leaps up into the branches")
-	await _to(Vector3(8.5, 0.8, 1.0), Vector3(0.0, 1.7, -0.5), 30)
+	cam.fov = 36.0
+	await _to(Vector3(6.5, 0.8, 1.0), Vector3(0.0, 1.8, -0.8), 30)
 	_say("Swinging through the trees", "hand over hand, branch to branch: that's why it's fast in a forest")
 	await _hold(80)
-	await _to(Vector3(5.5, 0.6, 6.5), Vector3(0.0, 1.8, -1.0), 50)
+	await _to(Vector3(4.0, 0.6, 5.0), Vector3(0.0, 1.9, -1.0), 50)
 	await _hold(40)
-	await _to(Vector3(-7.5, 0.8, -4.0), Vector3(0.0, 1.8, 0.0), 50)
+	await _to(Vector3(-5.5, 0.8, -3.0), Vector3(0.0, 1.8, 0.0), 50)
 	await _hold(40)
-	await _to(Vector3(8.5, 0.8, 1.0), Vector3(0.0, 1.6, -0.5), 40)
+	await _to(Vector3(6.5, 0.8, 1.0), Vector3(0.0, 1.6, -0.8), 40)
 	# On till it is out of the trees for good.
 	var out := 0
 	for k in 30 * 30:
@@ -134,6 +135,7 @@ func _chimp() -> void:
 		if out > 75:
 			break
 	_say("", "")
+	cam.fov = 50.0
 	commander.units.erase(chimp.unit_id)
 	chimp.queue_free()
 
