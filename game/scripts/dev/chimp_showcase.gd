@@ -135,7 +135,7 @@ func _through_the_trees() -> void:
 	var leap_shot := false
 	for frame in 30 * 60:
 		await get_tree().physics_frame
-		var t := frame / 30.0
+		var t := frame / float(Engine.physics_ticks_per_second)
 		var flat := Vector2(chimp.velocity.x, chimp.velocity.z).length()
 		var in_forest := LevelBuilder.in_forest(chimp.global_position)
 		if chimp.is_swinging() and up_at < 0:
@@ -157,22 +157,27 @@ func _through_the_trees() -> void:
 			elif not _taken.has("chimp_swing_front") and chimp.swing_lift() > 1.5 and t > 4.0:
 				_taken["chimp_swing_front"] = true
 				await _shot_at("chimp_swing_front", chimp, Vector3(2.5, chimp.swing_lift() + 1.2, -6.0), Vector3(0, chimp.swing_lift() + 1.6, 0), 45.0)
-		if not in_forest and up_at >= 0 and left_at < 0:
+		# Out of the trees for good (not a gap in them: it keeps up through a short one).
+		if in_forest:
+			left_at = -1
+			down_ok = false
+			run_speed = 0.0
+		elif up_at >= 0 and left_at < 0:
 			left_at = frame
 		if left_at >= 0:
 			if shots_dir != "" and not _taken.has("chimp_drop") and chimp._aloft > 0.2 and chimp._aloft < 0.7:
 				_taken["chimp_drop"] = true
 				await _shot_at("chimp_drop", chimp, Vector3(5.0, 2.0, -2.0), Vector3(0, 1.6, 0), 45.0)
-			if frame - left_at > 45 and flat > 0.5:
+			if frame - left_at > Engine.physics_ticks_per_second * 1.5 and flat > 0.5:
 				down_ok = down_ok or (chimp.swing_lift() == 0.0 and not chimp.is_swinging() and chimp._anim.current_animation == "Running")
 				run_speed = maxf(run_speed, flat)
 				if shots_dir != "" and not _taken.has("chimp_run"):
 					_taken["chimp_run"] = true
 					await _shot_at("chimp_run", chimp, Vector3(3.5, 1.4, -3.5), Vector3(0, 0.9, 0), 45.0)
-		if left_at >= 0 and frame - left_at > 90:
+		if left_at >= 0 and frame - left_at > Engine.physics_ticks_per_second * 3:
 			break
 	var speed: float = chimp.stats.speed
-	_check(up_at >= 0 and up_at <= 30, "sent off through the forest it goes up into the trees within a second (%.2f s)" % (up_at / 30.0))
+	_check(up_at >= 0 and up_at <= Engine.physics_ticks_per_second, "sent off through the forest it goes up into the trees within a second (%.2f s)" % (up_at / float(Engine.physics_ticks_per_second)))
 	_check(high >= AttackerUnit.CANOPY_LOW - chimp.stats.swing_hold - 0.05,
 			"up under the canopy (lifted %.1f m: its holds %.1f m over the ground)" % [high, high + chimp.stats.swing_hold])
 	_check(swung, "swinging from branch to branch (its Swing clip)")
@@ -232,7 +237,7 @@ func _unit(type: String, at: Vector3) -> AttackerUnit:
 
 
 func _until(cond: Callable, seconds: float) -> bool:
-	for k in int(seconds * 30.0):
+	for k in int(seconds * Engine.physics_ticks_per_second):
 		if cond.call():
 			return true
 		await get_tree().physics_frame

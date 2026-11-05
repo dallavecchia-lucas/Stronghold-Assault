@@ -321,9 +321,11 @@ func _act_cross() -> void:
 	_check(raft_gap > 0.5, "out on the water the rafts keep clear of one another (%.1f m at the closest)" % raft_gap)
 	_check(put_down.size() == 4 and opened.size() == 4, "the four rafts were put down for the riders (%d) and opened out (%d)" % [put_down.size(), opened.size()])
 	var slowest := 0.0
+	var took := []
 	for c in opened:
-		slowest = maxf(slowest, absf((opened[c] - put_down[c]) / 30.0 - TowPlatform.DEPLOY_TIME))
-	_check(slowest < 0.2, "each opened out in %.2f s (%.2f s off at most)" % [TowPlatform.DEPLOY_TIME, slowest])
+		took.append("%s %.2f s" % [c.stats.name, (opened[c] - put_down[c]) / float(Engine.physics_ticks_per_second)])
+		slowest = maxf(slowest, absf((opened[c] - put_down[c]) / float(Engine.physics_ticks_per_second) - TowPlatform.DEPLOY_TIME))
+	_check(slowest < 0.2, "each opened out in %.2f s (%s)" % [TowPlatform.DEPLOY_TIME, ", ".join(took)])
 	_check(aboard_early == "", "nobody got onto a raft before it was out%s" % ((": " + aboard_early) if aboard_early else ""))
 	if armed:
 		_check(not shot_while_swimming, "nobody fired swimming or riding (the defender on the bank in reach)%s" % ((": " + shooter) if shooter else ""))
@@ -339,7 +341,7 @@ func _act_cross() -> void:
 	# Across and their riders off, the rafts come apart on the north bank and fade away; the carriers have fresh ones
 	# packed on their backs.
 	var broke := false
-	for k in 30 * 6:
+	for k in Engine.physics_ticks_per_second * 8:
 		broke = broke or first_rafts.any(func(r): return is_instance_valid(r) and r.state == TowPlatform.State.BROKEN)
 		if first_rafts.all(func(r): return not is_instance_valid(r)):
 			break
@@ -349,7 +351,8 @@ func _act_cross() -> void:
 				_taken["raft_apart"] = true
 				await _shot_at("raft_apart", going[0], Vector3(6.0, 4.2, -6.5), Vector3(0, 0.3, 0), 50.0)
 		await get_tree().physics_frame
-	_check(broke and first_rafts.all(func(r): return not is_instance_valid(r)), "across, the rafts came apart on the north bank and are gone")
+	var left := first_rafts.filter(func(r): return is_instance_valid(r)).map(func(r): return "%s afloat %s" % [TowPlatform.State.keys()[r.state], r.afloat])
+	_check(broke and left.is_empty(), "across, the rafts came apart on the north bank and are gone%s" % ((": left " + str(left)) if not left.is_empty() else ""))
 	_check(carriers.all(func(c): return c.platform().is_packed()), "the carriers have fresh rafts packed on their backs")
 	if armed:
 		await _frames(120)

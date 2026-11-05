@@ -78,7 +78,7 @@ const APART := Vector2(0.12, 0.6)
 const FADE := Vector2(1.8, 2.6)
 const DRIFT := 0.45
 const FLOAT_OUT := 0.45
-## Out, ashore and empty, it comes apart AFTER_RIDE s after its riders got off, or IDLE s after the last one on the
+## Out and empty with its carrier ashore, it comes apart AFTER_RIDE s after its riders got off, or IDLE s after the last one on the
 ## way to it stopped coming if nobody rode it.
 const AFTER_RIDE := 0.7
 const IDLE := 2.5
@@ -185,9 +185,10 @@ func deploy() -> void:
 	_raft.visible = true
 
 
-## Out, ashore and empty, and nobody wants it any more (its riders got off, or nobody came): time it came apart.
+## Out, empty with its carrier ashore, and nobody wants it any more (its riders got off, or nobody came): time it
+## came apart (where it is, even with its tail still in the water behind a carrier stopped at the water's edge).
 func spent() -> bool:
-	return state == State.OUT and not afloat and _empty > (AFTER_RIDE if _rode else IDLE)
+	return state == State.OUT and _empty > (AFTER_RIDE if _rode else IDLE)
 
 
 ## The carrier's hitch (world): on its rear (UnitTypes tows).
@@ -244,7 +245,7 @@ func follow(delta: float) -> void:
 		State.DEPLOYING:
 			_deploying(delta)
 		State.OUT:
-			if afloat or not carrier.riders.is_empty():
+			if carrier.is_swimming() or carrier.in_water() or not carrier.riders.is_empty():
 				_empty = 0.0
 				_rode = _rode or not carrier.riders.is_empty()
 			else:
