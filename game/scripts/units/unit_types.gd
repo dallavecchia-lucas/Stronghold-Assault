@@ -120,7 +120,9 @@ extends RefCounted
 ##   and its health runs down steadily to nothing; then the snake goes back round its bush. Killed meanwhile, the
 ##   prey goes free with what health it has left. Coiled round its bush, it is see-through on the defender's
 ##   side (sneak_alpha opaque, no shadow, no health bar), a grass-and-snake icon over it on the attacker's.
-## forest_speed: movement speed multiplier inside a forest (LevelBuilder.FORESTS).
+## forest_speed: movement speed multiplier inside a forest (LevelBuilder.FORESTS). anim_swing: going through one it
+##   swings through the trees instead of walking (chimps: AttackerUnit._swing_tick), its clip made at swing_speed m/s
+##   with its hands' holds swing_hold m over its origin.
 ## climb_speed: m/s up and down stairs and ladders.
 ## structure_mult: damage multiplier against gates / the keep.
 ## anim: procedural animation style until models are rigged (walk, stomp, roll), "flight"
@@ -139,7 +141,9 @@ extends RefCounted
 ##   its rear (unit frame, -Z forward). Two animals to a raft. Every unit that neither swims, flies nor tows rides
 ##   on one (AttackerUnit.can_ride), but the Mule Artillery and bisons (no_ride): those cross by a bridge or not at
 ##   all. ride_alone: a Combat Rhino or a giraffe has a raft to itself (only an empty one, and nobody joins it).
-##   Riding it can't attack or use skills either.
+##   Riding it can't attack or use skills either. pack: where the raft rides folded up until it is put down
+##   (TowPlatform: [the bundle's bottom middle in the unit frame, how far it is tipped up at the front (rad), its
+##   size]): on a hippo's back; hung on an elephant's rump, under the missile pods' hinge.
 ## anim_swim / anim_dive: the clips a swimmer plays out in the water and under it (bears). dive_*: it dives under
 ##   the water (AttackerUnit.start_dive, swimming only) dive_time s, dive_depth m under its swim depth, every
 ##   dive_cooldown s.
@@ -214,9 +218,9 @@ const DATA := {
 		"range": 0.0, "damage": 0.0, "fire_interval": 0.2, "spread": 0.0,
 		"structure_mult": 1.5, "radius": 1.6, "height": 3.8,
 		"role": "anti_air", "anim": "rigged", "hotkey": KEY_B,
-		# Swims with its trunk up (a snorkel: ElephantTurrets) and tows a raft for riders.
+		# Swims with its trunk up (a snorkel: ElephantTurrets) and carries a raft for riders.
 		"swim_speed": 2.0, "swim_sink": 1.6,
-		"tows": Vector3(0, 1.3, 1.9),
+		"tows": Vector3(0, 1.3, 1.9), "pack": [Vector3(0, 2.0, 1.45), 1.0, 0.5],
 		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 2.2,
 		# The real anti-air unit: one elephant's flak is worth about five rhinos.
 		"aa_range": 26.0, "aa_dps": 30.0, "flak": true,
@@ -265,6 +269,9 @@ const DATA := {
 		"role": "melee", "anim": "rigged", "hotkey": KEY_J,
 		"anim_move": "Running", "anim_idle": "Idle", "anim_ref_speed": 4.5,
 		"infiltrator": true, "raider": true, "forest_speed": 1.6, "climb_speed": 4.0,
+		# In a forest it swings through the trees (that's why it is faster there): its Swing clip, made at its
+		# forest speed (5.5 * 1.6 m/s), its holds 2.45 m over its origin (tools/gltf/swing_chimp.py).
+		"anim_swing": "Swing", "swing_speed": 8.8, "swing_hold": 2.45,
 		"model": "res://assets/units/night_ops_chimpanzee/night_ops_chimpanzee_rigged.glb",
 	},
 	"giraffe": {
@@ -349,9 +356,9 @@ const DATA := {
 		"range": 26.0, "damage": 8.0, "fire_interval": 0.12, "spread": 0.02,
 		"structure_mult": 1.0, "radius": 1.4, "height": 2.6,
 		"role": "infantry", "anim": "rigged", "hotkey": KEY_K,
-		# Swims with its head over the water and tows a raft for riders.
+		# Swims with its head over the water and carries a raft for riders.
 		"swim_speed": 2.4, "swim_sink": 0.62,
-		"tows": Vector3(0, 0.9, 1.05),
+		"tows": Vector3(0, 0.9, 1.05), "pack": [Vector3(0, 1.84, -0.3), 0.0, 0.45],
 		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 2.4,
 		# Mounted machine guns: inaccurate suppressive fire that sprays around the target.
 		"suppress_radius": 2.2, "overheat_time": 8.0, "overheat_cooldown": 2.0,

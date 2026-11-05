@@ -9,7 +9,8 @@ extends RefCounted
 ##     bank to the other. A swimmer whose path takes one swims straight across (AttackerUnit, swim_route()): down
 ##     the bank, its feet sinking to swim_sink under the surface out in the deep water, up the far bank. A swim
 ##     costs SWIM_COST times its length, so a bridge close by is taken instead.
-##   - Riding. Every hippo and elephant tows a pontoon raft (TowPlatform, UnitTypes tows); the other units, but the
+##   - Riding. Every hippo and elephant carries a pontoon raft (TowPlatform, UnitTypes tows and pack), folded up till
+##     riders come for it, then tows it; the other units, but the
 ##     ones too big or awkward to (UnitTypes no_ride), climb onto it, two at most, or a Combat Rhino or a giraffe on
 ##     its own (UnitTypes ride_alone), and get off on the far side (AttackerCommander's ferry, AttackerUnit board /
 ##     riders).

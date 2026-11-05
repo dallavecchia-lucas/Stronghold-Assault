@@ -6,6 +6,9 @@ extends Node3D
 ##       prints and checks: BRIDGE SHOWCASE PASS / FAIL
 ##   godot --path game --resolution 1280x720 --fixed-fps 30 res://scenes/dev/bridge_showcase.tscn -- --shots=DIR [--only=a,b]
 ##       the same run, with stills (.png) in DIR on the way (--only: just those, and it stops after the last):
+##   raft_packed       a hippo with its raft folded up on its back
+##   raft_unfolding    the riders coming: its raft tipped off its back onto the ground behind it, swinging open
+##   raft_inflating    the elephant's raft opened out, its floats blowing up
 ##   swim_bears        bears and a Serpent Sniper swimming across, only their heads and backs over the water
 ##   rafts_crossing    three hippos and an elephant swimming across, towing their rafts: two riders on each of two,
 ##                     a Combat Rhino alone on the third, a giraffe alone on the fourth
@@ -16,6 +19,7 @@ extends Node3D
 ##   elephant_trunk    the swimming elephant, its trunk raised out of the water to breathe through
 ##   left_behind       the bison left on the south bank (it can't swim or ride), the one rider with no place left
 ##                     beside it, the eagles gone over
+##   raft_apart        across, a raft coming apart on the north bank: its floats gone flat, its deck in pieces
 ##   preview           the RTS view: the cyan preview across the river under the cursor
 ##   preview_bad       red where it can't go (the river too wide where the lake's outlet comes in)
 ##   drop_fall         it comes down out of the sky folded
@@ -32,10 +36,12 @@ extends Node3D
 ##
 ## The checks: 30 bridges and no more; no bridge on dry land, across the lake's outlet where it is too wide, or on top
 ## of another; with no bridge the bison can't get across and goes only to the south bank; the bears, the snake, the
-## hippos and the elephant swim over (no shot fired nor skill used while in the water); the kangaroos, the chimp, the
-## lioness and the dog hop onto two of the rafts the carriers tow, two to a raft, the rhino onto the third on its own,
-## the giraffe onto the fourth on its own, the one left over stays behind, out on the water the rafts keep clear of one another, and the riders get off on
-## the north bank and go to their spots; the eagles fly over; the bridge comes down where its preview showed it, the
+## hippos and the elephant swim over (no shot fired nor skill used while in the water); the carriers' rafts start
+## packed on their backs and are put down for the riders, open in TowPlatform.DEPLOY_TIME, and nobody gets on one
+## before it is out; the kangaroos, the chimp, the lioness and the dog hop onto two of the rafts the carriers tow, two
+## to a raft, the rhino onto the third on its own, the giraffe onto the fourth on its own, the one left over stays
+## behind, out on the water the rafts keep clear of one another, and the riders get off on the north bank and go to
+## their spots; there the rafts come apart and are gone, and the carriers have fresh ones packed on their backs; the eagles fly over; the bridge comes down where its preview showed it, the
 ## navmesh and the wall at the water's edge open over it, and the bison, a giraffe, the mule and a rhino walk over
 ## it; a defender on it sets the alarm off until it is off it again; on dry land (--test) two of three riders board a
 ## raft, a giraffe can't join them, a rhino can't join riders nor anyone a rhino (the giraffe neither), a giraffe
@@ -216,6 +222,12 @@ func _act_cross() -> void:
 		dummy.following = true
 		dummy.goal = dummy.global_position
 	await _frames(30)
+	# The rafts ride folded up on the carriers' backs till riders come for them.
+	var first_rafts: Array = carriers.map(func(c): return c.platform())
+	_check(first_rafts.all(func(r): return r.is_packed()) and carriers.all(func(c): return c.platform()._raft.global_position.y > c.global_position.y + 1.0),
+			"the rafts start packed on the carriers' backs")
+	if shots_dir != "":
+		await _shot_at("raft_packed", carriers[0], Vector3(4.5, 3.6, 5.5), Vector3(0, 1.5, 0), 42.0)
 	var start_hp := 0.0
 	if armed:
 		# It stands there and takes it (its body stays in the physics space for the shots to hit).
@@ -250,8 +262,20 @@ func _act_cross() -> void:
 	var fire_cd := {}
 	var crossing_before := {}
 	var raft_gap := INF
+	# When each raft started being put down and when it was out; anyone aboard one that wasn't out yet.
+	var put_down := {}
+	var opened := {}
+	var aboard_early := ""
 	for frame in 30 * 150:
 		await get_tree().physics_frame
+		for c in carriers:
+			var raft: TowPlatform = c.platform()
+			if raft.state == TowPlatform.State.DEPLOYING and not put_down.has(c):
+				put_down[c] = frame
+			if raft.is_ready() and put_down.has(c) and not opened.has(c):
+				opened[c] = frame
+			if not c.riders.is_empty() and not raft.is_ready():
+				aboard_early = c.stats.name
 		for u in swimmers + carriers:
 			if is_instance_valid(u) and u.is_swimming() and u.in_water():
 				swam[u] = true
@@ -295,6 +319,12 @@ func _act_cross() -> void:
 	_check(most_aboard <= 2, "never more than 2 on a raft: %d" % most_aboard)
 	_check(rode.has(rhino) and rode.has(giraffe) and not shared, "the rhino and the giraffe rode across on their own")
 	_check(raft_gap > 0.5, "out on the water the rafts keep clear of one another (%.1f m at the closest)" % raft_gap)
+	_check(put_down.size() == 4 and opened.size() == 4, "the four rafts were put down for the riders (%d) and opened out (%d)" % [put_down.size(), opened.size()])
+	var slowest := 0.0
+	for c in opened:
+		slowest = maxf(slowest, absf((opened[c] - put_down[c]) / 30.0 - TowPlatform.DEPLOY_TIME))
+	_check(slowest < 0.2, "each opened out in %.2f s (%.2f s off at most)" % [TowPlatform.DEPLOY_TIME, slowest])
+	_check(aboard_early == "", "nobody got onto a raft before it was out%s" % ((": " + aboard_early) if aboard_early else ""))
 	if armed:
 		_check(not shot_while_swimming, "nobody fired swimming or riding (the defender on the bank in reach)%s" % ((": " + shooter) if shooter else ""))
 	_check(skill_tried and not skills_used, "no skill used out on the water (the hippo's smoke, a riding kangaroo's flash refused)")
@@ -306,6 +336,21 @@ func _act_cross() -> void:
 		_check(spare.global_position.z > 480.0, "the %s with no seat stayed on the south bank (z %.0f)" % [spare.stats.name, spare.global_position.z])
 	for u in walkers:
 		_check(u.global_position.z > 480.0 and not RiverCrossing.wet(u.global_position), "%s went only as far as the south bank (z %.0f)" % [u.stats.name, u.global_position.z])
+	# Across and their riders off, the rafts come apart on the north bank and fade away; the carriers have fresh ones
+	# packed on their backs.
+	var broke := false
+	for k in 30 * 6:
+		broke = broke or first_rafts.any(func(r): return is_instance_valid(r) and r.state == TowPlatform.State.BROKEN)
+		if first_rafts.all(func(r): return not is_instance_valid(r)):
+			break
+		if shots_dir != "" and not _taken.has("raft_apart"):
+			var going := first_rafts.filter(func(r): return is_instance_valid(r) and r.state == TowPlatform.State.BROKEN and r._phase >= 0.7)
+			if not going.is_empty():
+				_taken["raft_apart"] = true
+				await _shot_at("raft_apart", going[0], Vector3(6.0, 4.2, -6.5), Vector3(0, 0.3, 0), 50.0)
+		await get_tree().physics_frame
+	_check(broke and first_rafts.all(func(r): return not is_instance_valid(r)), "across, the rafts came apart on the north bank and are gone")
+	_check(carriers.all(func(c): return c.platform().is_packed()), "the carriers have fresh rafts packed on their backs")
 	if armed:
 		await _frames(120)
 		_check(dummy.hp < start_hp, "out of the water they fire at the defender on the bank (%d hp off it)" % int(start_hp - dummy.hp))
@@ -330,6 +375,14 @@ func _shots_on_the_way(_frame: int) -> void:
 		cam.fov = 44.0
 		await _shoot("swim_bears", Vector3(c.x + 6.0, JungleLayout.WATER_Y + 1.2, c.z - 6.0), Vector3(c.x - 0.5, JungleLayout.WATER_Y + 0.6, c.z + 1.5))
 	var towing := carriers.filter(func(c): return not c.riders.is_empty() and c.platform().afloat)
+	var opening: TowPlatform = carriers[0].platform()
+	if not _taken.has("raft_unfolding") and opening.state == TowPlatform.State.DEPLOYING and opening._phase >= 0.62:
+		_taken["raft_unfolding"] = true
+		await _shot_at("raft_unfolding", opening, Vector3(7.5, 4.6, 4.0), Vector3(0, 0.6, -1.0), 50.0)
+	var blowing: TowPlatform = carriers[1].platform()
+	if not _taken.has("raft_inflating") and blowing.state == TowPlatform.State.DEPLOYING and blowing._phase >= 1.0:
+		_taken["raft_inflating"] = true
+		await _shot_at("raft_inflating", blowing, Vector3(-7.0, 3.2, -1.5), Vector3(0, 0.6, 0.0), 48.0)
 	if not _taken.has("rafts_crossing") and towing.size() == 4 and towing.all(func(u): return _mid_river(u) and _sunny(u)):
 		_taken["rafts_crossing"] = true
 		var c := _centre(towing)

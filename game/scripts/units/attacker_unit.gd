@@ -31,13 +31,21 @@ extends CharacterBody3D
 ##
 ## The Jungle Keep's water (RiverCrossing): bears, snakes, hippos and elephants swim it (their agents take the swim
 ## links; across one they follow a route of their own, down the bank, afloat in the deep water, up the far bank:
-## swim_route). Every hippo and elephant tows a pontoon raft (TowPlatform); the others but for the Mule Artillery,
-## bisons and giraffes (no_ride) ride across on one: two animals to a raft, or a Combat Rhino on its own (ride_alone):
-##   {"type": "board", "carrier": AttackerUnit, "then": order or null}   it goes up to the carrier's raft and hops onto
-##            its deck (mount); `then` is what it does once it gets off again (AttackerCommander's ferry hands these out).
-## A carrier with riders on the way to it waits for them (_ferry_wait); with riders on its raft it lets them off once
-## the raft is ashore after a swim (unload), or when told to. Swimming or riding a unit can't attack or use its skills
-## (is_crossing). A carrier that dies out on the water drags its raft under, and its riders drown (drown).
+## swim_route). Every hippo and elephant carries a pontoon raft (TowPlatform), folded up on its back until riders come
+## for it; the others but for the Mule Artillery and bisons (no_ride) ride across on one: two animals to a raft, or a
+## Combat Rhino or a giraffe on its own (ride_alone):
+##   {"type": "board", "carrier": AttackerUnit, "then": order or null}   it goes up to the carrier's raft (which is
+##            put down behind the carrier for it) and hops onto its deck once it is out (mount); `then` is what it does
+##            once it gets off again (AttackerCommander's ferry hands these out).
+## A carrier with riders on the way to it waits for them (_ferry_wait); with riders on its raft it tows it and lets them
+## off once the raft is ashore after a swim (unload), or when told to; then the raft comes apart and the carrier has a
+## fresh one packed on its back (_tow). Swimming or riding a unit can't attack or use its skills (is_crossing). A
+## carrier that dies out on the water drags its raft under, and its riders drown (drown).
+##
+## The Night Ops Chimp (UnitTypes anim_swing) is faster in a forest (forest_speed) because it goes up in the trees:
+## moving through one it leaps up into the branches and swings from hold to hold (its Swing clip, the model lifted up
+## under the canopy: swing_lift), and drops back down to the ground to walk on wherever the trees end, or once it stops
+## (_swing_tick). Up there its hitbox, its health bar and where the defenders aim at it go up with it.
 ##
 ## The Mule Artillery (UnitTypes setup_*) sets its gun up to fire and packs it up to move (set_gun): setup_time
 ## seconds each way (its Setup clip, played backward to pack up), and it can't move unless the gun is packed.
@@ -149,6 +157,16 @@ const WAKE_EVERY := 0.32
 const SWIM_CLEAR := 3.0
 const SWIM_ASIDE := 6.0
 const SWIM_ASIDE_RATE := 0.35
+## A chimp in a forest (anim_swing): it swings through the trees while it goes faster than SWING_MOVING m/s (and
+## for SWING_KEEP s after it slows: no dropping down for a stumble), going up into them and down again in
+## 1 / SWING_RISE s. The branches it holds are CANOPY_SHARE of the trees round it high, CANOPY_LOW to CANOPY_HIGH m
+## over the ground: low in their crowns.
+const SWING_MOVING := 2.0
+const SWING_KEEP := 0.4
+const SWING_RISE := 2.5
+const CANOPY_SHARE := 0.3
+const CANOPY_LOW := 3.4
+const CANOPY_HIGH := 6.0
 ## How fast a diving bear goes down and comes back up (m/s).
 const DIVE_SPEED := 1.3
 ## Deeper than this under its swim depth (m), a diving bear is out of sight: its silhouette shows (to the
@@ -411,6 +429,15 @@ var _headway_at := Vector3.ZERO
 var _headway_t := 0.0
 var _no_headway := 0
 var _in_forest := false
+## Swinging through the trees (chimps): how far up into them it is (0 on the ground, 1 up), how long it keeps up
+## there after it slows down, how high the branches are where it is (m over the ground: what it is making for, and
+## eased toward it), how far its model is lifted now (m), and its hitbox up there.
+var _aloft := 0.0
+var _swing_keep := 0.0
+var _canopy_at := CANOPY_LOW
+var _canopy := CANOPY_LOW
+var _lift := 0.0
+var _swing_shape: CollisionShape3D
 var _recoil := 0.0
 var _desired_velocity := Vector3.ZERO
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
@@ -439,7 +466,7 @@ func swims() -> bool:
 	return stats.has("swim_speed")
 
 
-## Hippos and elephants tow a raft that carries riders across the water (TowPlatform), where there is water.
+## Hippos and elephants carry a raft that takes riders across the water (TowPlatform), where there is water.
 func can_carry() -> bool:
 	return _platform != null and is_alive()
 
@@ -454,9 +481,14 @@ func can_take(u: AttackerUnit, plus: Array = []) -> bool:
 	return can_carry() and TowPlatform.fits(aboard() + plus, u)
 
 
-## Its raft (null for units that don't tow one).
+## Its raft (null for units that don't carry one): packed on its back, or out behind it.
 func platform() -> TowPlatform:
 	return _platform
+
+
+## The node its model hangs from (what rolls over when it dies): a packed raft rides on it.
+func model_root() -> Node3D:
+	return _model
 
 
 ## Hops onto a carrier's raft to get across the water: everyone who neither swims, flies nor carries, but the Mule
@@ -467,6 +499,21 @@ func can_ride() -> bool:
 
 func rides_alone() -> bool:
 	return stats.get("ride_alone", false)
+
+
+## Swings through the trees in a forest (chimps).
+func has_swing() -> bool:
+	return stats.has("anim_swing")
+
+
+## Up in the trees (more than half way up into them).
+func is_swinging() -> bool:
+	return _aloft > 0.5
+
+
+## How far its model is lifted up into the trees (m; 0 on the ground).
+func swing_lift() -> float:
+	return _lift
 
 
 func is_riding() -> bool:
@@ -956,6 +1003,15 @@ func _ready() -> void:
 	shape.shape = cap
 	shape.position.y = cap.height * 0.5
 	add_child(shape)
+	if has_swing():
+		# Its body up in the trees, for the rounds aimed at it there (off on the ground: _swing_tick).
+		_swing_shape = CollisionShape3D.new()
+		var up := CapsuleShape3D.new()
+		up.radius = cap.radius
+		up.height = 1.7
+		_swing_shape.shape = up
+		_swing_shape.disabled = true
+		add_child(_swing_shape)
 
 	_agent = NavigationAgent3D.new()
 	_agent.radius = stats.radius + 0.2
@@ -980,11 +1036,9 @@ func _ready() -> void:
 	_build_model()
 	_build_ring()
 	_build_hp_bar()
-	# Its raft, on a map with water to cross (the Jungle Keep's).
+	# Its raft, on a map with water to cross (the Jungle Keep's), packed on its back.
 	if stats.has("tows") and RiverCrossing.active():
-		_platform = TowPlatform.new()
-		_platform.carrier = self
-		add_child(_platform)
+		_platform = _new_platform(0.0)
 	_retarget_cd = randf() * 0.3
 	_circle_at = global_position
 	_last_yaw = rotation.y
@@ -1135,7 +1189,7 @@ func is_alive() -> bool:
 
 
 func get_aim_point() -> Vector3:
-	var p: Vector3 = global_position + Vector3.UP * stats.height * 0.6
+	var p: Vector3 = global_position + Vector3.UP * (stats.height * 0.6 + _lift + 0.6 * smoothstep(0.0, 1.0, _aloft))
 	if is_swimming() and in_water() and not is_submerged():
 		p.y = maxf(p.y, JungleLayout.WATER_Y + 0.35)  # what shows over the water
 	return p
@@ -1236,6 +1290,16 @@ func _die() -> void:
 		_ping_ring.visible = false
 	_hp_bar.visible = false
 	died.emit(self)
+	if _lift > 0.05:
+		# Shot out of the trees: it drops to the ground.
+		_aloft = 0.0
+		_lift = 0.0
+		if _swing_shape:
+			_swing_shape.disabled = true
+		if _anim:
+			_anim.play(stats.anim_idle, 0.2)
+		var fall := create_tween()
+		fall.tween_property(_model, "position:y", 0.0, 0.45).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	var tw := create_tween()
 	if rolls:
 		tw.tween_property(_model, "rotation:z", PI * 0.5, 0.6).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
@@ -2636,8 +2700,9 @@ func place_on() -> void:
 		global_transform = xf
 
 
-## A board order: up to its carrier's raft and onto its deck. Where to walk meanwhile, or null once on (or given up:
-## the carrier is gone, its raft full or out on the water, and it carries on with what it was to do after).
+## A board order: up to its carrier's raft (put down for it: TowPlatform.deploy) and onto its deck once the raft is
+## out. Where to walk meanwhile, or null once on, or waiting by it while it opens out (or given up: the carrier is
+## gone, its raft full or out on the water, and it carries on with what it was to do after).
 func _board_step():
 	var c = order.get("carrier")
 	if not is_instance_valid(c) or not c.can_carry() or c.in_water() or c.is_swimming() or not c.can_take(self) \
@@ -2648,9 +2713,11 @@ func _board_step():
 			set_order(then)
 		return null
 	var raft: TowPlatform = c.platform()
+	raft.deploy()
 	var gap := Vector2(raft.global_position.x - global_position.x, raft.global_position.z - global_position.z).length()
 	if gap <= TowPlatform.LENGTH * 0.5 + stats.radius + BOARD_REACH:
-		mount(c)
+		if raft.is_ready():
+			mount(c)
 		return null
 	return raft.global_position
 
@@ -2684,11 +2751,25 @@ func _place_riders() -> void:
 			r.place_on()
 
 
-## Its raft trails it, every frame once it has moved; then the riders on it.
+## Its raft rides on its back, or trails it, every frame once it has moved; then the riders on it. Once the raft is
+## spent (ashore and empty after a crossing, or nobody came for it) it comes apart where it is, and the carrier has
+## a fresh one packed on its back by the time it is gone.
 func _tow(delta: float) -> void:
 	_platform.follow(delta)
+	if _platform.spent():
+		_platform.break_up()
+		_platform = _new_platform(TowPlatform.BREAK_TIME)
 	if not riders.is_empty():
 		_place_riders()
+
+
+## A raft packed on its back (showing once `hidden_for` s have gone by).
+func _new_platform(hidden_for: float) -> TowPlatform:
+	var p := TowPlatform.new()
+	p.carrier = self
+	p.hidden_for = hidden_for
+	add_child(p)
+	return p
 
 
 ## The next point of its way across, moved aside off it to keep clear of the swimmers and the rafts round it
@@ -2810,6 +2891,8 @@ func _physics_process(delta: float) -> void:
 		if stats.has("forest_speed"):
 			_in_forest = LevelBuilder.in_forest(global_position)
 			_agent.max_speed = _speed()
+			if has_swing() and _in_forest:
+				_canopy_at = _canopy_height()
 	_since_hurt += delta
 	if has_dive():
 		_dive_tick(delta)
@@ -3222,6 +3305,8 @@ func _process(delta: float) -> void:
 		_last_yaw = rotation.y
 		spd = maxf(spd, turn * TEAM_SWING)
 	var moving := spd > 0.3
+	if has_swing():
+		_swing_tick(delta, spd)
 	_recoil = maxf(_recoil - delta * 6.0, 0.0)
 	_butt = maxf(_butt - delta * 3.0, 0.0)
 	if moving:
@@ -3242,6 +3327,12 @@ func _process(delta: float) -> void:
 			clip = stats.anim_run
 			ref = stats.anim_run_speed
 			rate = stats.run_scale
+		# Up in the trees a chimp swings from branch to branch.
+		var swing := has_swing() and is_swinging()
+		if swing:
+			clip = stats.anim_swing
+			ref = stats.swing_speed
+			moving = true
 		var skill := is_throwing() or is_pinging() or is_pouncing() or is_striking() or is_digging()
 		# Out in the water a bear paddles (its gun slung on its back), down under it the Dive stroke.
 		var swim := stats.has("anim_swim") and is_swimming() and in_water()
@@ -3260,7 +3351,8 @@ func _process(delta: float) -> void:
 		elif is_digging():
 			clip = stats.anim_dig
 		if _anim.current_animation != clip:
-			_anim.play(clip, 0.15 if skill else 0.45 if swim or _anim.current_animation in [stats.get("anim_swim"), stats.get("anim_dive")] else 0.25)
+			_anim.play(clip, 0.15 if skill else 0.45 if swim or _anim.current_animation in [stats.get("anim_swim"), stats.get("anim_dive")] \
+					else 0.3 if swing or _anim.current_animation == stats.get("anim_swing") else 0.25)
 		elif _clip_restart:
 			_anim.seek(0.0, true)  # the next blow, from the start of its clip
 		_clip_restart = false
@@ -3283,6 +3375,8 @@ func _process(delta: float) -> void:
 		"roll":
 			_model.position.y = randf_range(0.0, 0.02) if moving else 0.0
 		"rigged":
+			if has_swing():
+				_model.position.y = _lift
 			if role == "melee" and not stats.has("anim_strike"):
 				_model.position.z = -_recoil * 0.35  # lunge into the blow
 			elif has_ram():
@@ -3296,7 +3390,7 @@ func _process(delta: float) -> void:
 		_model.rotation.x = _recoil * (0.08 if stats.radius < 1.0 else 0.015)
 	var cam := get_viewport().get_camera_3d()
 	if _hp_bar.visible:
-		_hp_bar.global_position = global_position + Vector3.UP * (stats.height + 0.5)
+		_hp_bar.global_position = global_position + Vector3.UP * (stats.height + _lift + 0.5)
 		if cam:
 			_hp_bar.global_basis = cam.global_basis
 	# The icons over it keep their size on screen whatever the camera's field of view (a Sniper's scope
@@ -3318,20 +3412,48 @@ func _process(delta: float) -> void:
 	_tag_icon.visible = is_tagged() and not hidden_under()
 	if _tag_icon.visible:
 		var left: float = _tags.values().max()
-		_tag_icon.global_position = global_position + Vector3.UP * (stats.height + 1.0)
+		_tag_icon.global_position = global_position + Vector3.UP * (stats.height + _lift + 1.0)
 		_tag_icon.modulate.a = 1.0 if left > TAG_BLINK or fmod(left, 0.5) > 0.2 else 0.25
 	# Resupplied by a kangaroo: an ammo box floats over it (over a sneaking lioness's bush, or the aim icon).
 	var bush := (_bush != null and _bush.visible) or (_nest_icon != null and _nest_icon.visible)
 	_supply_icon.visible = resupply > 0.0
 	if _supply_icon.visible:
-		_supply_icon.global_position = global_position + Vector3.UP * (stats.height + 1.0 + (0.95 if bush or _tag_icon.visible else 0.0) + 0.08 * sin(Time.get_ticks_msec() * 0.004))
+		_supply_icon.global_position = global_position + Vector3.UP * (stats.height + _lift + 1.0 + (0.95 if bush or _tag_icon.visible else 0.0) + 0.08 * sin(Time.get_ticks_msec() * 0.004))
 	if _bush != null and _bush.visible:
 		_bush.global_position = global_position + Vector3.UP * (stats.height + 1.3)
 	# Healed by a dog: a medic's cross over it (over the other icons).
 	_heal_icon.visible = medic != null and is_instance_valid(medic) and medic.heals()
 	if _heal_icon.visible:
 		var under := (0.95 if bush or _tag_icon.visible else 0.0) + (0.95 if _supply_icon.visible else 0.0)
-		_heal_icon.global_position = global_position + Vector3.UP * (stats.height + 1.0 + under + 0.08 * sin(Time.get_ticks_msec() * 0.004 + 1.6))
+		_heal_icon.global_position = global_position + Vector3.UP * (stats.height + _lift + 1.0 + under + 0.08 * sin(Time.get_ticks_msec() * 0.004 + 1.6))
+
+
+## A chimp in a forest: going along faster than SWING_MOVING it leaps up into the trees and swings through them,
+## lifted up under the canopy (the branches its Swing clip holds, swing_hold over its origin, put CANOPY_SHARE of
+## the trees' height up); out of the trees, or stopped, it drops back down. Its hitbox goes up with its body.
+func _swing_tick(delta: float, spd: float) -> void:
+	if _in_forest and spd > SWING_MOVING and carrier == null and _route.is_empty() and not raiding:
+		_swing_keep = SWING_KEEP
+	else:
+		_swing_keep = maxf(_swing_keep - delta, 0.0)
+	_aloft = move_toward(_aloft, 1.0 if _swing_keep > 0.0 else 0.0, delta * SWING_RISE)
+	_canopy = lerpf(_canopy, _canopy_at, minf(delta * 2.0, 1.0))
+	_lift = maxf(_canopy - float(stats.swing_hold), 0.0) * smoothstep(0.0, 1.0, _aloft)
+	_swing_shape.disabled = _lift < 1.0
+	if not _swing_shape.disabled:
+		_swing_shape.position.y = _lift + float(stats.swing_hold) - 0.85
+
+
+## How high the branches a chimp swings from are where it is (m over the ground): CANOPY_SHARE of the height of the
+## trees round it, low in their crowns.
+func _canopy_height() -> float:
+	var trees := ForestTree.near(global_position, LevelBuilder.FOREST_NEAR)
+	if trees.is_empty():
+		return _canopy_at
+	var h := 0.0
+	for t in trees:
+		h += t.height
+	return clampf(h / trees.size() * CANOPY_SHARE, CANOPY_LOW, CANOPY_HIGH)
 
 
 ## Mule Artillery with its gun not packed: the Setup clip follows how far the gun has got (forward setting it
@@ -3479,7 +3601,7 @@ func _build_model() -> void:
 	if not players.is_empty() and stats.has("anim_move"):
 		_anim = players[0]
 		var loops := [stats.anim_move, stats.anim_idle]
-		for k in ["anim_run", "anim_sneak", "anim_dig", "anim_armed", "anim_swim", "anim_dive"]:
+		for k in ["anim_run", "anim_sneak", "anim_dig", "anim_armed", "anim_swim", "anim_dive", "anim_swing"]:
 			if stats.has(k):
 				loops.append(stats[k])
 		for clip in loops:
