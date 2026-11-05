@@ -142,8 +142,10 @@ extends RefCounted
 ##   on one (AttackerUnit.can_ride), but the Mule Artillery and bisons (no_ride): those cross by a bridge or not at
 ##   all. ride_alone: a Combat Rhino or a giraffe has a raft to itself (only an empty one, and nobody joins it).
 ##   Riding it can't attack or use skills either. pack: where the raft rides folded up until it is put down
-##   (TowPlatform: [the bundle's bottom middle in the unit frame, how far it is tipped up at the front (rad), its
-##   size]): on a hippo's back; hung on an elephant's rump, under the missile pods' hinge.
+##   (TowPlatform): the raft model's transform in the frame of its model's bone pack_bone, so it rides the body
+##   whatever the clip does with it: on a hippo's back; hung on an elephant's rump, under the missile pods' hinge.
+##   Worked out from a place on the unit (the bundle's bottom middle, tipped up at the front, at a size: hippo
+##   (0, 1.84, -0.3), 0, 0.45; elephant (0, 2.0, 1.45), 1.0 rad, 0.5) with the model in its Walk clip's first frame.
 ## anim_swim / anim_dive: the clips a swimmer plays out in the water and under it (bears). dive_*: it dives under
 ##   the water (AttackerUnit.start_dive, swimming only) dive_time s, dive_depth m under its swim depth, every
 ##   dive_cooldown s.
@@ -220,7 +222,8 @@ const DATA := {
 		"role": "anti_air", "anim": "rigged", "hotkey": KEY_B,
 		# Swims with its trunk up (a snorkel: ElephantTurrets) and carries a raft for riders.
 		"swim_speed": 2.0, "swim_sink": 1.6,
-		"tows": Vector3(0, 1.3, 1.9), "pack": [Vector3(0, 2.0, 1.45), 1.0, 0.5],
+		"tows": Vector3(0, 1.3, 1.9), "pack_bone": "body",
+		"pack": Transform3D(Vector3(0.0044, 0.2898, -0.40743), Vector3(0.00282, -0.40745, -0.28978), Vector3(-0.49997, 0.00025, -0.00522), Vector3(0.0347, -1.11176, -0.11826)),
 		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 2.2,
 		# The real anti-air unit: one elephant's flak is worth about five rhinos.
 		"aa_range": 26.0, "aa_dps": 30.0, "flak": true,
@@ -358,7 +361,8 @@ const DATA := {
 		"role": "infantry", "anim": "rigged", "hotkey": KEY_K,
 		# Swims with its head over the water and carries a raft for riders.
 		"swim_speed": 2.4, "swim_sink": 0.62,
-		"tows": Vector3(0, 0.9, 1.05), "pack": [Vector3(0, 1.84, -0.3), 0.0, 0.45],
+		"tows": Vector3(0, 0.9, 1.05), "pack_bone": "Hips",
+		"pack": Transform3D(Vector3(-0.00114, 0.05819, 0.00024), Vector3(0.00098, 0.00026, -0.05819), Vector3(-0.05818, -0.00113, -0.00098), Vector3(0.00085, 0.03921, -0.09529)),
 		"anim_move": "Walk", "anim_idle": "Idle", "anim_ref_speed": 2.4,
 		# Mounted machine guns: inaccurate suppressive fire that sprays around the target.
 		"suppress_radius": 2.2, "overheat_time": 8.0, "overheat_cooldown": 2.0,

@@ -294,13 +294,12 @@ static func _laid() -> Transform3D:
 	return Transform3D(Basis(Vector3.UP, PI * 0.5), Vector3.ZERO)
 
 
-## Where the model rides packed (world): on the carrier's back, as UnitTypes pack has it ([the bundle's bottom
-## middle in the carrier's frame, how far it is tipped up at the front (rad), its size]), `grown` of that size. It
-## rides the body (AttackerUnit.model_root: it rolls over with it when it dies).
+## Where the model rides packed (world): on the carrier's back, riding the bone UnitTypes pack_bone (in its frame:
+## UnitTypes pack), `grown` of its size about the bundle's bottom.
 func _pack_transform(grown: float) -> Transform3D:
-	var pk: Array = carrier.stats.pack
-	var b := Basis(Vector3.RIGHT, pk[1]) * _laid().basis * Basis.from_scale(Vector3.ONE * (pk[2] * maxf(grown, 0.01)))
-	return carrier.model_root().global_transform * Transform3D(b, (pk[0] as Vector3) - b * Vector3(0, PACK_BOTTOM, 0))
+	var g := maxf(grown, 0.01)
+	return carrier.bone_transform(carrier.stats.pack_bone) * (carrier.stats.pack as Transform3D) \
+			* Transform3D(Basis.from_scale(Vector3.ONE * g), Vector3(0, PACK_BOTTOM * (1.0 - g), 0))
 
 
 ## Poses the pieces: the rear and front sections folded over (1) or open (0), the frames' depth (1 unfolded), what

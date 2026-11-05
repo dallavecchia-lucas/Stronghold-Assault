@@ -438,6 +438,8 @@ var _canopy_at := CANOPY_LOW
 var _canopy := CANOPY_LOW
 var _lift := 0.0
 var _swing_shape: CollisionShape3D
+## Its model's skeleton (bone_transform), once looked up.
+var _skeleton: Skeleton3D
 var _recoil := 0.0
 var _desired_velocity := Vector3.ZERO
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
@@ -486,9 +488,20 @@ func platform() -> TowPlatform:
 	return _platform
 
 
-## The node its model hangs from (what rolls over when it dies): a packed raft rides on it.
+## The node its model hangs from (what rolls over when it dies): a packed raft goes down with it.
 func model_root() -> Node3D:
 	return _model
+
+
+## Where bone `bone` of its model is now (world), as its clips pose it (its model's frame if it has no such bone).
+func bone_transform(bone: String) -> Transform3D:
+	if _skeleton == null:
+		var found := _model.find_children("*", "Skeleton3D", true, false)
+		_skeleton = found[0] if not found.is_empty() else null
+	var i := _skeleton.find_bone(bone) if _skeleton else -1
+	if i < 0:
+		return _model.global_transform
+	return _skeleton.global_transform * _skeleton.get_bone_global_pose(i)
 
 
 ## Hops onto a carrier's raft to get across the water: everyone who neither swims, flies nor carries, but the Mule
