@@ -2,7 +2,7 @@ extends Node3D
 ## The chimps' swing through the trees and the rafts folding out and coming apart, as a video, on the Jungle Keep
 ## (media/chimp_swing_rafts.mp4).
 ##
-##   godot --path game --resolution 1280x720 --write-movie video.avi --fixed-fps 30 res://scenes/dev/raft_chimp_video.tscn
+##   godot --path game --resolution 1280x720 --write-movie video.avi --fixed-fps 30 res://scenes/dev/raft_chimp_video.tscn [-- --rafts-only]
 ##
 ## A Night Ops Chimp in the forest south of the Keep: standing, then sent north, it leaps up into the trees and swings
 ## through them, and drops back down where they end to run on into the clearing. Then on the main river's south bank
@@ -82,9 +82,14 @@ func _start() -> void:
 		l.visible = false
 	# The swim links go into the navigation map on its own thread.
 	await _until(func(): return RiverCrossing.reaches(self, SOUTH, NORTH, 1 | RiverCrossing.NAV_SWIMMERS), 30.0)
+	# The forest cleared off the banks where the rafts are put down and come apart (the camera sees them whole).
+	if JungleFlora.current:
+		JungleFlora.current.clear_footprint(Transform3D(Basis.IDENTITY, SOUTH + Vector3(2.0, 0.0, 16.0)), Vector2(26.0, 22.0))
+		JungleFlora.current.clear_footprint(Transform3D(Basis.IDENTITY, NORTH + Vector3(2.0, 0.0, -10.0)), Vector2(26.0, 20.0))
 	cam.current = true
 	RenderingServer.render_loop_enabled = true
-	await _chimp()
+	if not "--rafts-only" in OS.get_cmdline_user_args():
+		await _chimp()
 	await _rafts()
 	_say("", "")
 	await _hold(10)
@@ -147,7 +152,7 @@ func _rafts() -> void:
 	var jumbo := _unit("elephant", SOUTH + Vector3(9.0, 0, 7.0))
 	var riders := [_unit("kangaroo", SOUTH + Vector3(-9.0, 0, 20.0)), _unit("lioness", SOUTH + Vector3(-3.0, 0, 21.0)),
 			_unit("giraffe", SOUTH + Vector3(10.0, 0, 21.0))]
-	_aim(hippo, Vector3(3.6, 3.4, 4.6), Vector3(0.0, 1.6, 0.0))
+	_aim(hippo, Vector3(3.2, 4.6, 5.2), Vector3(0.0, 1.7, -0.2))
 	_say("Hippo Heavy Gunner", "its raft folded up on its back")
 	await _hold(60)
 	_aim(jumbo, Vector3(-4.2, 3.4, 6.5), Vector3(0.0, 2.0, 1.0))
@@ -178,7 +183,7 @@ func _rafts() -> void:
 	_follow = spot
 	await _until(func(): return not is_instance_valid(raft) or raft.state == TowPlatform.State.BROKEN, 5.0)
 	await _hold(int(TowPlatform.BREAK_TIME * 30.0) + 10)
-	_aim(hippo, Vector3(3.6, 3.4, 4.6), Vector3(0.0, 1.6, 0.0))
+	_aim(hippo, Vector3(3.2, 4.6, 5.2), Vector3(0.0, 1.7, -0.2))
 	_say("A fresh raft", "folded on its back again")
 	await _hold(70)
 
