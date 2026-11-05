@@ -3313,8 +3313,9 @@ func _process(delta: float) -> void:
 		_nest_icon.visible = is_perched() and GameConfig.player_side == GameConfig.PlayerSide.ATTACKER
 		if _nest_icon.visible:
 			_nest_icon.global_position = global_position + Vector3.UP * (stats.height + 1.3)
-	# Tagged by a Sniper: the aim icon over it, blinking as the last tag runs out.
-	_tag_icon.visible = is_tagged()
+	# Tagged by a Sniper: the aim icon over it, blinking as the last tag runs out (none over a bear diving
+	# under the water on the defender's side: it would give it away).
+	_tag_icon.visible = is_tagged() and not hidden_under()
 	if _tag_icon.visible:
 		var left: float = _tags.values().max()
 		_tag_icon.global_position = global_position + Vector3.UP * (stats.height + 1.0)
