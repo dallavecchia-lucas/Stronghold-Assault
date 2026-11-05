@@ -111,19 +111,19 @@ func _chimp() -> void:
 	if way.is_empty():
 		return
 	var chimp := _unit("chimp", way[0])
-	_aim(chimp, Vector3(3.6, 1.5, -2.6), Vector3(0.0, 1.0, 0.0))
+	_aim(chimp, Vector3(3.2, 1.3, -2.8), Vector3(0.0, 0.9, 0.0))
 	_say("Night Ops Chimp", "in the forest: faster than on open ground")
 	await _hold(45)
 	commander.submit({"type": "move", "units": [chimp.unit_id], "pos": way[1], "attack": false})
 	_say("Into the trees", "it leaps up into the branches")
-	await _to(Vector3(7.0, 1.0, 0.5), Vector3(0.0, 1.6, -0.5), 30)
+	await _to(Vector3(8.5, 0.8, 1.0), Vector3(0.0, 1.7, -0.5), 30)
 	_say("Swinging through the trees", "hand over hand, branch to branch: that's why it's fast in a forest")
-	await _hold(70)
-	await _to(Vector3(4.0, 1.5, 4.5), Vector3(0.0, 1.8, -1.0), 50)
+	await _hold(80)
+	await _to(Vector3(5.5, 0.6, 6.5), Vector3(0.0, 1.8, -1.0), 50)
 	await _hold(40)
-	await _to(Vector3(-5.5, 2.2, -3.5), Vector3(0.0, 1.8, 0.0), 50)
-	await _hold(30)
-	await _to(Vector3(7.0, 1.0, 0.5), Vector3(0.0, 1.6, -0.5), 40)
+	await _to(Vector3(-7.5, 0.8, -4.0), Vector3(0.0, 1.8, 0.0), 50)
+	await _hold(40)
+	await _to(Vector3(8.5, 0.8, 1.0), Vector3(0.0, 1.6, -0.5), 40)
 	# On till it is out of the trees for good.
 	var out := 0
 	for k in 30 * 30:
@@ -188,7 +188,8 @@ func _process(_delta: float) -> void:
 		return
 	var b := Basis(Vector3.UP, _follow.global_rotation.y)
 	var lift: float = _follow.swing_lift() if _follow is AttackerUnit else 0.0
-	var want := _follow.global_position + b * _eye + Vector3.UP * lift
+	# Up in the trees the camera stays low, looking up at it under the canopy (not up in the leaves with it).
+	var want := _follow.global_position + b * _eye + Vector3.UP * lift * 0.3
 	var look := _follow.global_position + b * _at + Vector3.UP * lift
 	if _snap:
 		cam.global_position = want
