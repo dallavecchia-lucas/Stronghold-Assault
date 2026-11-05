@@ -213,6 +213,11 @@ func _swim_and_dive() -> void:
 	await _frames(2)
 	_check(bear.hidden_under() and not bear.silhouetted() and not bear._hp_bar.visible and bear.model_meshes().all(func(mi): return mi.material_overlay == null),
 			"on the defender's side nothing shows of it (no silhouette, no health bar)")
+	# Nor a Sniper's aim icon over the water, should it be tagged.
+	bear._tags[bear.get_instance_id()] = 5.0
+	await _frames(2)
+	_check(not bear._tag_icon.visible, "on the defender's side no Sniper's aim icon over it either")
+	bear._tags.clear()
 	GameConfig.player_side = GameConfig.PlayerSide.ATTACKER
 	await _frames(2)
 	# Nobody shoots at it down there, but a round fired into the water where it is hits it.

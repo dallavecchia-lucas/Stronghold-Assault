@@ -85,6 +85,9 @@ func _draw() -> void:
 	var fwd := Basis(Vector3.UP, squad.heading) * Vector3(0, 0, -4.0)
 	draw_line(centre, to_map.call(origin + fwd), Color(0.35, 0.7, 1.0, 0.5), 2.0)
 	for u in get_tree().get_nodes_in_group("attacker_units"):
+		# A bear diving under the water doesn't show here either (AttackerUnit.hidden_under).
+		if u.has_method("hidden_under") and u.hidden_under():
+			continue
 		var p: Vector2 = to_map.call(u.global_position)
 		if p.distance_to(centre) < MAP - 4:
 			draw_circle(p, 4.0, ENEMY)
