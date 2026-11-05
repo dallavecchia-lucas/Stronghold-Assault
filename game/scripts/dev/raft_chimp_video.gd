@@ -2,7 +2,9 @@ extends Node3D
 ## The chimps' swing through the trees and the rafts folding out and coming apart, as a video, on the Jungle Keep
 ## (media/chimp_swing_rafts.mp4).
 ##
-##   godot --path game --resolution 1280x720 --write-movie video.avi --fixed-fps 30 res://scenes/dev/raft_chimp_video.tscn [-- --rafts-only]
+##   godot --path game --resolution 1280x720 --write-movie video.avi --fixed-fps 30 res://scenes/dev/raft_chimp_video.tscn [-- --rafts-only | --close-up]
+## --close-up: close by a hippo's raft on the bank, at half speed: put down for two riders, then Space lets them off
+## and it comes apart.
 ##
 ## A Night Ops Chimp in the forest south of the Keep: standing, then sent north, it leaps up into the trees and swings
 ## through them, and drops back down where they end to run on into the clearing. Then on the main river's south bank
@@ -88,9 +90,13 @@ func _start() -> void:
 		JungleFlora.current.clear_footprint(Transform3D(Basis.IDENTITY, NORTH + Vector3(2.0, 0.0, -10.0)), Vector2(26.0, 20.0))
 	cam.current = true
 	RenderingServer.render_loop_enabled = true
-	if not "--rafts-only" in OS.get_cmdline_user_args():
-		await _chimp()
-	await _rafts()
+	var args := OS.get_cmdline_user_args()
+	if "--close-up" in args:
+		await _close_up()
+	else:
+		if not "--rafts-only" in args:
+			await _chimp()
+		await _rafts()
 	_say("", "")
 	await _hold(10)
 	get_tree().quit()
@@ -186,6 +192,36 @@ func _rafts() -> void:
 	_aim(hippo, Vector3(3.2, 4.6, 5.2), Vector3(0.0, 1.7, -0.2))
 	_say("A fresh raft", "folded on its back again")
 	await _hold(70)
+
+
+## Close by, at half speed: a hippo's raft put down for two riders, and coming apart once Space lets them off.
+func _close_up() -> void:
+	var hippo := _unit("hippo", SOUTH + Vector3(-4.0, 0, 8.0))
+	var riders := [_unit("kangaroo", SOUTH + Vector3(-10.0, 0, 16.0)), _unit("lioness", SOUTH + Vector3(2.0, 0, 17.0))]
+	await _hold(20)
+	var raft: TowPlatform = hippo.platform()
+	_aim(raft, Vector3(7.5, 3.6, 2.5), Vector3(0.0, 0.8, -1.5))
+	_say("The raft put down (half speed)", "tipped off its back, it swings open, the railings come up, the floats blow up")
+	Engine.time_scale = 0.5
+	commander.submit({"type": "board", "units": _ids(riders), "carrier": hippo.get_path()})
+	await _until(func(): return raft.is_ready(), 10.0)
+	await _hold(20)
+	Engine.time_scale = 1.0
+	_say("Riders on", "")
+	await _until(func(): return hippo.riders.size() == 2, 20.0)
+	await _hold(45)
+	var spot := Node3D.new()
+	add_child(spot)
+	spot.global_transform = raft.global_transform
+	_aim(spot, Vector3(6.5, 3.4, 3.0), Vector3(0.0, 0.5, -0.5))
+	_say("Space: the riders get off and the raft comes apart (half speed)", "the floats go flat, the deck falls to pieces, and it's gone")
+	Engine.time_scale = 0.5
+	commander.submit({"type": "unload", "units": [hippo.unit_id]})
+	await _hold(int((TowPlatform.AFTER_RIDE + TowPlatform.BREAK_TIME) * 30.0 / 0.5) + 20)
+	Engine.time_scale = 1.0
+	_aim(hippo, Vector3(3.2, 4.6, 5.2), Vector3(0.0, 1.7, -0.2))
+	_say("A fresh raft", "folded on its back again")
+	await _hold(60)
 
 
 # ---------------------------------------------------------------- camera and helpers
