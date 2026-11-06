@@ -1,5 +1,5 @@
 class_name HoverTankRig
-extends VehicleRig
+extends "res://scripts/vehicles/vehicle_rig.gd"
 ## The defenders' Iron Vanguard hover tank (assets_src/defenders/iron_vanguard, cut by tools/gltf/rig_vehicles.py):
 ## 10 m long with its gun forward, 6 m wide. It rides HOVER over the ground on four hover thrusters under the hull
 ## (thruster_FL/FR/RL/RR), their blue jets (jet_*) pushing down. The thrusters gimbal: they lean the jets back to
@@ -20,6 +20,8 @@ extends VehicleRig
 ## like mounted machine guns while `coax_firing` is on: COAX_RATE rounds a second each, the two in turn, every round a
 ## flash at the muzzle and a little kick, every TRACER_EVERY-th a tracer to the aim (coax_round reports each round).
 
+## The scripts this one uses, by path (they work before the editor has rescanned the project's classes).
+const Flame := preload("res://scripts/vehicles/thruster_flame.gd")
 const MODEL := "res://assets/defenders/iron_vanguard/iron_vanguard.glb"
 ## Ride height over the ground (m) and its bob (m).
 const HOVER := 0.7
@@ -90,17 +92,17 @@ var _rock_v := Vector3.ZERO
 var _jolt := Vector3.ZERO
 var _jolt_v := Vector3.ZERO
 var _shake := 0.0
-var _flash: ThrusterFlame
+var _flash: Flame
 var _flash_t := INF
-var _coax_flash: Array[ThrusterFlame] = []
+var _coax_flash: Array[Flame] = []
 var _coax_kick := [0.0, 0.0]
 var _coax_clock := 0.0
 var _coax_rounds := 0
 var _coax_dir := [Vector3.BACK, Vector3.BACK]
 var _gimbal := {}
 var _tilt := Vector2.ZERO
-var _jets: Array[ThrusterFlame] = []
-var _boosters: Array[ThrusterFlame] = []
+var _jets: Array[Flame] = []
+var _boosters: Array[Flame] = []
 ## The turret's pivot in the model's frame and the gun's trunnion in the turret's.
 var _turret_pivot := Vector3.ZERO
 var _gun_pivot := Vector3.ZERO
@@ -114,7 +116,7 @@ func _model_path() -> String:
 func _build() -> void:
 	model.position.y = HOVER
 	for pad in PADS:
-		var f := ThrusterFlame.new()
+		var f := Flame.new()
 		f.length = 1.3
 		f.radius = 0.42
 		f.color = Color(0.35, 0.9, 2.8)
@@ -124,7 +126,7 @@ func _build() -> void:
 			jet.add_child(f)
 		_jets.append(f)
 	for side in ["L", "R"]:
-		var f := ThrusterFlame.new()
+		var f := Flame.new()
 		f.length = 2.2
 		f.radius = 0.28
 		f.color = Color(0.4, 1.0, 2.8)
@@ -137,7 +139,7 @@ func _build() -> void:
 	_gun_pivot = rest_of("gun").origin
 	if has_part("muzzle"):
 		_recoil_dir = -(rest_of("barrel").basis * rest_of("muzzle").basis.z).normalized()
-		_flash = ThrusterFlame.new()
+		_flash = Flame.new()
 		_flash.length = 4.5
 		_flash.radius = 0.9
 		_flash.color = Color(2.6, 1.3, 0.45)
@@ -146,7 +148,7 @@ func _build() -> void:
 		part("muzzle").add_child(_flash)
 	for i in 2:
 		var side: String = ["L", "R"][i]
-		var f := ThrusterFlame.new()
+		var f := Flame.new()
 		f.length = 0.9
 		f.radius = 0.15
 		f.color = Color(2.8, 1.7, 0.6)

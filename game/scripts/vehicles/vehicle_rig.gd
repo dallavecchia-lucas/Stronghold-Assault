@@ -36,7 +36,14 @@ func _model_path() -> String:
 
 
 func _ready() -> void:
-	model = (load(_model_path()) as PackedScene).instantiate() as Node3D
+	var scene := load(_model_path()) as PackedScene
+	if scene == null:
+		push_error("%s: can't load %s (run `git lfs pull`, then let the editor import it)" % [name, _model_path()])
+		model = Node3D.new()
+		add_child(model)
+		set_process(false)
+		return
+	model = scene.instantiate() as Node3D
 	add_child(model)
 	_collect(model)
 	_build()

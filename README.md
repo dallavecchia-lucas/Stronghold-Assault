@@ -535,7 +535,11 @@ Four machines, rigged and animated but not yet in a match: the defenders' **Defe
 
 `game/scenes/dev/vehicle_showcase.tscn` flies and drives them on a plain field (`media/vehicle_showcase.mp4`): the tank speeds off, stops, turns, fires its main gun at a bunker on a rock, a burst from its coaxial machine guns and the main gun again; the drone hovers, flies off, turns, brakes and hovers again; the jet rolls into a hard turn, rolls out and climbs away on afterburner; one helicopter spools up on the ground beside a war elephant, another flies by, speeds up and stops.
 
+After pulling, fetch the models and let Godot import them before running it (opening the project in the editor does the import too); without them it says which models it can't load and quits:
+
 ```sh
+git lfs pull
+godot --path game --headless --import
 godot --path game --headless --fixed-fps 30 res://scenes/dev/vehicle_showcase.tscn -- --test  # prints and checks: VEHICLE SHOWCASE PASS / FAIL
 godot --path game --rendering-driver opengl3 --resolution 1280x720 --fixed-fps 30 res://scenes/dev/vehicle_showcase.tscn -- --snap=10.1,30.5,52 --snap-out=/tmp/vehicles  # just those frames
 godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie vehicles.avi --fixed-fps 30 res://scenes/dev/vehicle_showcase.tscn

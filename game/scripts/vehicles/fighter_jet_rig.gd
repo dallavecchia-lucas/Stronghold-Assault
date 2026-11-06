@@ -1,5 +1,5 @@
 class_name FighterJetRig
-extends VehicleRig
+extends "res://scripts/vehicles/vehicle_rig.gd"
 ## The defenders' Defender fighter jet (assets_src/defenders/defender_fighter_jet, cut by tools/gltf/rig_vehicles.py):
 ## 18 m long, 20 m span. Its control surfaces work the way a pilot's stick and pedals would move them:
 ##   roll: the ailerons opposite ways (the one on the rising wing's side down), helped by the stabilators;
@@ -12,6 +12,8 @@ extends VehicleRig
 ## pitch, roll and yaw rates against the most it does (PITCH_RATE, ROLL_RATE, YAW_RATE), the throttle off its speed and
 ## acceleration, the flaps off its speed. Otherwise set the inputs below.
 
+## The scripts this one uses, by path (they work before the editor has rescanned the project's classes).
+const Flame := preload("res://scripts/vehicles/thruster_flame.gd")
 const MODEL := "res://assets/defenders/defender_fighter_jet/defender_fighter_jet.glb"
 ## The most each surface moves (rad) and how fast the actuators drive them (rad/s).
 const AILERON := deg_to_rad(22.0)
@@ -38,7 +40,7 @@ var afterburner := 0.0
 var flaps := 0.0
 
 var _surf := {}
-var _flames: Array[ThrusterFlame] = []
+var _flames: Array[Flame] = []
 
 
 func _model_path() -> String:
@@ -47,7 +49,7 @@ func _model_path() -> String:
 
 func _build() -> void:
 	for side in ["L", "R"]:
-		var f := ThrusterFlame.new()
+		var f := Flame.new()
 		f.length = 6.0
 		f.radius = 0.62
 		f.color = Color(0.9, 0.9, 2.6)

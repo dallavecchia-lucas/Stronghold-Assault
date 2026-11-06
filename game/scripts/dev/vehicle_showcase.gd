@@ -33,13 +33,23 @@ const LIFT_AT := Vector3(60, 42, -260)
 const TARGET := Vector3(30, 9.5, 46)
 const ELEPHANT := "res://assets/units/war_elephant_sentinel/war_elephant_sentinel_rigged.glb"
 
+## The rigs, by path: they load even before the editor has rescanned the project and learnt their class names.
+const TankScript := preload("res://scripts/vehicles/hover_tank_rig.gd")
+const DroneScript := preload("res://scripts/vehicles/drone_rig.gd")
+const JetScript := preload("res://scripts/vehicles/fighter_jet_rig.gd")
+const LiftScript := preload("res://scripts/vehicles/heavy_lift_rig.gd")
+## The models it needs (git lfs pull, then the editor imports them).
+const MODELS := ["res://assets/defenders/iron_vanguard/iron_vanguard.glb", "res://assets/defenders/defender_drone/defender_drone.glb",
+		"res://assets/defenders/defender_fighter_jet/defender_fighter_jet.glb",
+		"res://assets/units/heavy_lift_helicopter/heavy_lift_helicopter.glb", ELEPHANT]
+
 var t := 0.0
 var cam: Camera3D
-var tank: HoverTankRig
-var drone: DroneRig
-var jet: FighterJetRig
-var helo: HeavyLiftRig
-var lift: HeavyLiftRig
+var tank: TankScript
+var drone: DroneScript
+var jet: JetScript
+var helo: LiftScript
+var lift: LiftScript
 var _test := false
 var _cam_only := ""
 var _snaps: Array = []
@@ -65,17 +75,23 @@ func _ready() -> void:
 			_snaps = Array(arg.get_slice("=", 1).split(",")).map(func(x): return float(x))
 		elif arg.begins_with("--snap-out="):
 			_snap_out = arg.get_slice("=", 1)
+	var missing := MODELS.filter(func(path): return not (load(path) is PackedScene))
+	if not missing.is_empty():
+		printerr("VEHICLE SHOWCASE: can't load %s. Run `git lfs pull` (the models are in Git LFS), then open the project "
+				% ", ".join(missing) + "in the editor once (or `godot --path game --import`) so Godot imports them.")
+		get_tree().quit(1)
+		return
 	_build_world()
-	tank = HoverTankRig.new()
+	tank = TankScript.new()
 	add_child(tank)
 	tank.position = TANK_AT
-	drone = DroneRig.new()
+	drone = DroneScript.new()
 	add_child(drone)
 	drone.position = DRONE_AT
-	jet = FighterJetRig.new()
+	jet = JetScript.new()
 	add_child(jet)
 	jet.position = Vector3(-60, 60, -700)
-	helo = HeavyLiftRig.new()
+	helo = LiftScript.new()
 	add_child(helo)
 	helo.position = HELO_AT
 	helo.rotation.y = deg_to_rad(-30.0)
@@ -83,7 +99,7 @@ func _ready() -> void:
 	add_child(standing)
 	standing.position = HELO_AT + Vector3(-34, 0, 18)
 	standing.rotation.y = deg_to_rad(70.0)
-	lift = HeavyLiftRig.new()
+	lift = LiftScript.new()
 	add_child(lift)
 	lift.position = LIFT_AT
 	lift.start()

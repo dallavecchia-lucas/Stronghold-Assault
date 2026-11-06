@@ -1,5 +1,5 @@
 class_name DroneRig
-extends VehicleRig
+extends "res://scripts/vehicles/vehicle_rig.gd"
 ## The defenders' Defender drone (assets_src/defenders/defender_drone, cut by tools/gltf/rig_vehicles.py): a small
 ## gunship, 1.8 m long and 2.4 m across its two wing-tip ducted fans. Each fan pod tilts about the wing (pod_L/R: up
 ## for the hover, forward to fly) and its fan spins in the duct (fan_L/R), a blur disc showing over the blades at
@@ -10,6 +10,8 @@ extends VehicleRig
 ## Following its own motion (VehicleRig follow_motion) all this comes off how it moves; it also leans into its
 ## acceleration and bobs a little on the air when it hovers. Otherwise set the inputs below.
 
+## The scripts this one uses, by path (they work before the editor has rescanned the project's classes).
+const Flame := preload("res://scripts/vehicles/thruster_flame.gd")
 const MODEL := "res://assets/defenders/defender_drone/defender_drone.glb"
 ## Pod tilt (rad): its range (forward +) and how fast the pods turn (rad/s).
 const TILT_MAX := deg_to_rad(80.0)
@@ -33,7 +35,7 @@ var _tilt := [0.0, 0.0]
 var _spin := [0.0, 0.0]
 var _rate := 0.0
 var _discs: Array[MeshInstance3D] = []
-var _flames: Array[ThrusterFlame] = []
+var _flames: Array[Flame] = []
 var _lean := Vector2.ZERO
 
 
@@ -44,7 +46,7 @@ func _model_path() -> String:
 func _build() -> void:
 	for side in ["L", "R"]:
 		_discs.append(add_blur("fan_" + side, Color(0.08, 0.08, 0.09, 0.4)))
-		var f := ThrusterFlame.new()
+		var f := Flame.new()
 		f.length = 0.45
 		f.radius = 0.045
 		f.color = Color(0.5, 1.2, 2.6)

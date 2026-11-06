@@ -1,5 +1,5 @@
 class_name HeavyLiftRig
-extends VehicleRig
+extends "res://scripts/vehicles/vehicle_rig.gd"
 ## The attackers' Heavy Lift Helicopter (assets_src/units/heavy_lift_helicopter, cut by tools/gltf/rig_vehicles.py):
 ## an immense tandem lifter, 64 m long, 18 m to the rear rotor's hub: war elephants ride in its hold. Its two rotors turn
 ## opposite ways (rotor_F, low over the cockpit, and rotor_R on the hump, 42 m across), the ducted fan in the tail
