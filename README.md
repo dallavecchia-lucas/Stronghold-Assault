@@ -524,6 +524,25 @@ python3 tools/gltf/fp_arms.py --input /tmp/orc_fp_pose.glb \
 
 `--view=x,y,z` on the showcase tries another hip place for the first-person rifle (`DefenderSoldier.VIEW_HIP`).
 
+### Vehicle showcase
+
+Four machines, rigged and animated but not yet in a match: the defenders' **Defender fighter jet** (18 m long, 20 m span), **Defender drone** (a small ducted-fan gunship, 1.8 m long) and **Iron Vanguard** hover tank (10 m with its gun forward), and the attackers' **Heavy Lift Helicopter**, an immense tandem lifter (64 m long, its rear rotor 42 m across) that carries war elephants on its sling. Each has a rig (`game/scripts/vehicles/`) that loads its model and moves its parts; whoever moves the rig about only has to move it, and the rig reads how it is flying or driving off its own motion (`VehicleRig.follow_motion`; off, the inputs are set by hand):
+
+- `FighterJetRig`: ailerons (opposite ways to roll), flaps (down below 110 m/s), all-moving stabilators (together to pitch, helping the roll), rudders on the canted fins, vectoring nozzles, and the engines' flames on the throttle, lighting the afterburners above it.
+- `DroneRig`: the wing-tip fan pods tilt like a tilt-rotor's (up to hover, forward to fly, back to brake, opposite ways to turn on the spot) and the fans spin in their ducts, opposite ways, a blur disc over them at speed; the rear engines burn with the push; it leans into its acceleration and bobs when it hovers. `muzzle_L/R` mark the twin guns.
+- `HoverTankRig`: rides 0.7 m up on four gimballed hover thrusters (blue jets that lean against where it is going, opposite ways front and rear to turn it), rear booster vents, the hull sitting back, dipping and rolling on its air cushion; `aim()` swings the turret and elevates the gun onto a point, `fire()` kicks the barrel back, `muzzle()` is where the shell leaves.
+- `HeavyLiftRig`: `start()` / `stop()` spool the two counter-rotating rotors and the ducted tail fan up and down (blur discs come up with them); the rotor discs tilt with the cyclic and opposite ways across to turn it; the body follows slowly. `carry(load)` hangs a load on a cable under the hook; it swings like a pendulum against the helicopter's acceleration and settles.
+
+`game/scenes/dev/vehicle_showcase.tscn` flies and drives them on a plain field (`media/vehicle_showcase.mp4`): the tank speeds off, stops, turns and fires twice at a bunker on a rock; the drone hovers, flies off, turns, brakes and hovers again; the jet rolls into a hard turn, rolls out and climbs away on afterburner; one helicopter spools up on the ground beside a war elephant, another flies by with an elephant on its sling, speeds up and stops.
+
+```sh
+godot --path game --headless --fixed-fps 30 res://scenes/dev/vehicle_showcase.tscn -- --test  # prints and checks: VEHICLE SHOWCASE PASS / FAIL
+godot --path game --rendering-driver opengl3 --resolution 1280x720 --fixed-fps 30 res://scenes/dev/vehicle_showcase.tscn -- --snap=9.7,26.5,47 --snap-out=/tmp/vehicles  # just those frames
+godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie vehicles.avi --fixed-fps 30 res://scenes/dev/vehicle_showcase.tscn
+```
+
+`-- --cam=tank|drone|jet|helo|lift` keeps the camera on one of them.
+
 ## Asset pipeline
 
 Meshy exports go in `assets_src/`, then get processed with Blender (headless):
@@ -684,6 +703,23 @@ python3 tools/gltf/rig_mule.py \
     --output game/assets/units/cyber_mule_artillery/cyber_mule_artillery_rigged.glb
 ```
 
+The machines (the fighter jet, the drone, the hover tank and the heavy lift helicopter) have no rig in Meshy's sense: their moving parts are pieces of the mesh. `tools/gltf/rig_vehicles.py` (numpy alone) turns each to face +Z at its game size, its origin on the ground under it, and cuts those parts out into nodes of their own at their pivots: whole where the mesh has them apart (rotor blades and hubs, fans, the turret, the gun, the hover pads, the stabilators, the engine cans), cut out of it where it doesn't (each aileron and flap out of its wing along a hinge line at 72% of the chord, each rudder out of its fin), every triangle across a cut clipped exactly at it. Hinges turn about their node's local X (a positive angle: the trailing edge down, a rudder's to the left, a nozzle's exit down, the gun's muzzle up, a fan pod tilting forward), spinners (rotors, fans, the turret) about its local Y; markers (`exhaust_*`, `muzzle*`, `jet_*`, `booster_*`, `missile_*`, `sling`) point their +Z out of the barrel or along the exhaust. `--preview` draws the parts in colours of their own, at rest and moved:
+
+```sh
+python3 tools/gltf/rig_vehicles.py --vehicle fighter_jet \
+    --input assets_src/defenders/defender_fighter_jet/defender_fighter_jet_meshy.glb \
+    --output game/assets/defenders/defender_fighter_jet/defender_fighter_jet.glb [--preview out.png]
+python3 tools/gltf/rig_vehicles.py --vehicle drone \
+    --input assets_src/defenders/defender_drone/defender_drone_meshy.glb \
+    --output game/assets/defenders/defender_drone/defender_drone.glb
+python3 tools/gltf/rig_vehicles.py --vehicle hover_tank \
+    --input assets_src/defenders/iron_vanguard/iron_vanguard_meshy.glb \
+    --output game/assets/defenders/iron_vanguard/iron_vanguard.glb
+python3 tools/gltf/rig_vehicles.py --vehicle helicopter \
+    --input assets_src/units/heavy_lift_helicopter/heavy_lift_helicopter_meshy.glb \
+    --output game/assets/units/heavy_lift_helicopter/heavy_lift_helicopter.glb
+```
+
 Static props (scenery, turrets) skip Blender: they go through [glTF-Transform](https://gltf-transform.dev) to put the pivot at the bottom center and shrink textures to 1024 px, and `game/scripts/match/props.gd` scales them to height at load time:
 
 ```sh
@@ -748,6 +784,6 @@ The game strips the placeholder weapons (`PH_*`) from its mounts and puts the tu
 
 - `assets_src/` — raw exports from Meshy (untouched originals)
 - `game/assets/` — processed, game-ready versions (Blender cleanup, rigging, texture resizing)
-- `game/scripts/` — `match/` (level, rules; `match/jungle/` the Jungle Keep), `attacker/` (RTS commander, CPU attacker), `defense/` (stations, defender controller), `units/`, `combat/`, `ui/`
+- `game/scripts/` — `match/` (level, rules; `match/jungle/` the Jungle Keep), `attacker/` (RTS commander, CPU attacker), `defense/` (stations, defender controller), `units/`, `vehicles/` (the machines' rigs), `combat/`, `ui/`
 - `tools/blender/` — asset processing scripts
-- `tools/gltf/` — asset scripts that need no Blender (numpy on the glTF): static props, the Sniper's rifle, the Infiltrator's, the Lioness's, the Sniper's and the Mule Artillery's rigs, the Wolf Medic's Dig clip
+- `tools/gltf/` — asset scripts that need no Blender (numpy on the glTF): static props, the Sniper's rifle, the Infiltrator's, the Lioness's, the Sniper's and the Mule Artillery's rigs, the Wolf Medic's Dig clip, the machines' moving parts (`rig_vehicles.py`)
