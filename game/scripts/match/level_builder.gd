@@ -702,7 +702,7 @@ func _build_bases() -> void:
 		# Its length (local x) along the lane.
 		base.transform = Transform3D(Basis(Vector3.UP, atan2(-out.z, out.x)), at)
 		var to_lane := at - out * at.dot(out)
-		base.spawn_point = at - to_lane.normalized() * (AttackerBase.SIZE.y * 0.5 + AttackerBase.SPAWN_OUT)
+		base.spawn_point = at - to_lane.normalized() * (base.deck_size.y * 0.5 + AttackerBase.SPAWN_OUT)
 		nav_region.add_child(base)
 		bases.append(base)
 

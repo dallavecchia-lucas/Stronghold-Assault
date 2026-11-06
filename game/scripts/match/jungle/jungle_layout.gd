@@ -64,7 +64,11 @@ const CLIFF_FADE := 40.0
 const PRISON := Vector2(-20, -650)
 const MAIN_SPAWN := Vector2(0, 690)
 const QUARRY := Vector2(-440, -40)
-const OUTPOST := Vector2(560, -40)
+const OUTPOST := Vector2(600, -40)
+## The Outpost is a big base (AttackerBase.scale_factor): its pad's touchdown square takes the Heavy Lift Helicopter,
+## 64 m long with its rotors sweeping 61 by 42 m, so it is this many times the standard one (a deck 204 by 158 m,
+## 22 m up, its pad 70 by 63 m: a few metres clear of the helicopter all round).
+const OUTPOST_SCALE := 5.2
 ## The quarry: a rocky hill west of the helipad, its east face cut back in benches (QUARRY_BENCH m
 ## each) down to the floor the helipad stands on.
 const QUARRY_HILL := [Vector2(-560, -40), Vector2(105, 120), 17.0]
@@ -73,7 +77,7 @@ const QUARRY_BENCH := 4.25
 const FLATTEN := [
 	[MAIN_SPAWN, 165.0],
 	[QUARRY, 75.0],
-	[OUTPOST, 75.0],
+	[OUTPOST, 195.0],
 ]
 
 static var _curves := {}

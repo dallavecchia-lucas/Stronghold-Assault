@@ -41,7 +41,7 @@ const SHOTS := {
 	"citadel": [Vector3(86, 28, 772), Vector3(0, 16, 690), 72.0],
 	"citadel_scale": [Vector3(100, 2.2, 728), Vector3(56, 14, 692), 64.0],
 	"river": [Vector3(-24, 0, 522), Vector3(8, -1.0, 470), 62.0, true],
-	"outpost": [Vector3(522, 13, 2), Vector3(562, 4, -40), 56.0],
+	"outpost": [Vector3(395, 70, 150), Vector3(600, 12, -40), 58.0],
 	"quarry": [Vector3(-398, 26, 8), Vector3(-505, 6, -40), 60.0],
 	"prison_cliff": [Vector3(70, 100, -360), Vector3(-20, 22, -610), 50.0],
 	"prison_close": [Vector3(55, 34, -575), Vector3(-20, 38, -650), 58.0],

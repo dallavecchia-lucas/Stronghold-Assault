@@ -5,8 +5,8 @@ extends Node3D
 ##
 ##   tank   (0-16 s)  hovers, speeds off and stops (the thrusters gimbal, the boosters burn, the hull sits back and
 ##                    dips), turns, swings its turret onto a target and elevates; fires the main gun (the barrel slams
-##                    back and runs slowly out, the tank rocks back on its cushion), a burst from the two coaxial
-##                    machine guns, and the main gun again.
+##                    back and runs slowly out, the tank rocks back on its cushion), a burst from the machine guns in
+##                    its side sponsons (turned onto the target), and the main gun again.
 ##   drone  (16-26 s) hovers, its pods up and its fans spinning; flies off (the pods tilt forward), turns, brakes
 ##                    (they tilt back) and hovers again.
 ##   jet    (26-36 s) a low pass: rolls into a hard turn (ailerons, stabilators pulling, rudders), rolls out and
@@ -19,11 +19,17 @@ extends Node3D
 ##       res://scenes/dev/vehicle_showcase.tscn -- --snap=6,10.1,12.5,19,30.5,42,52 --snap-out=/tmp/vehicles
 ##
 ## --cam=tank|drone|jet|helo|lift keeps the camera on one of them the whole time (default: each in its turn).
+##
+## --pad stages the Jungle Keep's Outpost instead (an AttackerBase at JungleLayout.OUTPOST_SCALE) with the Heavy Lift
+## Helicopter parked on its pad, rotors turning, and a war elephant on the deck beside it; with --test it checks that
+## the helicopter's whole footprint, its rotors' sweep included, lies inside the pad's touchdown square
+## (PAD CHECK PASS / FAIL). --snap works as above (the camera circles the pad, looks straight down on it from
+## 4 s, and along it from 8 s).
 
 const END := 60.0
 ## Everything after the tank's turn starts this much later.
 const LATER := 4.0
-## The tank's main gun shots and its coaxial machine guns' burst (s).
+## The tank's main gun shots and its machine guns' burst (s).
 const SHOTS := [10.0, 14.4]
 const BURST := [11.6, 13.2]
 const TANK_AT := Vector3(0, 0, 0)
@@ -61,6 +67,9 @@ var _drone := [0.0, 0.0]
 var _jet := [110.0, 0.0, 0.0, 0.0]
 var _lift := [0.0, 0.0]
 var _fired := 0
+var _pad_mode := false
+var _outpost: AttackerBase
+var _parked: LiftScript
 ## What the test saw: the largest value of each thing (see _watch).
 var _seen := {}
 
@@ -75,6 +84,8 @@ func _ready() -> void:
 			_snaps = Array(arg.get_slice("=", 1).split(",")).map(func(x): return float(x))
 		elif arg.begins_with("--snap-out="):
 			_snap_out = arg.get_slice("=", 1)
+		elif arg == "--pad":
+			_pad_mode = true
 	var missing := MODELS.filter(func(path): return not (load(path) is PackedScene))
 	if not missing.is_empty():
 		printerr("VEHICLE SHOWCASE: can't load %s. Run `git lfs pull` (the models are in Git LFS), then open the project "
@@ -82,6 +93,9 @@ func _ready() -> void:
 		get_tree().quit(1)
 		return
 	_build_world()
+	if _pad_mode:
+		_build_pad()
+		return
 	tank = TankScript.new()
 	add_child(tank)
 	tank.position = TANK_AT
@@ -124,6 +138,9 @@ func _elephant() -> Node3D:
 
 func _physics_process(delta: float) -> void:
 	t += delta
+	if _pad_mode:
+		_pad_step()
+		return
 	_move_tank(delta)
 	_move_drone(delta)
 	_move_jet(delta)
@@ -156,7 +173,7 @@ func _move_tank(delta: float) -> void:
 	if _fired < SHOTS.size() and t >= SHOTS[_fired]:
 		tank.fire()
 		_fired += 1
-	tank.coax_firing = t >= BURST[0] and t < BURST[1]
+	tank.mg_firing = t >= BURST[0] and t < BURST[1]
 
 
 func _move_drone(delta: float) -> void:
@@ -233,6 +250,13 @@ func _camera() -> void:
 			var p := tank.global_position
 			if t < SHOTS[0] - 0.8:
 				_look(p + Vector3(-13, 5.5, 9) + Vector3(0, 0, minf(p.z, 20.0) * 0.2), p + Vector3(0, 2.0, 2))
+			elif t >= BURST[0] - 0.4 and t < BURST[1] + 0.3:
+				# Behind the left sponson's machine gun and out to its side, the target beyond: the hull side, the
+				# gun and its fire going out at the target.
+				var gun := tank.marker("mg_muzzle_L1").origin
+				var to := Vector3(TARGET.x - gun.x, 0.0, TARGET.z - gun.z).normalized()
+				var out := to.cross(Vector3.DOWN).normalized()
+				_look(gun - to * 4.6 + out * 2.4 + Vector3.UP * 1.0, gun + to * 6.0 + Vector3.UP * 0.4)
 			else:
 				# Side-on to the gun for the shots: the barrel's recoil, the blast and the rock.
 				var d := tank.global_basis * Vector3(sin(tank.turret_yaw()), 0, cos(tank.turret_yaw()))
@@ -275,7 +299,10 @@ func _watch() -> void:
 	_max("helo_turned", absf(helo.rotor_angle("rotor_F")))
 	_max("lift_tilt", lift.disc_tilt("rotor_F").x)
 	_max("tank_rock", tank.rock())
-	_max("coax_rounds", tank.coax_rounds())
+	_max("mg_rounds", tank.mg_rounds())
+	if t > BURST[1] - 0.1 and t < BURST[1]:
+		_seen["mg_yaw_L"] = tank.mg_aim(0).x
+		_seen["mg_elev_L"] = tank.mg_aim(0).y
 	if t >= SHOTS[0] + 0.5 and t < SHOTS[0] + 0.55:
 		_seen["recoil_half_second"] = tank.recoil()
 	if t >= SHOTS[0] + 3.0 and t < SHOTS[0] + 3.05:
@@ -300,7 +327,7 @@ func _finish() -> void:
 		["tank gun elevates", _seen.tank_elev > deg_to_rad(1.0)],
 		["tank barrel recoils, heavy and slow (still back half a second on)", _seen.tank_recoil > 0.5 and _seen.recoil_half_second > 0.3],
 		["the tank rocks on the shot and settles", _seen.tank_rock > deg_to_rad(1.5) and _seen.rock_after_3s < _seen.tank_rock * 0.3],
-		["coaxial machine guns fire bursts", _seen.coax_rounds >= 20],
+		["the side machine guns turn onto the target and fire bursts", _seen.mg_rounds >= 20 and absf(_seen.mg_elev_L) > deg_to_rad(5.0)],
 		["drone pods tilt forward to fly", _seen.drone_tilt > deg_to_rad(45.0)],
 		["drone pods back up hovering", absf(_seen.drone_back) < deg_to_rad(10.0)],
 		["drone fans spin up", _seen.drone_fan > 5.0],
@@ -326,7 +353,7 @@ func _snap() -> void:
 		_snapping = true
 		var at: float = _snaps[0]
 		await RenderingServer.frame_post_draw
-		get_viewport().get_texture().get_image().save_png("%s_%04.1f.png" % [_snap_out, at])
+		get_viewport().get_texture().get_image().save_png("%s_%05.2f.png" % [_snap_out, at])
 		_snaps.pop_front()
 		_snapping = false
 		if _snaps.is_empty():
@@ -372,3 +399,70 @@ func _build_world() -> void:
 	ground.mesh = pm
 	ground.material_override = Mats.ground()
 	add_child(ground)
+
+
+# --------------------------------------------------------------------------------------- the Outpost's pad
+
+## The Outpost at its Jungle Keep size, the helicopter parked on its pad along its long side (the pad's x), rotors
+## turning, and a war elephant on the deck by it for scale.
+func _build_pad() -> void:
+	_outpost = AttackerBase.new()
+	_outpost.setup("east", "Outpost")
+	_outpost.scale_factor = JungleLayout.OUTPOST_SCALE
+	add_child(_outpost)
+	_parked = LiftScript.new()
+	add_child(_parked)
+	_parked.global_transform = Transform3D(Basis(Vector3.UP, PI * 0.5), _outpost.pad_centre())
+	_parked.start()
+	var e := _elephant()
+	add_child(e)
+	e.global_position = _outpost.pad_centre() + Vector3(0, 0, _outpost.pad_size.y * 0.5 + 9.0)
+	e.rotation.y = PI * 0.5
+	cam = Camera3D.new()
+	cam.fov = 55.0
+	cam.far = 3000.0
+	add_child(cam)
+	cam.current = true
+
+
+func _pad_step() -> void:
+	var c := _outpost.pad_centre()
+	if t < 4.0:
+		var a := deg_to_rad(200.0) + t * 0.12
+		_look(c + Vector3(cos(a) * 190.0, 95.0, sin(a) * 190.0), c + Vector3(0, -6, 0))
+	elif t < 8.0:
+		# Straight down on the pad: the helicopter and its rotors inside the touchdown square.
+		cam.position = c + Vector3(0, 120, 0)
+		cam.look_at(c, Vector3.FORWARD)
+	else:
+		_look(c + Vector3(-115.0, 30.0, 70.0), c + Vector3(-4.0, 8.0, 0.0))
+	if not _snaps.is_empty():
+		_snap()
+	if t >= 3.0 and _test:
+		_check_pad()
+
+
+## The helicopter's footprint (every mesh, the rotors' blur discs standing for their sweep) in the base's frame,
+## against the pad's touchdown square.
+func _check_pad() -> void:
+	var inv := _outpost.global_transform.affine_inverse()
+	var lo := Vector2(INF, INF)
+	var hi := Vector2(-INF, -INF)
+	for mi in _parked.find_children("*", "MeshInstance3D", true, false):
+		var box: AABB = (mi as MeshInstance3D).get_aabb()
+		var xf: Transform3D = inv * (mi as MeshInstance3D).global_transform
+		for k in 8:
+			var p: Vector3 = xf * box.get_endpoint(k)
+			lo = Vector2(minf(lo.x, p.x), minf(lo.y, p.z))
+			hi = Vector2(maxf(hi.x, p.x), maxf(hi.y, p.z))
+	var pc := inv * _outpost.pad_centre()
+	var half := _outpost.pad_size * 0.5
+	var pad_lo := Vector2(pc.x, pc.z) - half
+	var pad_hi := Vector2(pc.x, pc.z) + half
+	var fits := lo.x >= pad_lo.x and lo.y >= pad_lo.y and hi.x <= pad_hi.x and hi.y <= pad_hi.y
+	print("outpost: deck %.0f x %.0f m, %.1f m up, %.0f m to the mast tips; pad %.1f x %.1f m" % [_outpost.deck_size.x,
+			_outpost.deck_size.y, _outpost.deck_height, _outpost.model_height, _outpost.pad_size.x, _outpost.pad_size.y])
+	print("helicopter footprint (rotors included): %.1f x %.1f m; clear of the pad's edge by %.1f m along it, %.1f m across" % [
+			hi.x - lo.x, hi.y - lo.y, minf(lo.x - pad_lo.x, pad_hi.x - hi.x), minf(lo.y - pad_lo.y, pad_hi.y - hi.y)])
+	print("PAD CHECK %s" % ("PASS" if fits else "FAIL"))
+	get_tree().quit(0 if fits else 1)

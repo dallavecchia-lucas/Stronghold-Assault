@@ -16,9 +16,11 @@ extends "res://scripts/vehicles/vehicle_rig.gd"
 ## muzzle jumps up and settles (JUMP), and the whole tank takes the kick: the hull rocks back on its air cushion away
 ## from the shot and sways back and forth a few times (ROCK, a damped spring), jolted back and shaken for a moment.
 ##
-## The two coaxial machine guns either side of the cannon (coax_L/R, on the gun: they point where it points) fire
-## like mounted machine guns while `coax_firing` is on: COAX_RATE rounds a second each, the two in turn, every round a
-## flash at the muzzle and a little kick, every TRACER_EVERY-th a tracer to the aim (coax_round reports each round).
+## Its machine guns are the twin-barrelled guns in the sponsons on the hull's sides (mg_L/R). Each turns on its
+## mount onto the aim as far as its sponson lets it (MG_YAW_OUT out to its side, MG_YAW_IN in across the bow,
+## MG_DEPRESSION..MG_ELEVATION) and, while `mg_firing` is on, fires MG_RATE rounds a second from its two barrels in
+## turn: every round a flash at that barrel's muzzle and a little kick, every TRACER_EVERY-th a tracer (mg_round
+## reports each round).
 
 ## The scripts this one uses, by path (they work before the editor has rescanned the project's classes).
 const Flame := preload("res://scripts/vehicles/thruster_flame.gd")
@@ -48,13 +50,20 @@ const ROCK_HZ := 1.6
 const ROCK_DAMP := 2.2
 const JOLT := 0.18
 const SHAKE_TIME := 0.35
-## The coaxial machine guns: rounds a second each, the kick per round (m), every how many rounds a tracer, the spread
-## (rad), and how far they reach with nothing to aim at (m).
-const COAX_RATE := 9.0
-const COAX_KICK := 0.035
+## The machine guns: how far each turns (rad: out to its own side, in across the bow, down, up) and how fast (rad/s),
+## rounds a second each, the kick per round (m), every how many rounds a tracer, the spread (rad), and how far they
+## reach with nothing to aim at (m).
+const MG_YAW_OUT := deg_to_rad(45.0)
+const MG_YAW_IN := deg_to_rad(10.0)
+const MG_DEPRESSION := deg_to_rad(-8.0)
+const MG_ELEVATION := deg_to_rad(30.0)
+const MG_TURN := deg_to_rad(120.0)
+const MG_RATE := 10.0
+const MG_KICK := 0.04
 const TRACER_EVERY := 3
-const COAX_SPREAD := 0.006
-const COAX_RANGE := 400.0
+const MG_SPREAD := 0.008
+const MG_RANGE := 400.0
+const MG_SIDES := ["L", "R"]
 ## Thruster gimbal: the most it leans (rad) and how fast (rad/s); the rig's acceleration that leans it all the way.
 const GIMBAL := deg_to_rad(22.0)
 const GIMBAL_RATE := deg_to_rad(90.0)
@@ -71,11 +80,11 @@ const PADS := ["FL", "FR", "RL", "RR"]
 var drive := Vector2.ZERO
 var turn := 0.0
 var lift := 0.7
-## The coaxial machine guns fire while this is on.
-var coax_firing := false
+## The machine guns fire while this is on.
+var mg_firing := false
 
-## A coaxial machine gun fired a round: from its muzzle to where it goes (world). For hit tests and sound.
-signal coax_round(from: Vector3, to: Vector3)
+## A machine gun fired a round: from its muzzle to where it goes (world). For hit tests and sound.
+signal mg_round(from: Vector3, to: Vector3)
 ## The main gun fired: the muzzle's world transform.
 signal main_gun_fired(muzzle: Transform3D)
 
@@ -94,11 +103,13 @@ var _jolt_v := Vector3.ZERO
 var _shake := 0.0
 var _flash: Flame
 var _flash_t := INF
-var _coax_flash: Array[Flame] = []
-var _coax_kick := [0.0, 0.0]
-var _coax_clock := 0.0
-var _coax_rounds := 0
-var _coax_dir := [Vector3.BACK, Vector3.BACK]
+## Per machine gun (L, R): its yaw and elevation (rad), kick (m), and the flash at each of its two muzzles.
+var _mg_yaw := [0.0, 0.0]
+var _mg_elev := [0.0, 0.0]
+var _mg_kick := [0.0, 0.0]
+var _mg_flash: Array[Flame] = []
+var _mg_clock := 0.0
+var _mg_rounds := 0
 var _gimbal := {}
 var _tilt := Vector2.ZERO
 var _jets: Array[Flame] = []
@@ -146,18 +157,17 @@ func _build() -> void:
 		_flash.burner_color = Color(2.8, 2.0, 1.0)
 		_flash.light_range = 22.0
 		part("muzzle").add_child(_flash)
-	for i in 2:
-		var side: String = ["L", "R"][i]
-		var f := Flame.new()
-		f.length = 0.9
-		f.radius = 0.15
-		f.color = Color(2.8, 1.7, 0.6)
-		f.light_range = 4.0
-		var m := part("coax_muzzle_" + side)
-		if m:
-			m.add_child(f)
-			_coax_dir[i] = -(rest_of("coax_" + side).basis * rest_of("coax_muzzle_" + side).basis.z).normalized()
-		_coax_flash.append(f)
+	for side in MG_SIDES:
+		for n in [1, 2]:
+			var f := Flame.new()
+			f.length = 0.85
+			f.radius = 0.13
+			f.color = Color(2.8, 1.7, 0.6)
+			f.light_range = 4.0 if n == 1 else 0.0
+			var m := part("mg_muzzle_%s%d" % [side, n])
+			if m:
+				m.add_child(f)
+			_mg_flash.append(f)
 
 
 ## Turns the turret and the gun onto `point` (world).
@@ -203,9 +213,14 @@ func rock() -> float:
 	return _rock.length()
 
 
-## Rounds the coaxial machine guns have fired.
-func coax_rounds() -> int:
-	return _coax_rounds
+## Rounds the machine guns have fired.
+func mg_rounds() -> int:
+	return _mg_rounds
+
+
+## A machine gun's yaw (rad, left +) and elevation (rad, up +) on its mount as of now (0 left, 1 right).
+func mg_aim(i: int) -> Vector2:
+	return Vector2(_mg_yaw[i], _mg_elev[i])
 
 
 ## The muzzle's world transform as of now; basis.z points out of the barrel.
@@ -279,7 +294,7 @@ func _process(delta: float) -> void:
 	if _flash:
 		# The blast: a burst of flame that is gone in a tenth of a second.
 		_flash.power = 2.0 * clampf(1.0 - _flash_t / 0.12, 0.0, 1.0)
-	_coax(delta)
+	_machine_guns(delta)
 
 
 ## The barrel's travel back (m) `t` seconds after a shot: driven back hard, braking against the buffers; held; run out
@@ -306,30 +321,48 @@ func _take_the_kick(delta: float) -> void:
 	_jolt += _jolt_v * delta
 
 
-## The coaxial machine guns: while firing, a round from each in turn at COAX_RATE a gun.
-func _coax(delta: float) -> void:
+## The machine guns: each turns onto the aim within its sponson's arc, and while firing they put out MG_RATE rounds a
+## second each, the two guns' barrels taking turns.
+func _machine_guns(delta: float) -> void:
+	var steady := global_transform * Transform3D(Basis.IDENTITY, Vector3(0.0, HOVER, 0.0))
 	for i in 2:
-		_coax_kick[i] = move_toward(_coax_kick[i], 0.0, COAX_KICK / 0.06 * delta)
-		slide("coax_" + ["L", "R"][i], _coax_dir[i] * _coax_kick[i])
-		_coax_flash[i].power = maxf(_coax_flash[i].power - delta / 0.04, 0.0)
-	if not coax_firing:
-		_coax_clock = 0.0
+		var side: String = MG_SIDES[i]
+		var out := 1.0 if side == "L" else -1.0  # its own side is +X (left) or -X
+		var want := Vector2.ZERO
+		if _aim != Vector3.INF:
+			var d := steady.affine_inverse() * _aim - rest_of("mg_" + side).origin
+			want = Vector2(atan2(d.x, d.z), atan2(d.y, Vector2(d.x, d.z).length()))
+		var lo := -MG_YAW_IN if out > 0.0 else -MG_YAW_OUT
+		var hi := MG_YAW_OUT if out > 0.0 else MG_YAW_IN
+		_mg_yaw[i] = move_toward(_mg_yaw[i], clampf(want.x, lo, hi), MG_TURN * delta)
+		_mg_elev[i] = move_toward(_mg_elev[i], clampf(want.y, MG_DEPRESSION, MG_ELEVATION), MG_TURN * delta)
+		_mg_kick[i] = move_toward(_mg_kick[i], 0.0, MG_KICK / 0.05 * delta)
+		var n := part("mg_" + side)
+		if n:
+			var b: Basis = rest_of("mg_" + side).basis * Basis(Vector3.UP, _mg_yaw[i]) * Basis(Vector3.RIGHT, -_mg_elev[i])
+			n.transform = Transform3D(b, rest_of("mg_" + side).origin - b.z * _mg_kick[i])
+		for k in 2:
+			var f: Flame = _mg_flash[i * 2 + k]
+			f.power = maxf(f.power - delta / 0.035, 0.0)
+	if not mg_firing:
+		_mg_clock = 0.0
 		return
-	_coax_clock -= delta
-	while _coax_clock <= 0.0:
-		_coax_clock += 1.0 / (COAX_RATE * 2.0)
-		var i := _coax_rounds % 2
-		_coax_rounds += 1
-		var side: String = ["L", "R"][i]
-		_coax_kick[i] = COAX_KICK
-		_coax_flash[i].power = randf_range(0.8, 1.2)
-		var m := marker("coax_muzzle_" + side)
-		var to := _aim if _aim != Vector3.INF else m.origin + m.basis.z * COAX_RANGE
-		var dir := Combat.apply_spread((to - m.origin).normalized(), COAX_SPREAD)
-		to = m.origin + dir * m.origin.distance_to(to)
-		if _coax_rounds % TRACER_EVERY == 0:
+	_mg_clock -= delta
+	while _mg_clock <= 0.0:
+		_mg_clock += 1.0 / (MG_RATE * 2.0)
+		# Left, right, left, right: each gun's two barrels in turn.
+		var i := _mg_rounds % 2
+		var barrel := (_mg_rounds / 2) % 2
+		_mg_rounds += 1
+		_mg_kick[i] = MG_KICK
+		_mg_flash[i * 2 + barrel].power = randf_range(0.8, 1.2)
+		var m := marker("mg_muzzle_%s%d" % [MG_SIDES[i], barrel + 1])
+		var reach := m.origin.distance_to(_aim) if _aim != Vector3.INF else MG_RANGE
+		var dir := Combat.apply_spread(m.basis.z.normalized(), MG_SPREAD)
+		var to := m.origin + dir * reach
+		if _mg_rounds % TRACER_EVERY == 0:
 			Combat.spawn_tracer(self, m.origin, to, Color(1.0, 0.55, 0.2), 0.05)
-		coax_round.emit(m.origin, to)
+		mg_round.emit(m.origin, to)
 
 
 ## The cloud of smoke a shot throws out of the muzzle: puffs blown out ahead and to the sides, growing and fading.

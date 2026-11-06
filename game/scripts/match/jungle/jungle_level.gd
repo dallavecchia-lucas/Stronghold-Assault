@@ -176,10 +176,12 @@ func _build_bases() -> void:
 		var at: Vector2 = entry[2]
 		var base := AttackerBase.new()
 		base.setup(entry[0], entry[1])
+		if entry[1] == "Outpost":
+			base.scale_factor = JungleLayout.OUTPOST_SCALE
 		base.transform = Transform3D(Basis.IDENTITY, Vector3(at.x, ground.height_at(at.x, at.y), at.y))
 		# Units it spawns come out on the side facing the Keep.
 		var toward := -signf(at.x)
-		base.spawn_point = base.position + Vector3(toward * (AttackerBase.SIZE.x * 0.5 + AttackerBase.SPAWN_OUT), 0, 0)
+		base.spawn_point = base.position + Vector3(toward * (base.deck_size.x * 0.5 + AttackerBase.SPAWN_OUT), 0, 0)
 		nav_region.add_child(base)
 		bases.append(base)
 

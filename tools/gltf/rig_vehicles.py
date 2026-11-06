@@ -8,8 +8,8 @@
                engines, `muzzle_L/R` on the twin guns.
   hover_tank   the defenders' Iron Vanguard hover tank (assets_src/defenders/iron_vanguard): the turret turns
                (`turret`), the gun elevates (`gun`) and the barrel recoils in it (`barrel`, `muzzle` at its tip);
-               the two coaxial machine guns either side of the cannon's root ride the gun (`coax_L/R`, their
-               muzzles `coax_muzzle_L/R`);
+               the twin machine guns in the sponsons on the hull's sides turn on their mounts (`mg_L/R`,
+               `mg_muzzle_<side>1/2` at the barrels' tips);
                four gimballed hover thrusters under the hull (`thruster_FL/FR/RL/RR`, `jet_*` where the thrust
                comes out) and `booster_L/R` on the rear vents.
   helicopter   the attackers' Heavy Lift Helicopter (assets_src/units/heavy_lift_helicopter): a tandem lifter,
@@ -263,14 +263,11 @@ def drone(m):
 def hover_tank(m):
     nodes, marks = [], []
     gun = m.pick(lambda lo, hi, c, sz: lo[1] > 2.8 and abs(c[0]) < 0.55 and c[2] > -0.4 and hi[2] > 0.5)
-    # The two coaxial machine guns either side of the cannon's root ride the gun (they elevate with it but
-    # don't recoil with the barrel): thin tubes 0.3 m out from its axis.
-    coax = {k for k in gun if abs(m.info[k]["ctr"][0]) > 0.2 and m.info[k]["size"][0] < 0.2 and m.info[k]["size"][2] > 0.6}
-    barrel = {k for k in gun if m.info[k]["lo"][2] > 0.5} - coax
+    # The barrel recoils; the short tubes either side of its root stay with the gun's mantlet.
+    tubes = {k for k in gun if abs(m.info[k]["ctr"][0]) > 0.2 and m.info[k]["size"][0] < 0.2 and m.info[k]["size"][2] > 0.6}
+    barrel = {k for k in gun if m.info[k]["lo"][2] > 0.5} - tubes
     m.take("barrel", barrel)
-    for side, s in (("L", 1.0), ("R", -1.0)):
-        m.take(f"coax_{side}", {k for k in coax if m.info[k]["ctr"][0] * s > 0})
-    m.take("gun", gun - barrel - coax)
+    m.take("gun", gun - barrel)
     turret = m.pick(lambda lo, hi, c, sz: lo[1] >= 2.58 and max(abs(lo[0]), abs(hi[0])) < 2.0 and c[2] < 0.3 and c[2] > -5.0)
     m.take("turret", turret - gun)
     ring = m.pick(lambda lo, hi, c, sz: sz[0] > 2.5 and sz[1] < 0.3 and abs(sz[0] - sz[2]) < 0.1)
@@ -281,10 +278,18 @@ def hover_tank(m):
               ("gun", "turret", trunnion, frame(x=-X)),
               ("barrel", "gun", trunnion, frame(x=-X))]
     marks.append(("muzzle", "barrel", np.array([(blo[0] + bhi[0]) * 0.5, (blo[1] + bhi[1]) * 0.5, bhi[2]]), Z))
+    # The machine guns: a twin-barrelled gun in a sponson on each side of the hull, its mount 1.3 m up by the
+    # front of the side skirt and its barrels reaching forward past it. Each turns on its mount (local Y up);
+    # mg_muzzle_<side>1 is the upper barrel's tip, 2 the lower's.
     for side, s in (("L", 1.0), ("R", -1.0)):
-        clo, chi = m.bounds([k for k in coax if m.info[k]["ctr"][0] * s > 0])
-        nodes.append((f"coax_{side}", "gun", np.array([(clo[0] + chi[0]) * 0.5, (clo[1] + chi[1]) * 0.5, clo[2]]), frame(x=-X)))
-        marks.append((f"coax_muzzle_{side}", f"coax_{side}", np.array([(clo[0] + chi[0]) * 0.5, (clo[1] + chi[1]) * 0.5, chi[2]]), Z))
+        mg = m.pick(lambda lo, hi, c, sz: c[0] * s > 2.85 and 1.2 < c[1] < 1.75 and 0.8 < c[2] < 3.0)
+        m.take(f"mg_{side}", mg)
+        glo, ghi = m.bounds(mg)
+        nodes.append((f"mg_{side}", "", np.array([(glo[0] + ghi[0]) * 0.5, 1.45, 1.24]), frame(y=Y)))
+        tips = sorted((k for k in mg if m.info[k]["ctr"][2] > 2.7 and m.info[k]["size"][2] < 0.3), key=lambda k: -m.info[k]["ctr"][1])
+        for n, k in enumerate(tips[:2]):
+            i = m.info[k]
+            marks.append((f"mg_muzzle_{side}{n + 1}", f"mg_{side}", np.array([i["ctr"][0], i["ctr"][1], i["hi"][2]]), Z))
     # The four hover thrusters under the hull: round pads, everything within 0.7 m of a pad's middle below 0.75 m.
     for name, px, pz in (("FL", 1.93, 1.6), ("FR", -1.93, 1.6), ("RL", 1.86, -3.79), ("RR", -1.86, -3.79)):
         pad = m.pick(lambda lo, hi, c, sz: hi[1] < 0.75 and math.hypot(c[0] - px, c[2] - pz) < 0.7 and sz[0] < 1.3)
@@ -430,7 +435,7 @@ def main():
 
 # --------------------------------------------------------------------------------------------- preview
 
-POSES = {"coax": 0.0, "aileron": 0.45, "flap": 0.6, "stabilator": -0.35, "rudder": 0.5, "nozzle": 0.25, "pod": 0.9,
+POSES = {"mg": 0.4, "aileron": 0.45, "flap": 0.6, "stabilator": -0.35, "rudder": 0.5, "nozzle": 0.25, "pod": 0.9,
          "gun": 0.35, "turret": 0.8, "rotor": 0.5, "fan": 0.6, "tail": 0.6, "thruster": 0.3, "barrel": 0.0}
 
 
@@ -448,7 +453,7 @@ def scene_meshes(path, posed):
         name = n.get("name", "")
         if posed and "mesh" in n and name != "Body":
             a = POSES.get(name.split("_")[0], 0.0) * (-1 if name.endswith("_R") and name.startswith("aileron") else 1)
-            spin = name.startswith(("rotor", "fan", "tail", "turret"))
+            spin = name.startswith(("rotor", "fan", "tail", "turret", "mg"))
             r = np.eye(4)
             r[:3, :3] = axis_angle(Y if spin else X, a)
             lm = lm @ r

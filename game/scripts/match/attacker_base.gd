@@ -15,12 +15,16 @@ signal sabotaged(base: AttackerBase)
 signal retaken(base: AttackerBase)
 
 const MODEL := "res://assets/structures/forward_helipad_base/forward_helipad_base.glb"
-## Height the model is scaled to (m, to the mast tips): the deck then stands DECK_HEIGHT up on its
-## stilts and spans SIZE (x along its length, z across). Real size: the pad's touchdown square is about
-## 17 m across, room for a transport helicopter's rotor, and the containers on the deck are 6 m long.
+## The standard base (scale_factor 1): the model is scaled to HEIGHT (m, to the mast tips), the deck
+## then stands DECK_HEIGHT up on its stilts and spans SIZE (x along its length, z across); the containers
+## on it are 6 m long. The landing pad's white touchdown square is PAD_SIZE (x, z), its middle PAD_CENTRE
+## (x, z) off the deck's; striped edges run round it. A bigger base (scale_factor) scales all of it: the
+## Jungle Keep's Outpost is JungleLayout.OUTPOST_SCALE, its pad wide enough for the Heavy Lift Helicopter.
 const HEIGHT := 14.7
 const DECK_HEIGHT := 4.28
 const SIZE := Vector2(39.15, 30.3)
+const PAD_SIZE := Vector2(13.4, 12.2)
+const PAD_CENTRE := Vector2(-5.05, 0.1)
 ## Supply a second it brings in while the attackers hold it.
 const INCOME := 1.5
 ## Retaking it: ground units within CAPTURE_REACH of the deck's edge, for CAPTURE_TIME; every unit
@@ -50,6 +54,17 @@ var short_name := "Pad"
 var code := ""
 ## The attack lane it is by ("south", "east", "west").
 var side := ""
+## How much bigger than the standard base this one is (set before it enters the tree).
+var scale_factor := 1.0
+## This base's size: to the mast tips, the deck's height and footprint (x, z), its pad's touchdown square (m).
+var model_height: float:
+	get: return HEIGHT * scale_factor
+var deck_height: float:
+	get: return DECK_HEIGHT * scale_factor
+var deck_size: Vector2:
+	get: return SIZE * scale_factor
+var pad_size: Vector2:
+	get: return PAD_SIZE * scale_factor
 var team := GameConfig.TEAM_ATTACKER
 ## The attackers hold it: it spawns their units and brings in supply.
 var controlled := true
@@ -95,27 +110,32 @@ func _ready() -> void:
 	collision_mask = 0
 	var cs := CollisionShape3D.new()
 	var box := BoxShape3D.new()
-	box.size = Vector3(SIZE.x, DECK_HEIGHT, SIZE.y)
+	box.size = Vector3(deck_size.x, deck_height, deck_size.y)
 	cs.shape = box
-	cs.position.y = DECK_HEIGHT * 0.5
+	cs.position.y = deck_height * 0.5
 	add_child(cs)
-	add_child(Props.instance(MODEL, HEIGHT))
+	add_child(Props.instance(MODEL, model_height))
 	_build_marks()
 	_refresh()
+
+
+## The middle of the landing pad's touchdown square, on the deck (world).
+func pad_centre() -> Vector3:
+	return global_transform * Vector3(PAD_CENTRE.x * scale_factor, deck_height, PAD_CENTRE.y * scale_factor)
 
 
 ## Flat distance from `p` to the deck's footprint (0 under it).
 func edge_distance(p: Vector3) -> float:
 	var l := global_transform.affine_inverse() * p
-	return Vector2(maxf(absf(l.x) - SIZE.x * 0.5, 0.0), maxf(absf(l.z) - SIZE.y * 0.5, 0.0)).length()
+	return Vector2(maxf(absf(l.x) - deck_size.x * 0.5, 0.0), maxf(absf(l.z) - deck_size.y * 0.5, 0.0)).length()
 
 
 ## Spots `out` meters off the deck's edge all round it (the middle of each side and each corner),
 ## for a saboteur to walk up to.
 func spots_around(out: float) -> Array[Vector3]:
 	var spots: Array[Vector3] = []
-	var hx := SIZE.x * 0.5 + out
-	var hz := SIZE.y * 0.5 + out
+	var hx := deck_size.x * 0.5 + out
+	var hz := deck_size.y * 0.5 + out
 	for l: Vector3 in [Vector3(hx, 0, 0), Vector3(-hx, 0, 0), Vector3(0, 0, hz), Vector3(0, 0, -hz),
 			Vector3(hx * 0.8, 0, hz * 0.8), Vector3(-hx * 0.8, 0, hz * 0.8), Vector3(hx * 0.8, 0, -hz * 0.8), Vector3(-hx * 0.8, 0, -hz * 0.8)]:
 		spots.append(global_transform * l)
@@ -213,14 +233,14 @@ func _process(delta: float) -> void:
 	_wisp_cd -= delta
 	if _wisp_cd <= 0.0:
 		_wisp_cd = 0.35
-		var l := Vector3(randf_range(-0.35, 0.35) * SIZE.x, DECK_HEIGHT + 0.5, randf_range(-0.3, 0.3) * SIZE.y)
-		SmokeCloud.wisp(self, global_transform * l, 2.2)
+		var l := Vector3(randf_range(-0.35, 0.35) * deck_size.x, deck_height + 0.5, randf_range(-0.3, 0.3) * deck_size.y)
+		SmokeCloud.wisp(self, global_transform * l, 2.2 * sqrt(scale_factor))
 	_beacon.light_energy = 0.4 + 0.4 * absf(sin(Time.get_ticks_msec() * 0.004))
 
 
 ## The flag on its mast, the beacon, the name over it and the ring where units retake it.
 func _build_marks() -> void:
-	var corner := Vector3(SIZE.x * 0.5 - 1.0, DECK_HEIGHT, SIZE.y * 0.5 - 1.0)
+	var corner := Vector3(deck_size.x * 0.5 - 1.0, deck_height, deck_size.y * 0.5 - 1.0)
 	var pole := Mats.cylinder_mesh(0.12, 6.0, corner + Vector3(0, 3.0, 0), Mats.flat(Color(0.2, 0.2, 0.22), 0.6, 0.5), 6)
 	add_child(pole)
 	_flag = Mats.box_mesh(Vector3(2.0, 1.2, 0.05), corner + Vector3(-1.0, 5.3, 0), Mats.flat(HELD_COLOR))
@@ -236,7 +256,7 @@ func _build_marks() -> void:
 	_label.pixel_size = 0.0011
 	_label.font_size = 26
 	_label.outline_size = 8
-	_label.position = Vector3(0, HEIGHT + 2.0, 0)
+	_label.position = Vector3(0, model_height + 2.0, 0)
 	_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	add_child(_label)
 	var im := ImmediateMesh.new()
@@ -252,8 +272,8 @@ func _build_marks() -> void:
 
 ## The deck's outline pushed `out` meters out (round corners), dashed, `y` over the ground.
 func _dashed_outline(im: ImmediateMesh, out: float, y: float) -> void:
-	var hx := SIZE.x * 0.5
-	var hz := SIZE.y * 0.5
+	var hx := deck_size.x * 0.5
+	var hz := deck_size.y * 0.5
 	var pts: Array[Vector3] = []
 	var corners := [[Vector2(hx, hz), 0.0], [Vector2(-hx, hz), PI * 0.5], [Vector2(-hx, -hz), PI], [Vector2(hx, -hz), PI * 1.5]]
 	for c in corners:
