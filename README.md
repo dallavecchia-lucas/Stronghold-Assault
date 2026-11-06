@@ -433,6 +433,12 @@ godot --path game --resolution 1280x720 --fixed-fps 30 res://scenes/dev/chimp_sh
 # chimp_standing, chimp_leap, chimp_swing, chimp_swing_front, chimp_drop, chimp_run (.png)
 ```
 
+`game/scenes/dev/raft_chimp_video.tscn` films the chimps' swing and the rafts (`media/chimp_swing_rafts.mp4`, 47 s): a chimp leaping up into the trees and swinging through them, dropping down where they end; a hippo and an elephant with their rafts packed, the rafts put down for riders, the crossing (4x); then close by at half speed (`-- --close-up`), a hippo's raft put down for two riders, and `Space` letting them off and the raft coming apart, a fresh pack on its back. `-- --rafts-only` films just the rafts. The video was cut together from the three runs (the map's loading frames and a stretch where the camera went through the bank cut out):
+
+```sh
+godot --path game --resolution 1280x720 --write-movie video.avi --fixed-fps 30 res://scenes/dev/raft_chimp_video.tscn [-- --rafts-only | --close-up]
+```
+
 ### Jungle Keep showcase
 
 Checks that the Jungle Keep's water can't be crossed on foot: on the navmesh the citadel has no way to any gate (its paths end on the river's south bank), nor the Outpost helipad to the east gate, while the Quarry helipad has one to the west gate, none of them into the water; and walkers driven straight at the rivers by physics alone (no navmesh) stop at the water's edge. With `--shots` it then takes stills round the map, units standing about for scale (a War Elephant and a Night Ops Chimp by the citadel's hull), and first-person ones through the garrison rifleman's eyes from the gun decks and the roofs:
