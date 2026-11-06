@@ -8,11 +8,13 @@
                engines, `muzzle_L/R` on the twin guns.
   hover_tank   the defenders' Iron Vanguard hover tank (assets_src/defenders/iron_vanguard): the turret turns
                (`turret`), the gun elevates (`gun`) and the barrel recoils in it (`barrel`, `muzzle` at its tip);
+               the two coaxial machine guns either side of the cannon's root ride the gun (`coax_L/R`, their
+               muzzles `coax_muzzle_L/R`);
                four gimballed hover thrusters under the hull (`thruster_FL/FR/RL/RR`, `jet_*` where the thrust
                comes out) and `booster_L/R` on the rear vents.
   helicopter   the attackers' Heavy Lift Helicopter (assets_src/units/heavy_lift_helicopter): a tandem lifter,
                the front rotor (`rotor_F`), the rear one on the hump (`rotor_R`) and the ducted tail fan
-               (`tail_fan`); `sling` under the belly where a load hangs.
+               (`tail_fan`).
 
 Every model comes out at its game size in metres, its front +Z, up +Y, its origin on the ground under its
 middle (the drone and the jet: under the middle of the fuselage, their lowest point at y = 0). The parts are
@@ -25,7 +27,7 @@ turn it about one of them (VehicleRig and the rigs under game/scripts/vehicles):
       the trailing edge down (ailerons, flaps, stabilators), a rudder's trailing edge to the vehicle's left
       (+X), a nozzle's exit down, the gun's muzzle up, a pod's fan tilting forward;
   spinners (rotors, fans, the turret): turn about local +Y (the rotors' and fans' shafts, the turret's ring);
-  markers (exhausts, muzzles, jets, sling): empty nodes, local +Z out of the barrel or along the exhaust.
+  markers (exhausts, muzzles, jets): empty nodes, local +Z out of the barrel or along the exhaust.
 
 Textures are fitted to --size (default 1024; the helicopter 2048) like tools/gltf/process_prop.py does.
 
@@ -48,7 +50,7 @@ from process_prop import shrink_images  # noqa: E402
 from split_raft import components, gather  # noqa: E402
 
 ## Game sizes (m): the length nose to tail (the tank's with its gun forward, the helicopter's without the
-## rotors' sweep). The helicopter is immense: it lifts war elephants.
+## rotors' sweep). The helicopter is immense: war elephants ride in its hold.
 LENGTH = {"fighter_jet": 18.0, "drone": 1.8, "hover_tank": 10.0, "helicopter": 64.0}
 ## The length the cuts below were measured at (m), where it isn't the game's: the model is cut at this size,
 ## then scaled to LENGTH.
@@ -261,9 +263,14 @@ def drone(m):
 def hover_tank(m):
     nodes, marks = [], []
     gun = m.pick(lambda lo, hi, c, sz: lo[1] > 2.8 and abs(c[0]) < 0.55 and c[2] > -0.4 and hi[2] > 0.5)
-    barrel = {k for k in gun if m.info[k]["lo"][2] > 0.5}
+    # The two coaxial machine guns either side of the cannon's root ride the gun (they elevate with it but
+    # don't recoil with the barrel): thin tubes 0.3 m out from its axis.
+    coax = {k for k in gun if abs(m.info[k]["ctr"][0]) > 0.2 and m.info[k]["size"][0] < 0.2 and m.info[k]["size"][2] > 0.6}
+    barrel = {k for k in gun if m.info[k]["lo"][2] > 0.5} - coax
     m.take("barrel", barrel)
-    m.take("gun", gun - barrel)
+    for side, s in (("L", 1.0), ("R", -1.0)):
+        m.take(f"coax_{side}", {k for k in coax if m.info[k]["ctr"][0] * s > 0})
+    m.take("gun", gun - barrel - coax)
     turret = m.pick(lambda lo, hi, c, sz: lo[1] >= 2.58 and max(abs(lo[0]), abs(hi[0])) < 2.0 and c[2] < 0.3 and c[2] > -5.0)
     m.take("turret", turret - gun)
     ring = m.pick(lambda lo, hi, c, sz: sz[0] > 2.5 and sz[1] < 0.3 and abs(sz[0] - sz[2]) < 0.1)
@@ -274,6 +281,10 @@ def hover_tank(m):
               ("gun", "turret", trunnion, frame(x=-X)),
               ("barrel", "gun", trunnion, frame(x=-X))]
     marks.append(("muzzle", "barrel", np.array([(blo[0] + bhi[0]) * 0.5, (blo[1] + bhi[1]) * 0.5, bhi[2]]), Z))
+    for side, s in (("L", 1.0), ("R", -1.0)):
+        clo, chi = m.bounds([k for k in coax if m.info[k]["ctr"][0] * s > 0])
+        nodes.append((f"coax_{side}", "gun", np.array([(clo[0] + chi[0]) * 0.5, (clo[1] + chi[1]) * 0.5, clo[2]]), frame(x=-X)))
+        marks.append((f"coax_muzzle_{side}", f"coax_{side}", np.array([(clo[0] + chi[0]) * 0.5, (clo[1] + chi[1]) * 0.5, chi[2]]), Z))
     # The four hover thrusters under the hull: round pads, everything within 0.7 m of a pad's middle below 0.75 m.
     for name, px, pz in (("FL", 1.93, 1.6), ("FR", -1.93, 1.6), ("RL", 1.86, -3.79), ("RR", -1.86, -3.79)):
         pad = m.pick(lambda lo, hi, c, sz: hi[1] < 0.75 and math.hypot(c[0] - px, c[2] - pz) < 0.7 and sz[0] < 1.3)
@@ -293,7 +304,6 @@ def hover_tank(m):
 def helicopter(m):
     nodes, marks = [], []
     body = max(m.info, key=lambda k: m.info[k]["n"])
-    blo, bhi = m.info[body]["lo"], m.info[body]["hi"]
     # The rear rotor on the hump (its blades at y 16.8) and the front one, lower (12.4). The hubs are the
     # pieces round the shafts: a rotor is every piece up there within its blades' reach of its hub.
     for name, y0, y1, zc, reach in (("rotor_R", 15.2, 99.0, -9.1, 22.5), ("rotor_F", 11.0, 13.6, 15.9, 16.5)):
@@ -308,7 +318,6 @@ def helicopter(m):
     hub = m.info[max(fan, key=lambda k: m.info[k]["size"][0])]["ctr"]
     m.take("tail_fan", fan)
     nodes.append(("tail_fan", "", hub, frame(y=X)))
-    marks.append(("sling", "", np.array([(blo[0] + bhi[0]) * 0.5, 0.0, -2.0]), -Y))
     return nodes, marks
 
 
@@ -421,7 +430,7 @@ def main():
 
 # --------------------------------------------------------------------------------------------- preview
 
-POSES = {"aileron": 0.45, "flap": 0.6, "stabilator": -0.35, "rudder": 0.5, "nozzle": 0.25, "pod": 0.9,
+POSES = {"coax": 0.0, "aileron": 0.45, "flap": 0.6, "stabilator": -0.35, "rudder": 0.5, "nozzle": 0.25, "pod": 0.9,
          "gun": 0.35, "turret": 0.8, "rotor": 0.5, "fan": 0.6, "tail": 0.6, "thruster": 0.3, "barrel": 0.0}
 
 

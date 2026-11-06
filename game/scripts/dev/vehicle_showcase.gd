@@ -3,23 +3,29 @@ extends Node3D
 ## and Defender fighter jet, and the attackers' Heavy Lift Helicopter, each flown or driven along a scripted path by
 ## moving its rig about; the rigs animate their parts off that motion (VehicleRig follow_motion).
 ##
-##   tank   (0-12 s)  hovers, speeds off and stops (the thrusters gimbal, the boosters burn, the hull sits back and
-##                    dips), turns, swings its turret onto a target, elevates and fires twice (recoil).
-##   drone  (12-22 s) hovers, its pods up and its fans spinning; flies off (the pods tilt forward), turns, brakes
+##   tank   (0-16 s)  hovers, speeds off and stops (the thrusters gimbal, the boosters burn, the hull sits back and
+##                    dips), turns, swings its turret onto a target and elevates; fires the main gun (the barrel slams
+##                    back and runs slowly out, the tank rocks back on its cushion), a burst from the two coaxial
+##                    machine guns, and the main gun again.
+##   drone  (16-26 s) hovers, its pods up and its fans spinning; flies off (the pods tilt forward), turns, brakes
 ##                    (they tilt back) and hovers again.
-##   jet    (22-32 s) a low pass: rolls into a hard turn (ailerons, stabilators pulling, rudders), rolls out and
+##   jet    (26-36 s) a low pass: rolls into a hard turn (ailerons, stabilators pulling, rudders), rolls out and
 ##                    climbs away on afterburner.
-##   helo   (32-56 s) one helicopter spools its rotors up on the ground beside a war elephant, for scale; a second
-##                    flies by with an elephant on its sling, speeds up and stops: the load trails
-##                    behind it and swings ahead as it brakes.
+##   helo   (36-60 s) one helicopter spools its rotors up on the ground beside a war elephant, for scale; a second
+##                    flies by, speeds up and stops, its rotor discs tilting forward and back.
 ##
 ##   godot --path game --headless --fixed-fps 30 res://scenes/dev/vehicle_showcase.tscn -- --test   # VEHICLE SHOWCASE PASS / FAIL
 ##   godot --path game --rendering-driver opengl3 --resolution 1280x720 --fixed-fps 30 \
-##       res://scenes/dev/vehicle_showcase.tscn -- --snap=6,9.6,15,26,40,50 --snap-out=/tmp/vehicles
+##       res://scenes/dev/vehicle_showcase.tscn -- --snap=6,10.1,12.5,19,30.5,42,52 --snap-out=/tmp/vehicles
 ##
 ## --cam=tank|drone|jet|helo|lift keeps the camera on one of them the whole time (default: each in its turn).
 
-const END := 56.0
+const END := 60.0
+## Everything after the tank's turn starts this much later.
+const LATER := 4.0
+## The tank's main gun shots and its coaxial machine guns' burst (s).
+const SHOTS := [10.0, 14.4]
+const BURST := [11.6, 13.2]
 const TANK_AT := Vector3(0, 0, 0)
 const DRONE_AT := Vector3(-70, 7, 20)
 const HELO_AT := Vector3(110, 0, 60)
@@ -81,7 +87,6 @@ func _ready() -> void:
 	add_child(lift)
 	lift.position = LIFT_AT
 	lift.start()
-	lift.carry(_elephant(), 16.0, 3.7)
 	# The tank's target: a bunker on a rock, above the gun.
 	add_child(Mats.box_mesh(Vector3(9, 8, 9), TARGET - Vector3(0, 5.5, 0), Mats.rock()))
 	add_child(Mats.box_mesh(Vector3(3, 3, 3), TARGET, Mats.flat(Color(0.6, 0.15, 0.1))))
@@ -132,43 +137,44 @@ func _move_tank(delta: float) -> void:
 	tank.position += Vector3(sin(_tank[1]), 0, cos(_tank[1])) * _tank[0] * delta
 	if t > 6.0:
 		tank.aim(TARGET)
-	for at in [9.6, 11.2]:
-		if t >= at and _fired < [9.6, 11.2].find(at) + 1:
-			tank.fire()
-			_fired += 1
-			Combat.spawn_muzzle_light(self, tank.muzzle().origin)
+	if _fired < SHOTS.size() and t >= SHOTS[_fired]:
+		tank.fire()
+		_fired += 1
+	tank.coax_firing = t >= BURST[0] and t < BURST[1]
 
 
 func _move_drone(delta: float) -> void:
+	var u := t - LATER
 	var acc := 0.0
 	var yaw_rate := 0.0
-	if t > 13.5 and t < 17.0:
+	if u > 13.5 and u < 17.0:
 		acc = 5.0
-	if t > 16.0 and t < 18.5:
+	if u > 16.0 and u < 18.5:
 		yaw_rate = 0.7
-	if t > 18.5 and t < 22.0:
+	if u > 18.5 and u < 22.0:
 		acc = -6.0 if _drone[0] > 0.0 else 0.0
 	_drone[0] = maxf(_drone[0] + acc * delta, 0.0)
 	_drone[1] += yaw_rate * delta
 	drone.rotation.y = _drone[1]
 	drone.position += Vector3(sin(_drone[1]), 0, cos(_drone[1])) * _drone[0] * delta
-	if t > 12.0 and t < 13.5:
+	if u > 12.0 and u < 13.5:
 		drone.position.y += delta * 1.2
 
 
 func _move_jet(delta: float) -> void:
+	var u := t - LATER
 	# Straight and level, then a hard turn to the left (rolled in at about 90°/s), rolled out, and a climb.
 	var turn := 0.0
 	var want_bank := 0.0
-	if t > 25.0 and t < 29.0:
+	if u > 25.0 and u < 29.0:
 		want_bank = deg_to_rad(-68.0)  # left wing down (roll left)
 	var bank: float = move_toward(_jet[3], want_bank, deg_to_rad(90.0) * delta)
 	_jet[3] = bank
 	turn = -tan(bank) * 9.8 / _jet[0]  # coordinated: left bank turns it left (+heading)
 	_jet[1] += turn * delta
-	var want_pitch := deg_to_rad(18.0) if t > 29.5 else 0.0
+	var want_pitch := deg_to_rad(18.0) if u > 29.5 else 0.0
 	_jet[2] = move_toward(_jet[2], want_pitch, deg_to_rad(20.0) * delta)
-	if t > 29.5:
+	if u > 29.5:
 		_jet[0] += 12.0 * delta
 	var heading: float = _jet[1]
 	var pitch: float = _jet[2]
@@ -177,24 +183,25 @@ func _move_jet(delta: float) -> void:
 	# Body frame: +Z forward, banked about it (roll right +).
 	var b := Basis(Vector3.UP, heading) * Basis(Vector3.RIGHT, -pitch) * Basis(Vector3.BACK, bank)
 	jet.basis = b
-	if t < 22.0:
+	if u < 22.0:
 		# Wait off stage until its pass.
 		jet.position = Vector3(-60, 60, -700)
 		_jet = [110.0, 0.0, 0.0, 0.0]
 
 
 func _move_helos(delta: float) -> void:
-	if t > 33.0:
+	var u := t - LATER
+	if u > 33.0:
 		helo.start()
 	# The lifter: from a hover, it speeds up along +Z, cruises and stops.
 	var acc := 0.0
-	if t > 44.0 and t < 49.0:
+	if u > 44.0 and u < 49.0:
 		acc = 2.5
-	elif t >= 50.5 and _lift[0] > 0.0:
+	elif u >= 50.5 and _lift[0] > 0.0:
 		acc = -3.0
 	_lift[0] = maxf(_lift[0] + acc * delta, 0.0)
 	lift.position += Vector3(0, 0, _lift[0] * delta)
-	if t < 40.0:
+	if u < 40.0:
 		lift.position = LIFT_AT
 
 
@@ -203,11 +210,18 @@ func _move_helos(delta: float) -> void:
 func _camera() -> void:
 	var who := _cam_only
 	if who == "":
-		who = "tank" if t < 12.0 else "drone" if t < 22.0 else "jet" if t < 32.0 else "helo" if t < 41.0 else "lift"
+		var u := t - LATER
+		who = "tank" if u < 12.0 else "drone" if u < 22.0 else "jet" if u < 32.0 else "helo" if u < 41.0 else "lift"
 	match who:
 		"tank":
 			var p := tank.global_position
-			_look(p + Vector3(-13, 5.5, 9) + Vector3(0, 0, minf(p.z, 20.0) * 0.2), p + Vector3(0, 2.0, 2))
+			if t < SHOTS[0] - 0.8:
+				_look(p + Vector3(-13, 5.5, 9) + Vector3(0, 0, minf(p.z, 20.0) * 0.2), p + Vector3(0, 2.0, 2))
+			else:
+				# Side-on to the gun for the shots: the barrel's recoil, the blast and the rock.
+				var d := tank.global_basis * Vector3(sin(tank.turret_yaw()), 0, cos(tank.turret_yaw()))
+				var side := d.cross(Vector3.UP).normalized()
+				_look(p + side * 11.5 + d * 1.5 + Vector3.UP * 4.0, p + d * 2.2 + Vector3.UP * 2.6)
 		"drone":
 			var p := drone.global_position
 			_look(p + Vector3(-3.6, 1.3, 1.6).rotated(Vector3.UP, _drone[1] * 0.6), p + Vector3(0, 0.35, 0))
@@ -220,7 +234,7 @@ func _camera() -> void:
 			_look(p + Vector3(-62, 7, 52), p + Vector3(-12, 8, 6))
 		"lift":
 			var p := lift.global_position
-			_look(p + Vector3(-110, -12, 40), p + Vector3(0, -12, 4))
+			_look(p + Vector3(-100, -6, 34), p + Vector3(0, 5, 6))
 
 
 func _look(from: Vector3, at: Vector3) -> void:
@@ -244,13 +258,16 @@ func _watch() -> void:
 	_max("helo_power", helo.rotor_power())
 	_max("helo_turned", absf(helo.rotor_angle("rotor_F")))
 	_max("lift_tilt", lift.disc_tilt("rotor_F").x)
-	_max("lift_swing", absf(lift.swing().x))
-	if t > 22.0 and t < 22.5:
+	_max("tank_rock", tank.rock())
+	_max("coax_rounds", tank.coax_rounds())
+	if t >= SHOTS[0] + 0.5 and t < SHOTS[0] + 0.55:
+		_seen["recoil_half_second"] = tank.recoil()
+	if t >= SHOTS[0] + 3.0 and t < SHOTS[0] + 3.05:
+		_seen["rock_after_3s"] = tank.rock()
+	if t - LATER > 22.0 and t - LATER < 22.5:
 		_seen["drone_back"] = drone.pod_tilt(0)
-	if t > 31.9 and t < 32.0:
+	if t > 15.9 and t < 16.0:
 		_seen["tank_aimed"] = 1.0 if tank.aimed() else 0.0
-	if t > END - 0.1:
-		_seen["swing_end"] = absf(lift.swing().x)
 
 
 func _max(key: String, v: float) -> void:
@@ -265,7 +282,9 @@ func _finish() -> void:
 		["tank thrusters gimbal", _seen.tank_gimbal > deg_to_rad(10.0)],
 		["tank turret traverses onto the target", _seen.tank_yaw > deg_to_rad(20.0) and _seen.tank_aimed > 0.5],
 		["tank gun elevates", _seen.tank_elev > deg_to_rad(1.0)],
-		["tank barrel recoils", _seen.tank_recoil > 0.5],
+		["tank barrel recoils, heavy and slow (still back half a second on)", _seen.tank_recoil > 0.5 and _seen.recoil_half_second > 0.3],
+		["the tank rocks on the shot and settles", _seen.tank_rock > deg_to_rad(1.5) and _seen.rock_after_3s < _seen.tank_rock * 0.3],
+		["coaxial machine guns fire bursts", _seen.coax_rounds >= 20],
 		["drone pods tilt forward to fly", _seen.drone_tilt > deg_to_rad(45.0)],
 		["drone pods back up hovering", absf(_seen.drone_back) < deg_to_rad(10.0)],
 		["drone fans spin up", _seen.drone_fan > 5.0],
@@ -275,7 +294,6 @@ func _finish() -> void:
 		["jet afterburners light in the climb", _seen.jet_burner > 0.3],
 		["helicopter spools up", _seen.helo_power > 0.95 and _seen.helo_turned > 1.0],
 		["lifter tilts its discs forward", _seen.lift_tilt > deg_to_rad(3.0)],
-		["the elephant swings on its cable", _seen.lift_swing > deg_to_rad(4.0)],
 	]
 	var ok := true
 	for c in checks:
