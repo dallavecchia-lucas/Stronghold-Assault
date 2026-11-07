@@ -211,7 +211,7 @@ func _enter(p: String) -> void:
 			hero.camo_left = 0.0
 			for tr in hero.troopers:
 				(tr as InfiltratorTrooper).set_camo(false, false)
-			var side := pad.global_transform * Vector3(0.0, 0.0, AttackerBase.SIZE.y * 0.5 + 2.0)
+			var side := pad.global_transform * Vector3(0.0, 0.0, pad.deck_size.y * 0.5 + 2.0)
 			_teleport(hero, side + (side - pad.global_position).normalized() * 1.0, pad.global_position)
 			_look = pad.global_position + Vector3.UP * 7.0
 			_say("F · Sabotage", "Next to an enemy helipad: 45 s to take it out of the attackers' hands")

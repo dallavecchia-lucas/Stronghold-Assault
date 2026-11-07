@@ -180,7 +180,7 @@ func _prepare() -> void:
 func _height_row(j: int) -> void:
 	var L := JungleLayout
 	var flat_c := [L.MAIN_SPAWN, L.QUARRY, L.OUTPOST]
-	var flat_r := [110.0, 75.0, 75.0]
+	var flat_r := [110.0, 75.0, 195.0]
 	var rg_c := PackedVector2Array()
 	var rg_r := PackedVector2Array()
 	var rg_h := PackedFloat32Array()

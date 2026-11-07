@@ -59,7 +59,8 @@ func refresh() -> void:
 			viewers.append([u.global_position, u.sight()])
 	for b in get_tree().get_nodes_in_group("attacker_bases"):
 		if b.controlled:
-			viewers.append([b.global_position, BASE_SIGHT])
+			# BASE_SIGHT round a standard deck; a bigger base sees as far round its own.
+			viewers.append([b.global_position, BASE_SIGHT + (b.deck_size.length() - AttackerBase.SIZE.length()) * 0.5])
 	_seen.clear()
 	for d in get_tree().get_nodes_in_group("defender_targets"):
 		var seen := _in_sight(d.global_position, BODY)

@@ -447,7 +447,7 @@ func _hold_sabotage() -> void:
 		_walk_leader_to(spot, 0.8)
 	else:
 		leader.following = false
-	aim_point = op.global_position + Vector3.UP * AttackerBase.DECK_HEIGHT
+	aim_point = op.global_position + Vector3.UP * op.deck_height
 
 
 ## Back to its hall: out in the field, round the attackers to the gate nearest it, then in through the
