@@ -162,6 +162,29 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
 
 Balance numbers live in `game/scripts/units/unit_types.gd` and the constants at the top of each defense script.
 
+### Light and effects
+
+**The light** (`game/scripts/fx/atmosphere.gd`, both maps). The sky is drawn by a shader: deep blue overhead paling to a bright haze at the horizon, the haze over the far land below it (the fog's colour, so the land fades into it), a warm glow round the sun and its disk blooming, and clouds lit from the sun's side and shadowed underneath, thinning into the haze. The sun is warm and its shadows soft, hardening where they touch, over four cascades. ACES tone mapping with a wide bloom: anything brighter than white (the sun, fire, flashes) glows. Ambient occlusion darkens the creases, screen-space indirect light bounces colour (and a blast's glare) onto what stands round it, and volumetric fog fills the air: shafts of sunlight through the canopy, a halo round every fire, muzzle flash and blast. The fog thins as the camera climbs (it follows the camera's height over the ground), so the strategy view stays clear. The volumetric fog, the indirect light and the warp below are Forward+ (and Mobile) only; the Compatibility renderer draws the rest.
+
+**The effects** (`game/scripts/fx/fx.gd`, the scene's `FX`; `Combat.spawn_*` go through it). Particles live in a few MultiMeshes, a draw call each, and move on the GPU: each is written once, when it is spawned, and the vertex shader works out where it is from its age (launched, dragged toward the wind, pulled down by gravity or lifted by its heat, in closed form), so thousands cost the CPU nothing frame to frame:
+
+- **Smoke** billows, lit: the sun, the sky and the blasts' own lights fall on it (wrapping round each puff, shining through its thin edges against the light), it glows orange from the fire inside for its first moments, pales as it thins, drifts on the wind and fades softly where it meets the ground instead of cutting into it.
+- **Fire** is premultiplied, glowing and sooty at once: each puff burns white-hot through yellow and orange to a dull red as it cools, hottest in its dense core, licked by noise rolling up through it, and what has cooled turns to soot.
+- **Sparks**, shrapnel, embers and **tracers** are streaks smeared along their motion with a hot head; sparks fall, skid along the ground and cool to red; a tracer has a white-hot head and is never thinner than a pixel, however far off.
+- **Flares** (glows, star-shaped flashes, rings) bloom; **warp** bends the scene behind it: the shock wave racing out over the ground, a shock bubble in the air, heat haze over the fire.
+- **Debris**: chunks flung out on arcs, tumbling, trailing smoke (and fire while they glow), bouncing and coming to rest.
+- **Lights**: a pool of flickering lights (a white-hot flash cooling to orange), the biggest blasts' casting shadows; **scorch marks** burnt into the ground with embers glowing in them at first, fading after 45 s; **camera shake** by how big and how close a blast is.
+
+A blast (`FX.blast`, `Combat.explode`) is all of it: the flash and its light, a fireball rolling up into a column of dark smoke lit from inside, sparks and embers, burning debris, and on the ground a skirt of dust rolling out, dirt thrown up in columns that fall back, the shock wave and the scorch mark. Guns flash with tongues of flame out of the muzzle and a star of them round it (`FX.muzzle_flash`; the Heavy Gunner's and the Sniper's carry a `MuzzleFlash` of their own, on the Sniper's body layer so her scope doesn't see it); cannons, mortars and launchers go off in a gout of flame with a ring of smoke blown out round the muzzle (`FX.muzzle_blast`); rounds strike with sparks off the surface and a puff of its dust; flak bursts black with shrapnel; missiles and rockets fly on a jet of flame trailing thick white smoke; shells fly glowing with a wake of heat; a knocked-out gun or turret smoulders (`WreckSmoke`). The flamethrowers and the burning forest (`FireFX`) burn with the same fire and smoke.
+
+`game/scenes/dev/fx_showcase.tscn` plays them all on a loop on the classic field (`-- --jungle`: the Jungle Keep), a camera circling: a grenade's, a mine's and a heavy shell's blasts, an air burst, flak, a field gun firing a shell over, riflemen firing tracers into the ground, a rocket diving in, a salvo of shells and a burning wreck:
+
+```sh
+godot --path game res://scenes/dev/fx_showcase.tscn                              # to watch it
+godot --path game --resolution 1600x900 res://scenes/dev/fx_showcase.tscn -- --shots=/tmp/fx   # its stills, then quits
+godot --path game --headless res://scenes/dev/fx_showcase.tscn -- --test         # prints and checks: FX SHOWCASE PASS / FAIL
+```
+
 ### Intro cinematic
 
 The game opens with a ~3.5 minute intro (`game/scenes/intro.tscn`, built in `game/scripts/intro/intro.gd`); any key skips it, and the main menu has a **Watch Intro** button. Lore cards, shots and lighting cues are timed to the score in a table at the top of the script.

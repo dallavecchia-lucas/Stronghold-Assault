@@ -46,7 +46,7 @@ var _muzzle: Node3D
 var _gunner: Node3D
 var _viewmodel: Node3D
 var _turret: Node3D
-var _smoke: CPUParticles3D
+var _smoke: WreckSmoke
 
 
 func _ready() -> void:
@@ -116,23 +116,8 @@ func _ready() -> void:
 		_yaw_pivot.add_child(_turret)
 		_viewmodel.visible = false
 
-	_smoke = CPUParticles3D.new()
-	var q := QuadMesh.new()
-	q.size = Vector2(1, 1)
-	var sm := StandardMaterial3D.new()
-	sm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	sm.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	sm.albedo_color = Color(0.15, 0.15, 0.15, 0.5)
-	q.material = sm
-	_smoke.mesh = q
-	_smoke.amount = 12
-	_smoke.lifetime = 2.5
-	_smoke.direction = Vector3.UP
-	_smoke.initial_velocity_min = 1.0
-	_smoke.initial_velocity_max = 2.0
-	_smoke.gravity = Vector3(0, 0.5, 0)
-	_smoke.scale_amount_max = 2.0
-	_smoke.emitting = false
+	# Knocked out, it smokes and smoulders until it is repaired.
+	_smoke = WreckSmoke.new()
 	_smoke.position.y = 1.0
 	add_child(_smoke)
 
@@ -266,10 +251,11 @@ func _try_fire(player: bool) -> bool:
 	if player:
 		var from := _camera.global_position
 		Combat.fire_hitscan(self, from, from - _camera.global_basis.z * 100.0, 0.012, PLAYER_DAMAGE, team, 0.3, [get_rid()], muzzle)
-		Combat.spawn_muzzle_light(self, muzzle)
+		Combat.spawn_muzzle_flash(self, muzzle, -_camera.global_basis.z, 1.4, true)
 		_shake = maxf(_shake, 0.12)
 	else:
 		Combat.fire_hitscan(self, muzzle, muzzle - _pitch_pivot.global_basis.z * 100.0, 0.035, AI_DAMAGE, team, 0.3, [get_rid()])
+		Combat.spawn_muzzle_flash(self, muzzle, -_pitch_pivot.global_basis.z, 1.4)
 	return true
 
 

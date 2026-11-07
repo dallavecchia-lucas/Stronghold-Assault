@@ -39,8 +39,11 @@ static func blocks(from: Vector3, to: Vector3) -> bool:
 
 
 ## A small puff that rises and fades in about a second (overheating guns). Blocks nothing. Drawn on
-## render `layers` (a camera can leave it out).
+## render `layers` (a camera can leave it out); on the default layer it is the scene's lit smoke (FX).
 static func wisp(ctx: Node, pos: Vector3, size := 0.8, layers := 1) -> void:
+	if layers == 1:
+		FX.of(ctx).puff(pos, size, Color(0.58, 0.57, 0.55, 0.55))
+		return
 	var mi := MeshInstance3D.new()
 	var quad := QuadMesh.new()
 	quad.size = Vector2.ONE * size

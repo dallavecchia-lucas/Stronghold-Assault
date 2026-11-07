@@ -104,6 +104,8 @@ const FOREST_NEAR := 8.0
 const REBAKE_DELAY := 6.0
 
 var nav_region: NavigationRegion3D
+## The sky, sun and haze (and the WorldEnvironment and DirectionalLight3D it added under the level).
+var atmosphere: Atmosphere
 var keep: Structure
 var gates := {}  # side -> Structure
 var stations := []  # possessable defender stations, in hotkey order
@@ -277,47 +279,9 @@ func _box(size: Vector3, pos: Vector3, mat: Material, rot := Vector3.ZERO, paren
 
 # ---------------------------------------------------------------- build steps
 
+## The sky, the sun, the haze and how it is all rendered (Atmosphere).
 func _build_environment() -> void:
-	var env := Environment.new()
-	var sky_mat := ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color(0.32, 0.47, 0.68)
-	sky_mat.sky_horizon_color = Color(0.72, 0.72, 0.68)
-	sky_mat.ground_horizon_color = Color(0.5, 0.48, 0.42)
-	sky_mat.ground_bottom_color = Color(0.2, 0.19, 0.16)
-	sky_mat.sun_angle_max = 20.0
-	var sky := Sky.new()
-	sky.sky_material = sky_mat
-	env.background_mode = Environment.BG_SKY
-	env.sky = sky
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 0.8
-	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	env.tonemap_white = 6.0
-	env.ssao_enabled = true
-	env.ssao_radius = 1.5
-	env.ssao_intensity = 1.6
-	env.glow_enabled = true
-	env.glow_intensity = 0.6
-	env.glow_bloom = 0.05
-	env.fog_enabled = true
-	env.fog_light_color = Color(0.62, 0.66, 0.7)
-	env.fog_density = 0.0025
-	env.fog_aerial_perspective = 0.6
-	env.adjustment_enabled = true
-	env.adjustment_saturation = 1.1
-	env.adjustment_contrast = 1.05
-	var we := WorldEnvironment.new()
-	we.environment = env
-	add_child(we)
-
-	var sun := DirectionalLight3D.new()
-	sun.light_color = Color(1.0, 0.93, 0.82)
-	sun.light_energy = 1.3
-	sun.rotation = Vector3(deg_to_rad(-48.0), deg_to_rad(35.0), 0)
-	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 320.0
-	sun.directional_shadow_blend_splits = true
-	add_child(sun)
+	atmosphere = Atmosphere.build(self, false)
 
 
 func _build_ground() -> void:

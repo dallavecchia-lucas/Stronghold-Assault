@@ -93,55 +93,9 @@ func _build_all() -> void:
 	rebake_navigation()
 
 
+## The sky, the sun, the haze and how it is all rendered (Atmosphere).
 func _build_environment() -> void:
-	var env := Environment.new()
-	var sky_mat := ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color(0.3, 0.46, 0.66)
-	sky_mat.sky_horizon_color = Color(0.68, 0.73, 0.72)
-	# Below the horizon the sky is the haze over the far forest, so the land fades into it.
-	sky_mat.ground_horizon_color = Color(0.66, 0.71, 0.7)
-	sky_mat.ground_bottom_color = Color(0.5, 0.56, 0.52)
-	sky_mat.sun_angle_max = 25.0
-	var sky := Sky.new()
-	sky.sky_material = sky_mat
-	env.background_mode = Environment.BG_SKY
-	env.sky = sky
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 0.75
-	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	env.tonemap_white = 6.0
-	env.ssao_enabled = true
-	env.ssao_radius = 2.0
-	env.ssao_intensity = 2.0
-	# The rivers and the lake mirror the forest and the sky (Forward+).
-	env.ssr_enabled = true
-	env.ssr_max_steps = 48
-	env.ssr_fade_in = 0.2
-	env.ssr_fade_out = 2.0
-	env.glow_enabled = true
-	env.glow_intensity = 0.5
-	env.glow_bloom = 0.04
-	# Haze: the far forest fades blue-grey.
-	env.fog_enabled = true
-	env.fog_light_color = Color(0.66, 0.71, 0.7)
-	env.fog_density = 0.00045
-	env.fog_aerial_perspective = 0.3
-	env.fog_sky_affect = 0.2
-	env.adjustment_enabled = true
-	env.adjustment_saturation = 1.12
-	env.adjustment_contrast = 1.06
-	var we := WorldEnvironment.new()
-	we.environment = env
-	add_child(we)
-
-	var sun := DirectionalLight3D.new()
-	sun.light_color = Color(1.0, 0.92, 0.78)
-	sun.light_energy = 1.35
-	sun.rotation = Vector3(deg_to_rad(-52.0), deg_to_rad(35.0), 0)
-	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 420.0
-	sun.directional_shadow_blend_splits = true
-	add_child(sun)
+	atmosphere = Atmosphere.build(self, true)
 
 
 func _build_ground() -> void:

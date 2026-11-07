@@ -362,7 +362,7 @@ func _player_update(delta: float) -> void:
 			var from := _camera.global_position
 			var aim_at := from - _camera.global_basis.z * 100.0
 			Combat.fire_hitscan(self, from, aim_at, spread, PLAYER_DAMAGE, team, 0.3, [get_rid()], _muzzle.global_position)
-			Combat.spawn_muzzle_light(self, _muzzle.global_position)
+			Combat.spawn_muzzle_flash(self, _muzzle.global_position, aim_at - _muzzle.global_position, 0.7, true)
 			_kick = 0.04
 			if _scope:
 				_scope.fired()
@@ -419,7 +419,7 @@ func _ai_update(delta: float) -> void:
 		var muzzle = _body_muzzle.global_position if _body_muzzle else null
 		Combat.fire_hitscan(self, eye, Combat.aim_point(_target), 0.05, AI_DAMAGE, team, 0.3, [get_rid()], muzzle)
 		if _body_muzzle:
-			Combat.spawn_impact(self, _body_muzzle.global_position, false)  # muzzle flash
+			Combat.spawn_muzzle_flash(self, _body_muzzle.global_position, Combat.aim_point(_target) - _body_muzzle.global_position)
 
 
 func _find_target() -> Node3D:

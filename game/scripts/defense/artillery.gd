@@ -238,7 +238,7 @@ func _launch(point: Vector3, reload: float) -> void:
 	shell.radius = SHELL_RADIUS
 	get_tree().current_scene.add_child(shell)
 	shell.launch(_muzzle.global_position, point)
-	Combat.spawn_explosion(self, _muzzle.global_position, 0.8)
+	Combat.spawn_muzzle_blast(self, _muzzle.global_position, (point - _muzzle.global_position).normalized() + Vector3.UP * 1.2, 0.9)
 
 
 ## AI: drop a shell on the densest group of attackers in range.

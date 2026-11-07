@@ -37,7 +37,7 @@ var _vel := Vector3.ZERO
 var _age := 0.0
 var _lost := 0.0
 var _trail_cd := 0.0
-var _flame: MeshInstance3D
+var _flame: ThrusterFlame
 var _hull: Node3D
 
 
@@ -95,7 +95,7 @@ func _physics_process(delta: float) -> void:
 		if rocket:
 			_blast()
 		else:
-			_burst(1.4)
+			_burst(1.4, false)
 		return
 	global_position += step
 	_face()
@@ -107,15 +107,19 @@ func _physics_process(delta: float) -> void:
 		else:
 			_burst(1.0)
 		return
-	_flame.scale = Vector3.ONE * randf_range(0.8, 1.25)
+	var tail := global_position - dir * 0.62 * size
+	var fx := FX.of(self)
+	# The exhaust's glow, smeared back along its flight.
+	fx.flare(tail, Color(4.5, 2.4, 0.9), 0.55 * size, 0.75 * size, 0.05, 0, 1.0)
 	_trail_cd -= delta
 	if _trail_cd <= 0.0:
-		_trail_cd = 0.035
-		_puff(global_position - dir * 0.6 * size)
+		_trail_cd = 0.03
+		_puff(tail, dir)
 
 
-func _burst(radius: float) -> void:
-	Combat.spawn_explosion(self, global_position, radius)
+## Bursts in the air (`air`), or against the ground or a wall.
+func _burst(radius: float, air := true) -> void:
+	Combat.spawn_explosion(self, global_position, radius, air)
 	if on_spent.is_valid():
 		on_spent.call()
 	queue_free()
@@ -135,21 +139,14 @@ func _face() -> void:
 		global_basis = Basis.looking_at(_vel, up)
 
 
-## Smoke left behind: swells and fades.
-func _puff(pos: Vector3) -> void:
-	var mi := MeshInstance3D.new()
-	mi.mesh = _mesh("puff")
-	var mat := SmokeCloud.puff_material(TRAIL)
-	mi.material_override = mat
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	get_parent().add_child(mi)
-	mi.global_position = pos
-	mi.scale = Vector3.ONE * 0.5
-	var tw := mi.create_tween().set_parallel()
-	tw.tween_property(mi, "scale", Vector3.ONE * randf_range(2.0, 2.8), 1.1).set_ease(Tween.EASE_OUT)
-	tw.tween_property(mi, "global_position", pos + Vector3(randf_range(-0.2, 0.2), 0.4, randf_range(-0.2, 0.2)), 1.1)
-	tw.tween_property(mat, "albedo_color:a", 0.0, 1.1).set_ease(Tween.EASE_IN)
-	tw.chain().tween_callback(mi.queue_free)
+## Smoke left behind, white and thick, swelling, drifting and thinning out; a tongue of flame at the nozzle.
+func _puff(pos: Vector3, dir: Vector3) -> void:
+	var fx := FX.of(self)
+	var tone := randf_range(0.82, 0.9)
+	fx.smoke(pos, -dir * 2.0 + Vector3(randf_range(-0.3, 0.3), randf_range(-0.1, 0.3), randf_range(-0.3, 0.3)),
+			randf_range(1.6, 2.6), 0.22 * size, randf_range(1.3, 1.9) * size + 0.4, Color(tone, tone, tone * 0.97, TRAIL.a * 0.8),
+			0.25, 1.8, 0.8, 0.3)
+	fx.flame(pos, -dir * 6.0, randf_range(0.08, 0.14), 0.16 * size, 0.38 * size, 0.0, 4.0, 1.0, 0.5, 0.0)
 
 
 ## Body along -Z (the way it flies): white casing, red nose, four fins and a flame at the tail.
@@ -176,11 +173,15 @@ func _build() -> void:
 		fin.rotation.z = k * PI * 0.5
 		fin.position.z = 0.38
 		_hull.add_child(fin)
-	_flame = MeshInstance3D.new()
-	_flame.mesh = _mesh("flame")
-	_flame.material_override = Mats.glow(Color(1.0, 0.6, 0.2), 6.0)
-	_flame.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_flame.position.z = 0.62
+	# The rocket motor: a jet of flame out of the tail and the light it throws.
+	_flame = ThrusterFlame.new()
+	_flame.length = 1.3
+	_flame.radius = 0.11
+	_flame.color = Color(2.6, 1.25, 0.4)
+	_flame.burner_color = Color(2.8, 2.1, 1.2)
+	_flame.light_range = 6.0
+	_flame.power = 1.6
+	_flame.position.z = 0.6
 	_hull.add_child(_flame)
 
 
@@ -205,15 +206,4 @@ static func _mesh(kind: String) -> Mesh:
 				var b := BoxMesh.new()
 				b.size = Vector3(0.02, 0.32, 0.22)
 				_meshes[kind] = b
-			"flame":
-				var s := SphereMesh.new()
-				s.radius = 0.11
-				s.height = 0.45
-				s.radial_segments = 8
-				s.rings = 4
-				_meshes[kind] = s
-			"puff":
-				var quad := QuadMesh.new()
-				quad.size = Vector2.ONE * 0.6
-				_meshes[kind] = quad
 	return _meshes[kind]

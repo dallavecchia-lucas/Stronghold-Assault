@@ -1461,7 +1461,7 @@ func _fire_at(t: Node3D) -> void:
 			get_tree().current_scene.add_child(shell)
 			var muzzle: Vector3 = global_position - global_basis.z * 3.5 + Vector3.UP * stats.height
 			shell.launch(muzzle, aim)
-			Combat.spawn_explosion(self, muzzle, 0.8)
+			Combat.spawn_muzzle_blast(self, muzzle, (aim - muzzle).normalized() + Vector3.UP * 0.8, 0.55)
 		_:
 			if stats.has("burst"):
 				# Side-mounted SMGs: a burst, the guns taking turns (_burst_tick).
@@ -1484,7 +1484,8 @@ func _fire_at(t: Node3D) -> void:
 				Combat.fire_hitscan(self, _eye(), aim, stats.spread, stats.damage, team,
 						stats.structure_mult, [get_rid()], muzzle)
 			if _gun_muzzle:
-				Combat.spawn_impact(self, _gun_muzzle.global_position, false)  # muzzle flash
+				Combat.spawn_muzzle_flash(self, _gun_muzzle.global_position, aim - _gun_muzzle.global_position,
+						1.3 if stats.get("pellets", 1) > 1 else 1.0)
 
 
 ## Serpent Sniper: one heavy round from the rifle on its back, from its eyes at `t` (its tracer from the muzzle,
@@ -1495,7 +1496,7 @@ func _rifle_shot(t: Node3D) -> void:
 			[get_rid()], muzzle, 0.07)
 	# The white trail the round leaves hangs behind its tracer, like the defenders' Sniper's.
 	SniperTrail.trail(self, muzzle, shot.position, Combat.BULLET_SPEED)
-	Combat.spawn_impact(self, muzzle, true)
+	Combat.spawn_muzzle_flash(self, muzzle, shot.position - muzzle, 1.5)
 	SmokeCloud.wisp(self, muzzle, 1.0)
 	_serpent.kick()
 
@@ -1517,7 +1518,7 @@ func _smg_round(t: Node3D) -> void:
 	_next_muzzle = 1 - _next_muzzle
 	Combat.fire_hitscan(self, _eye(), Combat.aim_point(t), stats.spread, stats.damage, team,
 			stats.structure_mult, [get_rid()], muzzle)
-	Combat.spawn_impact(self, muzzle, false)  # muzzle flash
+	Combat.spawn_muzzle_flash(self, muzzle, Combat.aim_point(t) - muzzle, 0.8)
 
 
 ## Muzzle of SMG k (0 the left, 1 the right): the model's muzzle bone, or a guess beside the chest.
@@ -1993,7 +1994,7 @@ func _cluster_tick(delta: float) -> void:
 		get_tree().current_scene.add_child(shell)
 		var muzzle: Vector3 = global_position + Vector3.UP * (stats.height + 0.4) + global_basis.z * 0.6
 		shell.launch(muzzle, _cluster_aim + Vector3(cos(a), 0.0, sin(a)) * spread)
-		Combat.spawn_explosion(self, muzzle, 0.5)
+		Combat.spawn_muzzle_blast(self, muzzle, (_cluster_aim - muzzle).normalized() + Vector3.UP, 0.4)
 		_recoil = 1.0
 
 
@@ -2066,7 +2067,8 @@ func _fire_bombard() -> void:
 	get_tree().current_scene.add_child(shell)
 	var muzzle := muzzle_position()
 	shell.launch(muzzle, _bombard_aim + Vector3(cos(a), 0.0, sin(a)) * scatter)
-	Combat.spawn_explosion(self, muzzle, stats.get("muzzle_blast", 1.6))
+	var blast_dir: Vector3 = _gun.muzzle().basis.z if _gun else (_bombard_aim - muzzle).normalized() + Vector3.UP
+	Combat.spawn_muzzle_blast(self, muzzle, blast_dir, stats.get("muzzle_blast", 1.6) / 1.6)
 	SmokeCloud.wisp(self, muzzle, 2.0)
 	_recoil = 1.0
 	if _gun:
@@ -2124,7 +2126,7 @@ func strafe_shot(at: Vector3, level: float) -> void:
 		to = hit.position
 	Combat.damage_area(self, to, stats.strafe_splash, stats.strafe_damage, team, stats.structure_mult)
 	Combat.spawn_tracer(self, muzzle, to, Combat.ATTACKER_TRACER, 0.06)
-	Combat.spawn_impact(self, to, false)
+	Combat.spawn_impact(self, to, false, hit.normal if not hit.is_empty() else Vector3.UP)
 	_strafe_shots += 1
 	if _strafe_shots % 3 == 0:
 		Combat.spawn_explosion(self, to, 1.4)
@@ -2157,7 +2159,7 @@ func start_smoke(toward: Vector3) -> bool:
 		g.cloud_duration = stats.smoke_duration
 		get_tree().current_scene.add_child(g)
 		g.launch(muzzle, p, stats.smoke_height)
-	Combat.spawn_explosion(self, muzzle, 0.5)
+	Combat.spawn_muzzle_blast(self, muzzle, Vector3.UP + (toward - muzzle).normalized() * 0.5, 0.35)
 	_recoil = 1.0
 	return true
 
@@ -2332,7 +2334,17 @@ func _slam() -> void:
 	var gate := charge_gate
 	var hit_at: Vector3 = global_position + (gate.global_position - global_position).normalized() * (stats.radius + 0.4) + Vector3.UP * stats.height * 0.5
 	gate.take_damage(stats.ram_gate_damage, team)
-	Combat.spawn_explosion(self, hit_at, 2.5)
+	# The horns ring on the steel: a shower of sparks off the door, dust shaken out of it, the ground shaking.
+	var fx := FX.of(self)
+	var back := (global_position - gate.global_position).normalized()
+	fx.impact(hit_at, back, true, 3.0)
+	for k in 18:
+		fx.spark(hit_at, FX._cone(back, 0.9) * randf_range(6.0, 14.0), randf_range(0.3, 0.7), 0.035, 0.1, Color(5.0, 3.0, 1.2),
+				-9.8, 0.8, global_position.y, 0.03)
+	for k in 8:
+		fx.smoke(hit_at + FX._rand_dir() * 0.5, (back + FX._rand_dir() * 0.7) * randf_range(1.5, 3.5), randf_range(1.6, 2.6), 0.6,
+				randf_range(2.0, 3.0), Color(0.42, 0.39, 0.34, 0.5), 0.2, 2.5, 0.0, 0.4)
+	fx.shake(hit_at, 2.5)
 	end_ram()
 	_butt = 1.0
 	_fire_cd = maxf(_fire_cd, 0.6)
