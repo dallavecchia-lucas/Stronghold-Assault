@@ -7,7 +7,9 @@ extends Node3D
 ## Each view is drawn for FRAMES frames (`--frames=N`) before it is saved (the GI, the fog and the reflections
 ## settle), and nothing is drawn in between. The classic field's views first; `--jungle` takes the Jungle Keep's instead.
 ## `--lighting=standard` (GameConfig) for the standard lighting. `--no-msaa` for a software GPU (lavapipe), which
-## leaves the depth texture the water reads empty when it is multisampled.
+## leaves the depth texture the water reads empty when it is multisampled. To see what draws what:
+## `--env-off=ssr,sdfgi,ssil,ssao,volumetric_fog,glow` switches environment effects off, `--hide=Water,...` hides
+## nodes by name, `--probe=x,y` prints the meshes along that pixel's ray.
 
 ## [camera, looking at, fov, the camera's height is over the ground, the target's is (default: as the camera's)]
 const CLASSIC := {
@@ -42,6 +44,10 @@ var _frame := -1
 var _frames := FRAMES
 ## Environment effects switched off (`--env-off=sdfgi,ssr,ssil,ssao,volumetric_fog,glow`), to see what each does.
 var env_off := []
+## A pixel (`--probe=x,y`) whose meshes along its ray are printed, nearest first, before the first view is taken.
+var probe := Vector2(-1, -1)
+## Nodes hidden by name (`--hide=Water,ContactShadows`), to see what each draws.
+var hide := []
 
 
 func _ready() -> void:
@@ -60,6 +66,11 @@ func _ready() -> void:
 			get_viewport().msaa_3d = Viewport.MSAA_DISABLED
 		elif arg.begins_with("--env-off="):
 			env_off = arg.get_slice("=", 1).split(",")
+		elif arg.begins_with("--hide="):
+			hide = arg.get_slice("=", 1).split(",")
+		elif arg.begins_with("--probe="):
+			var xy := arg.get_slice("=", 1).split(",")
+			probe = Vector2(xy[0].to_float(), xy[1].to_float())
 	views = JUNGLE if jungle else CLASSIC
 	_names = views.keys().filter(func(k): return only.is_empty() or k in only)
 	RenderingServer.render_loop_enabled = false
@@ -71,6 +82,10 @@ func _ready() -> void:
 		s.process_mode = Node.PROCESS_MODE_DISABLED
 	for t in level.aa_turrets:
 		t.process_mode = Node.PROCESS_MODE_DISABLED
+	for name in hide:
+		for c in level.find_children(name, "", true, false):
+			if c is Node3D:
+				(c as Node3D).visible = false
 	for we in level.find_children("*", "WorldEnvironment", true, false):
 		for k in env_off:
 			(we as WorldEnvironment).environment.set("%s_enabled" % k, false)
@@ -100,6 +115,8 @@ func _process(_delta: float) -> void:
 	cam.fov = v[2]
 	cam.global_position = from
 	cam.look_at(at)
+	if probe.x >= 0.0 and _frame == 1:
+		_probe()
 	RenderingServer.render_loop_enabled = true
 	_frame += 1
 	if _frame == _frames:
@@ -113,3 +130,51 @@ func _save(label: String) -> void:
 	var path := "%s/%s.png" % [shots_dir, label]
 	get_viewport().get_texture().get_image().save_png(path)
 	print("shot %s" % path)
+
+
+func _probe() -> void:
+	var o := cam.project_ray_origin(probe)
+	var d := cam.project_ray_normal(probe)
+	var hits := []
+	for mi in level.find_children("*", "MeshInstance3D", true, false):
+		var m := mi as MeshInstance3D
+		if not m.is_visible_in_tree() or m.mesh == null:
+			continue
+		var box := m.global_transform * m.get_aabb()
+		var p = box.intersects_ray(o, d)
+		if p != null and o.distance_to(p) < 150.0:
+			hits.append([o.distance_to(p), m])
+	for mmi in level.find_children("*", "MultiMeshInstance3D", true, false):
+		var mm := (mmi as MultiMeshInstance3D).multimesh
+		if not (mmi as Node3D).is_visible_in_tree() or mm == null or mm.mesh == null or mm.transform_format != MultiMesh.TRANSFORM_3D:
+			continue
+		var local := mm.mesh.get_aabb()
+		for i in mm.visible_instance_count if mm.visible_instance_count >= 0 else mm.instance_count:
+			var box := (mmi as Node3D).global_transform * mm.get_instance_transform(i) * local
+			var p = box.intersects_ray(o, d)
+			if p != null and o.distance_to(p) < 150.0:
+				hits.append([o.distance_to(p), mmi, i])
+	hits.sort_custom(func(a, b): return a[0] < b[0])
+	for h in hits.slice(0, 16):
+		if h[1] is MultiMeshInstance3D:
+			var mmi: MultiMeshInstance3D = h[1]
+			var mesh := mmi.multimesh.mesh
+			var mats := []
+			for s in mesh.get_surface_count():
+				var mat: Material = mmi.material_override if mmi.material_override else mesh.surface_get_material(s)
+				mats.append(_describe(mat))
+			print("PROBE %.1f m %s #%d (%s) %s" % [h[0], mmi.get_path(), h[2], mesh.resource_path, mats])
+			continue
+		var m: MeshInstance3D = h[1]
+		var mats := []
+		for s in m.mesh.get_surface_count():
+			mats.append(_describe(m.get_active_material(s)))
+		print("PROBE %.1f m %s (%s) %s" % [h[0], m.get_path(), m.mesh.resource_path, mats])
+
+
+func _describe(mat: Material) -> String:
+	if mat is BaseMaterial3D:
+		var b := mat as BaseMaterial3D
+		return "%s transparency=%d rough=%.3f normal=%s" % [b.resource_name, b.transparency, b.roughness, b.normal_enabled]
+	return str(mat)
+

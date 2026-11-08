@@ -539,8 +539,7 @@ func _build_water() -> void:
 	mi.position.y = JungleLayout.WATER_Y
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	# Lit by the GI but kept out of its distance field: its emission is the scene behind and mirrored in it, read
-	# off the screen, which there is none of while the field is built; it was baking in as white-hot specks that
-	# lit glowing balls in the fog along the banks.
+	# off the screen, which there is none of while the field is built.
 	mi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 	var sh := Shader.new()
 	sh.code = WATER_SHADER
@@ -675,6 +674,12 @@ vec3 scene_view(vec2 uv, mat4 inv_proj) {
 	return v.xyz / v.w;
 }
 
+// NaN or infinite (told by the bits: all of the exponent's set).
+bool bad(vec3 c) {
+	uvec3 e = floatBitsToUint(c) & uvec3(2139095040u);
+	return any(equal(e, uvec3(2139095040u)));
+}
+
 // The waves' normal map (tilt, -1..1) at `p` (m) on a `tile` m tile, carried along by `flow` (m/s): two
 // phases half a cycle apart, crossfaded and rescaled so the blend keeps the waves' strength.
 vec2 flowing(vec2 p, float tile, vec2 flow, float t, float period) {
@@ -717,8 +722,8 @@ void fragment() {
 		ruv = SCREEN_UV;
 	}
 	vec3 below = textureLod(screen_tex, ruv, 0.0).rgb;
-	// Whatever is behind, never a NaN carried over (it would come out a white-hot ball under the bloom).
-	below = any(isnan(below)) ? vec3(0.0) : below;
+	// Whatever is behind, never a NaN carried over.
+	below = bad(below) ? vec3(0.0) : below;
 	vec3 bed = scene_view(ruv, INV_PROJECTION_MATRIX);
 	float through = max(-bed.z - surface, 0.0) * dist / max(surface, 0.001);
 	vec3 transmit = exp(-absorption * through);
@@ -785,7 +790,7 @@ void fragment() {
 		vec2 e = min(spare_uv, 1.0 - spare_uv);
 		hit = smoothstep(0.0, 0.06, min(e.x, e.y)) * 0.85;
 	}
-	mirrored = any(isnan(mirrored)) ? vec3(0.0) : mirrored;
+	mirrored = bad(mirrored) ? vec3(0.0) : mirrored;
 	float cosv = clamp(dot(nr, -vdir), 0.0, 1.0);
 	float fresnel = (0.02 + 0.98 * pow(1.0 - cosv, 5.0)) * edge;
 

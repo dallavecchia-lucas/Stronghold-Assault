@@ -101,7 +101,9 @@ void fragment() {
 		}
 	}
 	float k = strength * facing * shade * (1.0 - smoothstep(fade_far * 0.6, fade_far, d0));
-	ALBEDO = vec3(isnan(k) ? 1.0 : 1.0 - clamp(k, 0.0, 1.0));
+	// Never NaN (told by the bits, all of the exponent's set): it would be multiplied into the scene.
+	bool nan_k = (floatBitsToUint(k) & 2139095040u) == 2139095040u;
+	ALBEDO = vec3(nan_k ? 1.0 : 1.0 - clamp(k, 0.0, 1.0));
 }
 """
 

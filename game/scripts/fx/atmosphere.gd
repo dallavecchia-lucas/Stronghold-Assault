@@ -22,8 +22,8 @@ extends Node
 ## - Volumetric clouds: ray-marched through a layer of 3D noise a kilometre up, each step lit by a few more
 ##   steps toward the sun: cumulus with dark bellies and bright tops, lined silver against the sun, fading into
 ##   the haze at the horizon (at half resolution).
-## - Reflections from the distance field (the rivers and the lake march their own across the screen); softer,
-##   finer shadow filtering.
+## - Reflections ray-marched in screen space (wet ground, puddles, metal; the rivers and the lake march their
+##   own), the rest from the distance field; softer, finer shadow filtering.
 ## Standard lighting keeps the rest (and flat, painted clouds).
 ##
 ## Atmosphere.build(level, jungle) adds the WorldEnvironment and the sun to `level` (as its own children: the
@@ -259,10 +259,14 @@ func _build(level: Node3D, jungle: bool) -> void:
 	env.ssil_intensity = 1.1
 	env.ssil_sharpness = 0.98
 	env.ssil_normal_rejection = 1.0
-	# No engine screen-space reflections: the rivers and the lake march their own (JungleTerrain.WATER_SHADER), and
-	# the engine's came out NaN on some glossy pixels (a wet bank), which the bloom swells into white-hot balls.
-	# Wet ground, puddles and metal mirror the sky.
-	env.ssr_enabled = false
+	if jungle or raytraced:
+		# Reflections ray-marched through the depth buffer: wet ground, puddles, metal and wet stone catch what is
+		# round them (the rivers and the lake march their own, JungleTerrain.WATER_SHADER).
+		env.ssr_enabled = true
+		env.ssr_max_steps = 64 if raytraced else 48
+		env.ssr_fade_in = 0.15
+		env.ssr_fade_out = 2.0
+		env.ssr_depth_tolerance = 0.25
 	# Bloom: wide and soft, only from what is brighter than white.
 	env.glow_enabled = true
 	env.glow_intensity = 0.75
@@ -297,6 +301,11 @@ func _build(level: Node3D, jungle: bool) -> void:
 	env.adjustment_contrast = 1.05
 	var we := WorldEnvironment.new()
 	we.environment = env
+	if method == "forward_plus":
+		# No pixel left NaN for the bloom to swell into a white-hot ball (StopNaNs).
+		var comp := Compositor.new()
+		comp.compositor_effects = [StopNaNs.new()]
+		we.compositor = comp
 	level.add_child(we)
 
 	sun = DirectionalLight3D.new()
