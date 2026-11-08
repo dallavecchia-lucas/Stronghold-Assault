@@ -633,7 +633,7 @@ uniform float water_y = -1.8;
 uniform float flow_max = 1.5;
 // How fast the water swallows light (per metre, red green blue) and the colour of what is stirred up in it.
 uniform vec3 absorption = vec3(0.95, 0.72, 1.15);
-uniform vec3 murk = vec3(0.045, 0.06, 0.03);
+uniform vec3 murk = vec3(0.022, 0.03, 0.016);
 // The ripples' and the swell's tiles (m), and how much they tilt the surface.
 uniform float ripple_tile = 2.6;
 uniform float swell_tile = 12.0;
@@ -641,8 +641,8 @@ uniform float wave_strength = 0.3;
 uniform float refraction = 0.035;
 // The sun's glint: the ripples too small to see spread it as a rougher surface would, and it is held under a
 // ceiling, so it glitters instead of swelling into a white-hot blob under the bloom.
-uniform float glint_roughness = 0.22;
-uniform float glint_max = 0.8;
+uniform float glint_roughness = 0.26;
+uniform float glint_max = 0.5;
 
 varying vec3 wpos;
 // How much of the sun's glint gets through (none where the mirror shows the bank, under foam, at the edge).
