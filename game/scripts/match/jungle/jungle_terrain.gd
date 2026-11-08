@@ -793,7 +793,7 @@ void fragment() {
 	// F0 of 0.02.
 	SPECULAR = 0.354 * (1.0 - hit) * (1.0 - foam) * edge;
 	// Not quite a perfect mirror: each pixel spans many ripples, and the sun's glint spreads over them.
-	ROUGHNESS = mix(mix(0.07, 0.12, far), 0.8, foam);
+	ROUGHNESS = mix(mix(0.1, 0.14, far), 0.8, foam);
 	METALLIC = 0.0;
 	// Drawn over the finished opaque scene (it reads it): everything behind is already in EMISSION.
 	ALPHA = 1.0;

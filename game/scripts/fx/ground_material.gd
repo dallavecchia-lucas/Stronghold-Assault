@@ -319,7 +319,7 @@ void fragment() {
 	// The water's edge: soaked dark and glossy, the light's caustics on the bed under it.
 	float wet = 1.0 - smoothstep(0.0, 1.3, above);
 	albedo *= 1.0 - wet * 0.42;
-	rough = mix(rough, 0.12, wet * 0.85);
+	rough = mix(rough, 0.28, wet * 0.85);
 	if (above < 0.0) {
 		vec2 cuv = wpos.xz * 0.33;
 		float c1 = texture(caustics, cuv + vec2(TIME * 0.031, TIME * 0.017)).r;

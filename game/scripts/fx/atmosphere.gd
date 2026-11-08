@@ -165,7 +165,10 @@ void sky() {
 			col = col * (1.0 - HALF_RES_COLOR.a) + HALF_RES_COLOR.rgb;
 			disk *= 1.0 - HALF_RES_COLOR.a;
 		}
-		COLOR = col + sun * disk * 30.0;
+		// The sun's disk only where the sky itself is seen: in the reflections (the radiance map) the sun's own light
+		// already makes its glint, and a disk thirty times the sky's brightness there would be mirrored a second
+		// time by every glossy, wet or watery surface, a white-hot speck the bloom swells into a ball.
+		COLOR = col + (AT_CUBEMAP_PASS ? vec3(0.0) : sun * disk * 30.0);
 	}
 }
 """
