@@ -37,7 +37,7 @@ var _reload := 0.0
 var _rifle: Node3D
 var _muzzle_mark: Node3D
 var _eye_mark: Node3D
-var _flash: MeshInstance3D
+var _flash: MuzzleFlash
 var _flash_t := 0.0
 
 static var _rifle_scene: PackedScene
@@ -66,18 +66,8 @@ func _build_weapon() -> void:
 	_muzzle_mark = _rifle.find_child("muzzle", true, false) as Node3D
 	_eye_mark = _rifle.find_child("eye", true, false) as Node3D
 	(_rig as SniperRig).on_posed = _hold_rifle
-	# Muzzle flash: a blink of light at the muzzle brake on every round.
-	_flash = MeshInstance3D.new()
-	var ball := SphereMesh.new()
-	ball.radius = 0.14
-	ball.height = 0.24
-	ball.radial_segments = 8
-	ball.rings = 4
-	_flash.mesh = ball
-	_flash.material_override = Mats.glow(Color(1.0, 0.8, 0.45), 7.0)
-	_flash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_flash.top_level = true
-	_flash.visible = false
+	# Muzzle flash: a star of flame and a jet of it out of the muzzle brake on every round.
+	_flash = MuzzleFlash.new(0.4, 0.7, Color(1.0, 0.68, 0.32), 7.0)
 	add_child(_flash)
 	for mi in find_children("*", "MeshInstance3D", true, false):
 		(mi as MeshInstance3D).layers = BODY_LAYER
@@ -183,6 +173,7 @@ func shoot(from: Vector3, to: Vector3, damage: float, spread: float) -> Dictiona
 	var muzzle := muzzle_point()
 	SniperTrail.fire(self, muzzle, end)
 	_flash_t = 0.06
+	_flash.place(muzzle, end - muzzle)
 	Combat.spawn_muzzle_light(self, muzzle)
 	# Her own scope doesn't see the smoke at the muzzle a metre in front of it (BODY_LAYER).
 	SmokeCloud.wisp(self, muzzle, 0.6, BODY_LAYER)

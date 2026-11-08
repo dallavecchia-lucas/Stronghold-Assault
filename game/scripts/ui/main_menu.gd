@@ -72,6 +72,19 @@ func _ready() -> void:
 	map_row.add_child(maps)
 	box.add_child(map_row)
 
+	var light_row := HBoxContainer.new()
+	light_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	light_row.add_child(UIKit.label("Lighting  ", 18))
+	var lights := OptionButton.new()
+	for n in GameConfig.LIGHTING_NAMES:
+		lights.add_item(n)
+	lights.select(maxi(GameConfig.LIGHTING.find(GameConfig.lighting), 0))
+	lights.item_selected.connect(func(i): GameConfig.lighting = GameConfig.LIGHTING[i])
+	lights.add_theme_font_size_override("font_size", 18)
+	lights.tooltip_text = "Ray-traced: global illumination, ray-traced contact shadows, volumetric clouds and reflections.\nStandard: lighter on the GPU."
+	light_row.add_child(lights)
+	box.add_child(light_row)
+
 	var intro := UIKit.button("Watch Intro", 18)
 	intro.custom_minimum_size = Vector2(560, 44)
 	intro.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/intro.tscn"))

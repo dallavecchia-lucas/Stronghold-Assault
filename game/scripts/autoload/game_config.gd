@@ -24,10 +24,15 @@ const DIFFICULTY_NAMES := ["Easy", "Normal", "Hard"]
 ## The maps: the Jungle Keep (JungleLevel, the default) and the classic open field (LevelBuilder).
 const MAPS := ["jungle", "classic"]
 const MAP_NAMES := ["Jungle Keep", "Classic Field"]
+## How the light is rendered (Atmosphere): "raytraced" (SDFGI global illumination, ray-traced contact shadows,
+## ray-marched volumetric clouds, screen-space reflections, finer soft shadows) or "standard" (lighter on the GPU).
+const LIGHTING := ["raytraced", "standard"]
+const LIGHTING_NAMES := ["Ray-traced", "Standard"]
 
 var player_side: PlayerSide = PlayerSide.DEFENDER
 var difficulty := 1
 var map := "jungle"
+var lighting := "raytraced"
 var match_duration := 600.0
 var mouse_sensitivity := 0.0025
 
@@ -36,6 +41,7 @@ var mouse_sensitivity := 0.0025
 #   --screenshot=path.png          save a screenshot during the autotest
 #   --duration=seconds             autotest length (game time)
 #   --map=jungle|classic           the map to play
+#   --lighting=raytraced|standard  how the light is rendered
 var autotest := ""
 var screenshot_path := ""
 var autotest_duration := 90.0
@@ -52,6 +58,8 @@ func _ready() -> void:
 			autotest_duration = arg.get_slice("=", 1).to_float()
 		elif arg.begins_with("--map="):
 			map = arg.get_slice("=", 1)
+		elif arg.begins_with("--lighting="):
+			lighting = arg.get_slice("=", 1)
 
 
 ## CPU attacker income multiplier for the chosen difficulty.

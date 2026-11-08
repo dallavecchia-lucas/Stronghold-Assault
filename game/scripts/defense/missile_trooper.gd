@@ -121,7 +121,7 @@ func _take_tube() -> int:
 func _launched(from: Vector3) -> void:
 	(_rig as MissileRig).kick()
 	SmokeCloud.wisp(self, from, 0.9)
-	Combat.spawn_impact(self, from, true)
+	Combat.spawn_muzzle_flash(self, from, Vector3.ZERO, 1.6)
 	if _reload_t <= 0.0:
 		_reload_t = RELOAD_TIME
 

@@ -26,6 +26,8 @@ func _ready() -> void:
 	add_child(level)
 	level.build()
 	time_left = level.match_time()
+	# The effects engine, made now so its shaders are compiled before the first shot.
+	FX.of(self)
 
 	var units_root := Node3D.new()
 	units_root.name = "Units"

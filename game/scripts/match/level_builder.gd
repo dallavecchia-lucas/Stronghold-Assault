@@ -104,6 +104,8 @@ const FOREST_NEAR := 8.0
 const REBAKE_DELAY := 6.0
 
 var nav_region: NavigationRegion3D
+## The sky, sun and haze (and the WorldEnvironment and DirectionalLight3D it added under the level).
+var atmosphere: Atmosphere
 var keep: Structure
 var gates := {}  # side -> Structure
 var stations := []  # possessable defender stations, in hotkey order
@@ -222,6 +224,8 @@ func _build_all() -> void:
 	_build_keep()
 	_build_bases()
 	_build_scenery()
+	# Grass standing in the field round the camera (GrassField), clear of the tracks and the helipads.
+	GrassField.build(self)
 	_build_spawns()
 	_build_mounts(_build_stations() + _build_aa_turrets())
 	rebake_navigation()
@@ -277,59 +281,29 @@ func _box(size: Vector3, pos: Vector3, mat: Material, rot := Vector3.ZERO, paren
 
 # ---------------------------------------------------------------- build steps
 
+## The sky, the sun, the haze and how it is all rendered (Atmosphere).
 func _build_environment() -> void:
-	var env := Environment.new()
-	var sky_mat := ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color(0.32, 0.47, 0.68)
-	sky_mat.sky_horizon_color = Color(0.72, 0.72, 0.68)
-	sky_mat.ground_horizon_color = Color(0.5, 0.48, 0.42)
-	sky_mat.ground_bottom_color = Color(0.2, 0.19, 0.16)
-	sky_mat.sun_angle_max = 20.0
-	var sky := Sky.new()
-	sky.sky_material = sky_mat
-	env.background_mode = Environment.BG_SKY
-	env.sky = sky
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 0.8
-	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	env.tonemap_white = 6.0
-	env.ssao_enabled = true
-	env.ssao_radius = 1.5
-	env.ssao_intensity = 1.6
-	env.glow_enabled = true
-	env.glow_intensity = 0.6
-	env.glow_bloom = 0.05
-	env.fog_enabled = true
-	env.fog_light_color = Color(0.62, 0.66, 0.7)
-	env.fog_density = 0.0025
-	env.fog_aerial_perspective = 0.6
-	env.adjustment_enabled = true
-	env.adjustment_saturation = 1.1
-	env.adjustment_contrast = 1.05
-	var we := WorldEnvironment.new()
-	we.environment = env
-	add_child(we)
-
-	var sun := DirectionalLight3D.new()
-	sun.light_color = Color(1.0, 0.93, 0.82)
-	sun.light_energy = 1.3
-	sun.rotation = Vector3(deg_to_rad(-48.0), deg_to_rad(35.0), 0)
-	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 320.0
-	sun.directional_shadow_blend_splits = true
-	add_child(sun)
+	atmosphere = Atmosphere.build(self, false)
 
 
 func _build_ground() -> void:
 	var size := MAP_HALF * 2.0 + 40.0
-	var ground := _box(Vector3(size, 2.0, size), Vector3(0, -1.0, 0), Mats.ground())
+	# Photoscanned grass and earth (GroundMaterial), worn into tracks up the attack lanes, scree at the
+	# mountain's foot.
+	var lanes := []
+	for side in SIDES:
+		if SIDES[side].gate:
+			var out: Vector3 = SIDES[side].dir
+			lanes.append([out * FACE_DIST, out * MAP_HALF])
+	var mat := GroundMaterial.classic(lanes, MOUNTAIN_HALF)
+	var ground := _box(Vector3(size, 2.0, size), Vector3(0, -1.0, 0), mat)
 	ground.name = "Ground"
 	# Visual-only skirt so the horizon isn't a hard edge.
 	var skirt := MeshInstance3D.new()
 	var pm := PlaneMesh.new()
 	pm.size = Vector2(1400, 1400)
 	skirt.mesh = pm
-	skirt.material_override = Mats.ground()
+	skirt.material_override = mat
 	skirt.position.y = -0.05
 	add_child(skirt)
 
@@ -337,6 +311,8 @@ func _build_ground() -> void:
 func _build_stronghold() -> void:
 	_stronghold = (load(STRONGHOLD) as PackedScene).instantiate() as Node3D
 	_stronghold.position = STRONGHOLD_OFFSET
+	# Scanned rock, board-formed concrete and worn steel in place of the model's flat colours.
+	StrongholdLook.apply(_stronghold, jungle)
 	nav_region.add_child(_stronghold)
 	# Placeholder weapons on the mounts make way for turret models (_build_mounts).
 	for n in _stronghold.find_children("PH_*", "", true, false):
@@ -398,8 +374,11 @@ func _route_link(route: Array[Vector3]) -> NavigationLink3D:
 
 ## Steel door with hazard stripes, centered on `parent`, facing out along its +Z.
 func _blast_door(parent: Node3D, stripe_color: Color) -> void:
-	parent.add_child(Mats.box_mesh(DOOR_SIZE, Vector3.ZERO, Mats.flat(Color(0.2, 0.21, 0.22), 0.8, 0.4)))
-	var stripe := Mats.flat(stripe_color, 0.3, 0.6)
+	# Worn steel, its bands in hazard paint (StrongholdLook); `stripe_color` only where that can't be had.
+	parent.add_child(Mats.box_mesh(DOOR_SIZE, Vector3.ZERO, StrongholdLook.material("Metal", jungle)))
+	var stripe: Material = StrongholdLook.material("HatchStripes", jungle)
+	if stripe == null:
+		stripe = Mats.flat(stripe_color, 0.3, 0.6)
 	for y in [-0.9, 0.0, 0.9]:
 		parent.add_child(Mats.box_mesh(Vector3(DOOR_SIZE.x, 0.18, DOOR_SIZE.z + 0.08), Vector3(0, y, 0), stripe))
 

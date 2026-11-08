@@ -365,36 +365,20 @@ func _machine_guns(delta: float) -> void:
 		mg_round.emit(m.origin, to)
 
 
-## The cloud of smoke a shot throws out of the muzzle: puffs blown out ahead and to the sides, growing and fading.
+## The cloud of smoke a shot throws out of the muzzle: puffs blown out ahead and to the sides, growing and fading,
+## after the flash and the gout of flame (FX.muzzle_blast).
 func _smoke(at: Transform3D) -> void:
-	var root := Combat._scene_root(self)
-	var mat := StandardMaterial3D.new()
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-	mat.albedo_texture = SmokeCloud.puff_texture()
-	mat.albedo_color = Color(0.48, 0.46, 0.43, 1.0)
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	var fwd := at.basis.z
+	var fx := FX.of(self)
+	var fwd := at.basis.z.normalized()
 	var side := fwd.cross(Vector3.UP).normalized()
+	fx.muzzle_blast(at.origin, fwd, 1.5)
 	for k in 14:
-		var mi := MeshInstance3D.new()
-		var q := QuadMesh.new()
-		q.size = Vector2.ONE
-		mi.mesh = q
-		mi.material_override = mat
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		root.add_child(mi)
 		# Most go out ahead; the muzzle brake throws some out to the sides.
-		var out := fwd * randf_range(1.0, 7.0) if k < 8 else (side * (1.0 if k % 2 == 0 else -1.0) * randf_range(1.5, 3.5) + fwd * 0.6)
-		mi.global_position = at.origin + fwd * 0.4
-		mi.scale = Vector3.ONE * randf_range(1.4, 2.4)
-		var life := randf_range(2.0, 3.2)
-		var tw := mi.create_tween().set_parallel(true)
-		tw.tween_property(mi, "global_position", at.origin + out + Vector3.UP * randf_range(0.5, 1.6), life) \
-				.set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
-		tw.tween_property(mi, "scale", Vector3.ONE * randf_range(5.0, 8.0), life).set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
-		tw.tween_property(mat, "albedo_color:a", 0.0, 3.2).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-		tw.chain().tween_callback(mi.queue_free)
+		var out := fwd * randf_range(3.0, 9.0) if k < 8 else (side * (1.0 if k % 2 == 0 else -1.0) * randf_range(3.0, 6.0) + fwd * 0.8)
+		var tone := randf_range(0.42, 0.5)
+		fx.smoke(at.origin + fwd * 0.4, out + Vector3.UP * randf_range(0.4, 1.2), randf_range(2.4, 3.6), randf_range(0.7, 1.1),
+				randf_range(4.5, 7.0), Color(tone, tone * 0.97, tone * 0.92, 0.6), 0.25, 1.6, 1.2 if k < 4 else 0.0, 0.5,
+				randf_range(0.0, 0.05))
 
 
 ## The turret yaw and gun elevation that put the barrel on the aim (or the front, stowed).

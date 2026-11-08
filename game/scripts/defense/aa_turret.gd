@@ -30,7 +30,7 @@ var _lock := 0.0
 var _reload := 0.0
 var _retarget := 0.0
 var _repair := 0.0
-var _smoke: CPUParticles3D
+var _smoke: WreckSmoke
 
 
 func _ready() -> void:
@@ -47,23 +47,8 @@ func _ready() -> void:
 	_yaw = Node3D.new()
 	add_child(_yaw)
 	_yaw.add_child(Props.instance(Props.SENTINEL_SPIRE, 3.0))
-	_smoke = CPUParticles3D.new()
-	var q := QuadMesh.new()
-	q.size = Vector2(1, 1)
-	var sm := StandardMaterial3D.new()
-	sm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	sm.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	sm.albedo_color = Color(0.12, 0.12, 0.12, 0.55)
-	q.material = sm
-	_smoke.mesh = q
-	_smoke.amount = 14
-	_smoke.lifetime = 3.0
-	_smoke.direction = Vector3.UP
-	_smoke.initial_velocity_min = 1.0
-	_smoke.initial_velocity_max = 2.2
-	_smoke.gravity = Vector3(0, 0.5, 0)
-	_smoke.scale_amount_max = 2.5
-	_smoke.emitting = false
+	# Knocked out, it smokes and smoulders until it is repaired.
+	_smoke = WreckSmoke.new()
 	_smoke.position.y = 1.5
 	add_child(_smoke)
 

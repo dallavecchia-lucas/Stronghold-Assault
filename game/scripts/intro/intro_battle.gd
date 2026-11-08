@@ -212,39 +212,11 @@ func _build_blasts() -> void:
 	for i in 34:
 		var bt := _rng.randf_range(CLASH, VICTORY)
 		list.append([bt, Vector3(_rng.randf_range(-55, 55), 0.5, _rng.randf_range(-560, -505)), _rng.randf_range(3.0, 6.5)])
-	var flash := StandardMaterial3D.new()
-	flash.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	flash.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	flash.albedo_color = Color(0.85, 0.36, 0.1)
-	for b in list:
-		var fire := MeshInstance3D.new()
-		var sm := SphereMesh.new()
-		sm.radius = 1.0
-		sm.height = 2.0
-		sm.radial_segments = 12
-		sm.rings = 6
-		fire.mesh = sm
-		fire.material_override = flash
-		fire.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		fire.visible = false
-		add_child(fire)
-		var smoke := MeshInstance3D.new()
-		smoke.mesh = sm
-		var smat := StandardMaterial3D.new()
-		smat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		smat.albedo_color = Color(0.16, 0.13, 0.11, 0.0)
-		smoke.material_override = smat
-		smoke.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		smoke.visible = false
-		add_child(smoke)
-		var light: OmniLight3D = null
-		if b[2] >= 7.0:
-			light = OmniLight3D.new()
-			light.light_color = Color(1.0, 0.55, 0.25)
-			light.omni_range = b[2] * 4.0
-			light.visible = false
-			add_child(light)
-		_blasts.append({"t": b[0], "pos": b[1], "size": b[2], "fire": fire, "smoke": smoke, "smat": smat, "light": light})
+	# Drawn by the scene's FX as each goes off: the artillery's are muzzle blasts, the rest real blasts.
+	for i in list.size():
+		var b: Array = list[i]
+		_blasts.append({"t": b[0], "pos": b[1], "size": b[2], "muzzle": i >= 7 + _walkers.size() and i < 14 + _walkers.size(),
+				"done": false})
 
 
 func _build_tracers() -> void:
@@ -265,19 +237,8 @@ func _muzzle(i: int) -> Vector3:
 
 
 func _build_shells() -> void:
-	var mat := Mats.glow(Color(1.0, 0.7, 0.3), 5.0)
 	for i in 7:
-		var land: Vector3 = _blasts[i].pos
-		var from := _muzzle(i)
-		var mi := MeshInstance3D.new()
-		var sm := SphereMesh.new()
-		sm.radius = 1.1
-		sm.height = 2.2
-		mi.mesh = sm
-		mi.material_override = mat
-		mi.visible = false
-		add_child(mi)
-		_shells.append({"t": _blasts[i].t, "from": from, "to": land, "node": mi})
+		_shells.append({"t": _blasts[i].t, "from": _muzzle(i), "to": _blasts[i].pos})
 
 
 # ================================================================ per frame
@@ -367,25 +328,22 @@ func _update_walkers(bt: float) -> void:
 
 func _update_blasts(bt: float) -> void:
 	for b in _blasts:
-		var age: float = bt - b.t
-		var on := age >= 0.0 and age < 6.0
-		var fire: MeshInstance3D = b.fire
-		var smoke: MeshInstance3D = b.smoke
-		fire.visible = on and age < 0.9
-		smoke.visible = on
-		if b.light:
-			b.light.visible = on and age < 1.2
-		if not on:
+		if bt < b.t:
+			b.done = false
 			continue
+		if b.done:
+			continue
+		b.done = true
+		# Only one that has just gone off (not every one before where a preview starts).
+		if bt - b.t > 0.5:
+			continue
+		var at: Vector3 = b.pos
 		var s: float = b.size
-		fire.global_position = b.pos
-		fire.scale = Vector3.ONE * s * (0.3 + 0.7 * smoothstep(0.0, 0.25, age)) * (1.0 - smoothstep(0.4, 0.9, age) * 0.8)
-		smoke.global_position = b.pos + Vector3.UP * age * s * 0.25
-		smoke.scale = Vector3.ONE * s * (0.6 + age * 0.35)
-		b.smat.albedo_color.a = 0.75 * smoothstep(0.1, 0.5, age) * (1.0 - smoothstep(3.0, 6.0, age))
-		if b.light:
-			b.light.global_position = b.pos + Vector3.UP * 2.0
-			b.light.light_energy = 10.0 * (1.0 - age / 1.2)
+		var fx := FX.of(self)
+		if b.muzzle:
+			fx.muzzle_blast(at, Vector3(0.0, 0.8, -1.0), s * 0.8)
+		else:
+			fx.blast(at, s, terrain_y(at.z), false, false)
 
 
 func _update_tracers(bt: float) -> void:
@@ -422,15 +380,23 @@ func _update_tracers(bt: float) -> void:
 
 
 func _update_shells(bt: float) -> void:
+	var fx := FX.of(self)
 	for sh in _shells:
-		var node: MeshInstance3D = sh.node
 		var flight := 3.0
 		var u: float = (bt - (sh.t - flight)) / flight
-		node.visible = u >= 0.0 and u < 1.0
-		if node.visible:
-			var from: Vector3 = sh.from
-			var to: Vector3 = sh.to
-			node.global_position = from.lerp(to, u) + Vector3.UP * 45.0 * 4.0 * u * (1.0 - u)
+		if u < 0.0 or u >= 1.0:
+			continue
+		var p := _shell_pos(sh, u)
+		var vel := (p - _shell_pos(sh, u - 0.01)) / (0.01 * flight)
+		# A glowing streak along its flight, and a wake of heat.
+		fx.spark(p, vel, 0.06, 0.5, 6.0, Color(5.0, 2.6, 0.9), 0.0, 0.0, FX.NO_FLOOR, 0.03, 0.0, 2)
+		fx.puff(p, 1.6, Color(0.6, 0.59, 0.57, 0.25), Vector3.ZERO, 0.8)
+
+
+func _shell_pos(sh: Dictionary, u: float) -> Vector3:
+	var from: Vector3 = sh.from
+	var to: Vector3 = sh.to
+	return from.lerp(to, u) + Vector3.UP * 45.0 * 4.0 * u * (1.0 - u)
 
 
 func _update_citadel(bt: float) -> void:

@@ -38,7 +38,7 @@ var _since_shot := 1.0
 var _overheat := 0.0
 var _gun_tilt := 0.0
 var _wisp_cd := 0.0
-var _flash: MeshInstance3D
+var _flash: MuzzleFlash
 var _flash_t := 0.0
 
 
@@ -56,18 +56,8 @@ func _new_rig() -> TrooperRig:
 
 
 func _build_weapon() -> void:
-	# Muzzle flash: a blink of light at the barrel tips on every round.
-	_flash = MeshInstance3D.new()
-	var ball := SphereMesh.new()
-	ball.radius = 0.16
-	ball.height = 0.26
-	ball.radial_segments = 8
-	ball.rings = 4
-	_flash.mesh = ball
-	_flash.material_override = Mats.glow(Color(1.0, 0.72, 0.3), 6.0)
-	_flash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_flash.top_level = true
-	_flash.visible = false
+	# Muzzle flash: a star of flame and a jet of it at the barrel tips on every round.
+	_flash = MuzzleFlash.new(0.45, 0.85)
 	add_child(_flash)
 	# How far below level the barrels point in the clips (the export's gun droops a little).
 	var g := _skel.get_bone_global_rest(_skel.find_bone("barrels")).basis.y.normalized()
@@ -157,8 +147,7 @@ func _fire() -> void:
 	var from := muzzle()
 	Combat.fire_hitscan(self, from, aim_point, SPREAD, DAMAGE * damage_scale, team, 0.3, exclude, null, TRACER_WIDTH)
 	(_rig as GunnerRig).kick()
-	_flash.global_position = from
-	_flash.scale = Vector3.ONE * randf_range(0.7, 1.25)
+	_flash.place(from, aim_point - from)
 	_flash.visible = true
 	_flash_t = 0.035
 	if squad and squad.get("possessed") and squad.get("leader") == self:

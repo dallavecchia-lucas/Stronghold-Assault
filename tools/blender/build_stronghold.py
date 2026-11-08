@@ -359,6 +359,11 @@ def mountain(m_rock):
     me = bpy.data.meshes.new("Mountain")
     bm.to_mesh(me)
     bm.free()
+    # Smooth-shaded rock (flat facets read as low poly), kept sharp across creases over 50 degrees.
+    for poly in me.polygons:
+        poly.use_smooth = True
+    if hasattr(me, "set_sharp_from_angle"):
+        me.set_sharp_from_angle(angle=math.radians(50.0))
     ob = bpy.data.objects.new("Mountain", me)
     bpy.context.collection.objects.link(ob)
     me.materials.append(m_rock)

@@ -122,61 +122,20 @@ func _bang() -> void:
 	queue_free()
 
 
-## The bang: a white-hot ball, light washing over everything round it, sparks and a puff of smoke.
+## The bang: a white-hot flash that blooms and a ring of it racing out, light washing over everything round
+## it, sparks of burning magnesium and a puff of white smoke.
 func _flash(at: Vector3) -> void:
-	var root := get_tree().current_scene
-	var ball := MeshInstance3D.new()
-	var s := SphereMesh.new()
-	s.radius = 1.0
-	s.height = 2.0
-	ball.mesh = s
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.albedo_color = Color(1.0, 1.0, 1.0, 0.95)
-	ball.material_override = mat
-	ball.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	root.add_child(ball)
-	ball.global_position = at
-	ball.scale = Vector3.ONE * 0.2
-	var tw := ball.create_tween()
-	tw.tween_property(ball, "scale", Vector3.ONE * 2.6, 0.07)
-	tw.tween_property(mat, "albedo_color:a", 0.0, 0.35).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tw.tween_callback(ball.queue_free)
-
-	var light := OmniLight3D.new()
-	light.light_color = Color(0.95, 0.97, 1.0)
-	light.light_energy = 26.0
-	light.omni_range = radius * 1.8
-	root.add_child(light)
-	light.global_position = at + Vector3.UP * 0.8
-	var tl := light.create_tween()
-	tl.tween_property(light, "light_energy", 0.0, 0.5).set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
-	tl.tween_callback(light.queue_free)
-
-	var sparks := CPUParticles3D.new()
-	var dot := SphereMesh.new()
-	dot.radius = 0.04
-	dot.height = 0.08
-	dot.radial_segments = 4
-	dot.rings = 2
-	var spark_mat := StandardMaterial3D.new()
-	spark_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	spark_mat.albedo_color = Color(1.0, 0.95, 0.75)
-	dot.material = spark_mat
-	sparks.mesh = dot
-	sparks.amount = 28
-	sparks.one_shot = true
-	sparks.explosiveness = 1.0
-	sparks.lifetime = 0.45
-	sparks.direction = Vector3.UP
-	sparks.spread = 80.0
-	sparks.initial_velocity_min = 5.0
-	sparks.initial_velocity_max = 11.0
-	sparks.gravity = Vector3(0, -9.8, 0)
-	root.add_child(sparks)
-	sparks.global_position = at
-	sparks.emitting = true
-	sparks.finished.connect(sparks.queue_free)
-	for k in 3:
-		SmokeCloud.wisp(self, at + Vector3(randf_range(-0.5, 0.5), 0.3 * k, randf_range(-0.5, 0.5)), 1.6)
+	var fx := FX.of(self)
+	fx.flare(at, Color(14.0, 14.0, 15.0), 1.2, 5.5, 0.4, 0, 3.0)
+	fx.flare(at, Color(9.0, 9.0, 10.0), 2.0, 7.0, 0.14, 1, 2.0)
+	fx.flare(at, Color(3.0, 3.1, 3.4), 0.5, radius * 1.6, 0.3, 2, 1.5)
+	fx.light(at + Vector3.UP * 0.8, Color(0.95, 0.97, 1.0), Color(0.9, 0.92, 1.0), 10.0, radius * 1.8, 0.5, 30.0, 0.1)
+	fx.warp(at, 0.3, radius * 0.9, 0.22, 0, 0.04)
+	for k in 28:
+		var d := (FX._rand_dir(true) + Vector3.UP * 0.2).normalized()
+		fx.spark(at, d * randf_range(5.0, 11.0), randf_range(0.3, 0.6), 0.03, 0.06, Color(6.0, 5.6, 4.6), -9.8, 0.8,
+				at.y - 0.15, 0.03, 0.4)
+	for k in 5:
+		fx.smoke(at + Vector3(randf_range(-0.4, 0.4), 0.2 + 0.25 * k, randf_range(-0.4, 0.4)),
+				Vector3(randf_range(-0.6, 0.6), randf_range(0.8, 1.6), randf_range(-0.6, 0.6)), randf_range(2.0, 3.2), 0.4,
+				randf_range(1.8, 2.6), Color(0.82, 0.82, 0.8, 0.55), 0.3, 1.4, 0.0, 0.2)
