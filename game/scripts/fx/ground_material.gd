@@ -156,7 +156,7 @@ void fragment() {
 		// The clearing: grass with darker tufts in clumps, worn thin to the soil and its sprouts here and there,
 		// bare earth at the heart of the worn patches.
 		float g = s.g;
-		float wear = m2 * 0.6 + m3 * 0.4;
+		float wear = m2 * 0.75 + m3 * 0.25;
 		float thin = smoothstep(0.62, 0.78, wear);
 		float bare = smoothstep(0.74, 0.86, wear) * 0.8;
 		float tufts = smoothstep(0.52, 0.72, m3 * 0.7 + m2 * 0.3) * 0.75;
@@ -193,7 +193,7 @@ void fragment() {
 		float dl = lane_frame(wpos.xz, across, along, side);
 		float d = dl + (m3 - 0.5) * 5.0 + (m2 - 0.5) * 6.0;
 		float track = 1.0 - smoothstep(2.0, 6.0, d);
-		float wear = m2 * 0.6 + m3 * 0.4;
+		float wear = m2 * 0.75 + m3 * 0.25;
 		float thin = max(smoothstep(0.64, 0.76, wear), 1.0 - smoothstep(4.0, 9.0, d));
 		float bare = max(smoothstep(0.75, 0.85, wear) * 0.85, track);
 		w[2] *= 1.0 - thin * 0.8;
@@ -308,6 +308,12 @@ void fragment() {
 	float dry = smoothstep(0.35, 0.75, m1 * 0.75 + m2 * 0.25);
 	albedo *= mix(vec3(1.0), mix(vec3(0.92, 1.02, 0.88), vec3(1.18, 1.08, 0.82), dry), grassy);
 	albedo *= mix(0.92, 1.06, m1) * mix(0.96, 1.03, m2);
+	// Seen from above a meadow is never one flat green: its clumps and tussocks shade it every metre or two,
+	// and broad drifts of yellower and bluer green run across it.
+	float tus = texture(macro_noise, wpos.xz * 0.12 + vec2(0.29, 0.83)).r * 0.6
+			+ texture(macro_noise, wpos.xz * 0.31 + vec2(0.61, 0.17)).r * 0.4;
+	albedo *= mix(1.0, mix(0.74, 1.15, tus), grassy);
+	albedo *= mix(vec3(1.0), mix(vec3(0.93, 1.0, 1.1), vec3(1.07, 1.02, 0.86), m2), grassy * 0.7);
 	float rough = ar_sum.y;
 	float ao = ar_sum.x;
 	// The water's edge: soaked dark and glossy, the light's caustics on the bed under it.
@@ -327,12 +333,20 @@ void fragment() {
 	float rut_slope = 0.12 * 6.0 * clamp((abs(rut_x) - 0.1) / 0.32, 0.0, 1.0) * (1.0 - clamp((abs(rut_x) - 0.1) / 0.32, 0.0, 1.0)) / 0.32;
 	detail -= vec3(side.x, 0.0, side.y) * rut_slope * rut_sign * rut;
 	float pn = texture(macro_noise, vec2(along * 0.05, across * 0.05 + 0.17)).r + (m3 - 0.5) * 0.15;
-	float puddle = smoothstep(0.6, 0.63, pn + (0.3 - abs(rut_x)) * 0.25) * step(0.5, rut);
-	albedo = mix(albedo, albedo * 0.45, puddle);
+	float pv = pn + (0.3 - abs(rut_x)) * 0.25;
+	float puddle = smoothstep(0.6, 0.63, pv) * step(0.5, rut);
+	// The mud round a puddle soaked dark and slick.
+	float soaked = smoothstep(0.5, 0.6, pv) * smoothstep(0.3, 0.6, rut);
+	albedo *= mix(1.0, 0.62, soaked);
+	rough = mix(rough, 0.3, soaked);
+	albedo = mix(albedo, albedo * 0.6, puddle);
 	rough = mix(rough, 0.03, puddle);
 	detail *= 1.0 - puddle;
 	ALBEDO = albedo;
 	ROUGHNESS = rough;
+	// Soil, grass and litter shadow their own sheen (their crumbs and blades): only a little shine off them,
+	// even at a low angle toward the sun; the full shine of water where the ground is wet.
+	SPECULAR = mix(0.2, 0.5, max(max(wet, puddle), soaked * 0.6));
 	AO = mix(1.0, ao, 0.85);
 	AO_LIGHT_AFFECT = 0.25;
 	vec3 n = normalize(N + detail * (1.0 - wet * 0.5));

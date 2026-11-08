@@ -11,7 +11,8 @@ extends MultiMeshInstance3D
 ## wind, lighter toward the tip, drier where the ground's grass is sun-dried, a few dead and straw-coloured, the
 ## light shining through them and a sheen on them. They thin away toward the grid's edge (the ground's texture
 ## carries on), and the field is hidden once the camera is high enough that blades would be specks. The CPU only
-## moves the grid.
+## moves the grid; on the GPU only the clumps in the field and in sight are worked out, the rest fold to nothing
+## at once.
 
 ## Clumps a side, metres between them, how far out they fade. Half as many with the standard lighting; `-- --grass=0.3`
 ## thins the field further (for renders on a software GPU): fewer clumps over the same ground, farther apart.
@@ -97,52 +98,65 @@ void vertex() {
 	float h3 = hash(cp + vec2(3.7, 29.9));
 	float h4 = hash(cp + vec2(41.2, 11.6));
 	vec2 p = cp + vec2(h1, h2) * cell;
-	// How much grass there is here: what the ground under it is.
-	float m1 = textureLod(macro_noise, p * 0.0035, 0.0).r;
-	float m2 = textureLod(macro_noise, p * 0.016 + vec2(0.37, 0.11), 0.0).r;
-	float m3 = textureLod(macro_noise, p * 0.07 + vec2(0.71, 0.53), 0.0).r;
-	float grass = 1.0 - smoothstep(0.66, 0.82, m2 * 0.6 + m3 * 0.4);
 	float gy = ground_height(p);
-	if (jungle) {
-		vec2 suv = (p - map_origin) / map_size;
-		vec4 s = textureLod(splat, suv, 0.0);
-		grass *= smoothstep(0.35, 0.8, s.g) * (1.0 - s.r) * (1.0 - s.a);
-		grass *= smoothstep(0.6, 1.4, gy - water_y);
-		float e = 1.0;
-		float slope = abs(ground_height(p + vec2(e, 0.0)) - ground_height(p - vec2(e, 0.0)))
-				+ abs(ground_height(p + vec2(0.0, e)) - ground_height(p - vec2(0.0, e)));
-		grass *= 1.0 - smoothstep(0.5, 1.2, slope);
-	} else {
-		float d = lane_distance(p) + (m3 - 0.5) * 5.0 + (m2 - 0.5) * 6.0;
-		grass *= smoothstep(3.5, 9.0, d);
-		vec2 q = abs(p) - vec2(mountain_half);
-		float foot = length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0);
-		grass *= smoothstep(4.0, 10.0, foot + (m3 - 0.5) * 4.0);
-	}
-	for (int i = 0; i < 8; i++) {
-		if (i >= lot_count) {
-			break;
-		}
-		vec2 l = p - lots[i].xy;
-		float c = cos(lots_yaw[i]);
-		float sn = sin(lots_yaw[i]);
-		vec2 lr = vec2(c * l.x - sn * l.y, sn * l.x + c * l.y);
-		if (abs(lr.x) < lots[i].z && abs(lr.y) < lots[i].w) {
-			grass = 0.0;
-		}
-	}
-	// Thinning toward the edge of the field and where the grass gives out: blade by blade (each has its turn,
-	// COLOR.a), the last ones shorter.
 	vec3 cam = INV_VIEW_MATRIX[3].xyz;
 	float dist = length(vec3(p.x, gy, p.y) - cam);
-	float keep = grass * (1.0 - smoothstep(fade.x, fade.y, dist));
-	float turn = COLOR.a;
+	// Only the clumps in the field and in sight are worked out (most of the grid is neither); the rest fold to
+	// nothing.
+	float reach = cell * 0.62 + 1.0;
+	vec4 clip = PROJECTION_MATRIX * (VIEW_MATRIX * vec4(p.x, gy + 0.4, p.y, 1.0));
+	bool seen = dist < fade.y + reach && clip.w > -reach
+			&& abs(clip.x) < clip.w + reach * abs(PROJECTION_MATRIX[0][0])
+			&& abs(clip.y) < clip.w + reach * abs(PROJECTION_MATRIX[1][1]);
+	float keep = 0.0;
+	float m3 = 0.5;
 	v_t = UV.y;
-	v_dry = smoothstep(0.35, 0.75, m1 * 0.75 + m2 * 0.25);
 	v_dead = COLOR.b;
-	// A blade's own shade and hue, and its clump's.
-	float shade = mix(0.82, 1.12, COLOR.r) * (0.9 + 0.2 * h4);
-	v_col = shade * mix(vec3(1.06, 1.0, 0.86), vec3(0.92, 1.0, 1.1), COLOR.g);
+	v_dry = 0.0;
+	v_col = vec3(1.0);
+	if (seen) {
+		// How much grass there is here: what the ground under it is.
+		float m1 = textureLod(macro_noise, p * 0.0035, 0.0).r;
+		float m2 = textureLod(macro_noise, p * 0.016 + vec2(0.37, 0.11), 0.0).r;
+		m3 = textureLod(macro_noise, p * 0.07 + vec2(0.71, 0.53), 0.0).r;
+		float grass = 1.0 - smoothstep(0.66, 0.82, m2 * 0.75 + m3 * 0.25);
+		if (jungle) {
+			vec2 suv = (p - map_origin) / map_size;
+			vec4 s = textureLod(splat, suv, 0.0);
+			grass *= smoothstep(0.35, 0.8, s.g) * (1.0 - s.r) * (1.0 - s.a);
+			grass *= smoothstep(0.6, 1.4, gy - water_y);
+			float e = 1.0;
+			float slope = abs(ground_height(p + vec2(e, 0.0)) - ground_height(p - vec2(e, 0.0)))
+					+ abs(ground_height(p + vec2(0.0, e)) - ground_height(p - vec2(0.0, e)));
+			grass *= 1.0 - smoothstep(0.5, 1.2, slope);
+		} else {
+			float d = lane_distance(p) + (m3 - 0.5) * 5.0 + (m2 - 0.5) * 6.0;
+			grass *= smoothstep(3.5, 9.0, d);
+			vec2 q = abs(p) - vec2(mountain_half);
+			float foot = length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0);
+			grass *= smoothstep(4.0, 10.0, foot + (m3 - 0.5) * 4.0);
+		}
+		for (int i = 0; i < 8; i++) {
+			if (i >= lot_count) {
+				break;
+			}
+			vec2 l = p - lots[i].xy;
+			float c = cos(lots_yaw[i]);
+			float sn = sin(lots_yaw[i]);
+			vec2 lr = vec2(c * l.x - sn * l.y, sn * l.x + c * l.y);
+			if (abs(lr.x) < lots[i].z && abs(lr.y) < lots[i].w) {
+				grass = 0.0;
+			}
+		}
+		// Thinning toward the edge of the field and where the grass gives out: blade by blade (each has its
+		// turn, COLOR.a), the last ones shorter.
+		keep = grass * (1.0 - smoothstep(fade.x, fade.y, dist));
+		v_dry = smoothstep(0.35, 0.75, m1 * 0.75 + m2 * 0.25);
+		// A blade's own shade and hue, and its clump's.
+		float shade = mix(0.82, 1.12, COLOR.r) * (0.9 + 0.2 * h4);
+		v_col = shade * mix(vec3(1.06, 1.0, 0.86), vec3(0.92, 1.0, 1.1), COLOR.g);
+	}
+	float turn = COLOR.a;
 	if (keep < 0.02 || turn > keep * 1.2) {
 		VERTEX = vec3(0.0, 0.0, 10.0);
 	} else {
