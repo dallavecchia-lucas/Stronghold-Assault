@@ -88,6 +88,8 @@ func _build_all() -> void:
 	_build_keep()
 	_build_bases()
 	_build_scenery()
+	# Grass standing in the clearings round the camera (GrassField).
+	GrassField.build(self, ground)
 	_build_spawns()
 	_build_mounts(_build_stations() + _build_aa_turrets())
 	rebake_navigation()

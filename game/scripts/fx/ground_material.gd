@@ -23,15 +23,21 @@ const CAUSTICS := "res://assets/textures/water/water_caustics.png"
 enum { LITTER, MOSSY, GRASS, GRASS_DARK, DIRT, MUD, ROCK, PEBBLES }
 ## How many metres a layer's texture covers (about its real size, a little larger for the small ones).
 const TILE := [3.2, 2.4, 2.4, 2.6, 3.4, 2.4, 4.5, 2.4]
-## Each layer's colour (times its photo, linear) and how strong its normal map is (alpha).
-const JUNGLE_TINT := [
-	Color(0.86, 0.84, 0.78, 1.0), Color(0.92, 1.0, 0.86, 1.0), Color(0.72, 0.95, 0.6, 1.0), Color(0.95, 1.12, 0.85, 1.0),
-	Color(0.92, 0.88, 0.84, 1.1), Color(0.85, 0.82, 0.78, 1.0), Color(0.88, 0.87, 0.85, 1.35), Color(0.82, 0.82, 0.8, 1.2),
+## Each scan's mean brightness (linear luma, measured), so a layer can be given the colour it should have on average
+## while keeping all of its photo's detail.
+const LUMA := [0.198, 0.106, 0.247, 0.054, 0.117, 0.077, 0.16, 0.201]
+## Per layer: the mean colour (linear) it is moved toward and how far (alpha), its normal map's strength. The
+## grass scan is a dry yellow meadow, the rock an orange sandstone: both are recoloured.
+const JUNGLE_RECOLOR := [
+	Color(0.11, 0.075, 0.035, 0.55), Color(0.065, 0.08, 0.03, 0.5), Color(0.06, 0.11, 0.025, 0.85), Color(0.035, 0.06, 0.015, 0.6),
+	Color(0.11, 0.08, 0.05, 0.35), Color(0.075, 0.062, 0.045, 0.2), Color(0.11, 0.105, 0.095, 0.7), Color(0.16, 0.15, 0.13, 0.3),
 ]
-const CLASSIC_TINT := [
-	Color(0.9, 0.88, 0.82, 1.0), Color(0.95, 1.0, 0.88, 1.0), Color(0.88, 1.0, 0.72, 1.0), Color(1.0, 1.08, 0.86, 1.0),
-	Color(1.0, 0.95, 0.9, 1.1), Color(0.9, 0.86, 0.8, 1.0), Color(0.95, 0.92, 0.88, 1.35), Color(0.9, 0.88, 0.85, 1.2),
+const JUNGLE_NORMAL := [1.0, 1.0, 1.0, 1.0, 1.1, 1.0, 1.35, 1.2]
+const CLASSIC_RECOLOR := [
+	Color(0.2, 0.13, 0.05, 0.4), Color(0.1, 0.09, 0.04, 0.4), Color(0.1, 0.135, 0.045, 0.85), Color(0.055, 0.075, 0.025, 0.65),
+	Color(0.14, 0.11, 0.075, 0.45), Color(0.09, 0.075, 0.055, 0.2), Color(0.165, 0.15, 0.13, 0.75), Color(0.2, 0.185, 0.16, 0.3),
 ]
+const CLASSIC_NORMAL := [1.0, 1.0, 1.0, 1.0, 1.1, 1.0, 1.35, 1.2]
 
 const SHADER := """
 shader_type spatial;
@@ -49,7 +55,11 @@ uniform vec2 map_origin = vec2(0.0);
 uniform float map_size = 1.0;
 uniform float water_y = -10000.0;
 uniform float tile[8];
-uniform vec4 tint[8];
+// Per layer: the mean colour it is moved toward (rgb) and how far (a); its scan's mean brightness; its normal
+// map's strength.
+uniform vec4 recolor[8];
+uniform float layer_luma[8];
+uniform float normal_strength[8];
 // The classic field's worn tracks (from xz, to xz) and the mountain's half width.
 uniform vec4 lanes[4];
 uniform int lane_count = 0;
@@ -84,7 +94,10 @@ vec4 layer(int i, vec2 uv, vec2 dx, vec2 dy, float k, out vec2 nrm, out vec2 ar)
 	nrm = mix(na, nb, t) * 2.0 - 1.0;
 	vec3 o = mix(oa, ob, t);
 	ar = o.rg;
-	return vec4(mix(ca, cb, t) * tint[i].rgb, o.b);
+	vec3 c = mix(ca, cb, t);
+	// Its detail and shading kept, its colour moved toward the layer's own.
+	vec3 moved = recolor[i].rgb * (dot(c, vec3(0.2126, 0.7152, 0.0722)) / layer_luma[i]);
+	return vec4(mix(c, moved, recolor[i].a), o.b);
 }
 
 float lane_distance(vec2 p) {
@@ -120,11 +133,12 @@ void fragment() {
 		float moss = smoothstep(0.42, 0.62, m2 * 0.7 + m3 * 0.3);
 		w[0] = 1.0 - moss;
 		w[1] = moss;
-		// The clearing: grass, lusher in some patches, worn to bare earth in others.
+		// The clearing: grass with darker tufts in clumps, worn to bare earth here and there.
 		float g = s.g;
-		float bare = smoothstep(0.62, 0.74, m1 * 0.55 + m3 * 0.45) * 0.85;
-		w[2] = g * (1.0 - bare) * (1.0 - smoothstep(0.35, 0.65, m2));
-		w[3] = g * (1.0 - bare) * smoothstep(0.35, 0.65, m2);
+		float bare = smoothstep(0.66, 0.76, m2 * 0.6 + m3 * 0.4) * 0.8;
+		float tufts = smoothstep(0.52, 0.72, m3 * 0.7 + m2 * 0.3) * 0.75;
+		w[2] = g * (1.0 - bare);
+		w[3] = g * (1.0 - bare) * tufts;
 		w[4] = g * bare;
 		w[0] *= 1.0 - g;
 		w[1] *= 1.0 - g;
@@ -150,12 +164,12 @@ void fragment() {
 	} else {
 		// The classic field: grass, dry in big patches, worn into earth tracks up the attack lanes, scree at the
 		// mountain's foot.
-		float dry = smoothstep(0.4, 0.7, m1 * 0.7 + m2 * 0.3);
-		w[2] = 1.0 - dry;
-		w[3] = dry;
+		float tufts = smoothstep(0.52, 0.72, m3 * 0.7 + m2 * 0.3) * 0.75;
+		w[2] = 1.0;
+		w[3] = tufts;
 		float d = lane_distance(wpos.xz) + (m3 - 0.5) * 5.0 + (m2 - 0.5) * 6.0;
 		float track = 1.0 - smoothstep(2.5, 7.5, d);
-		float bare = smoothstep(0.66, 0.76, m1 * 0.5 + m3 * 0.5) * 0.8;
+		float bare = smoothstep(0.68, 0.77, m2 * 0.6 + m3 * 0.4) * 0.7;
 		float earth = max(track, bare);
 		w[2] *= 1.0 - earth;
 		w[3] *= 1.0 - earth;
@@ -238,7 +252,7 @@ void fragment() {
 	for (int i = 0; i < 8; i++) {
 		float b = max(hb[i] - (hmax - blend_depth), 0.0);
 		albedo += col[i] * b;
-		detail += det[i] * b * tint[i].a;
+		detail += det[i] * b * normal_strength[i];
 		ar_sum += ars[i] * b;
 		wsum += b;
 	}
@@ -246,8 +260,16 @@ void fragment() {
 	detail /= max(wsum, 0.0001);
 	ar_sum /= max(wsum, 0.0001);
 
-	// Large-scale variation: no two stretches of ground quite the same shade.
-	albedo *= mix(0.82, 1.12, m1) * mix(0.93, 1.05, m2);
+	// Large-scale variation: no two stretches of ground quite the same shade; grass sun-dried in broad soft
+	// patches, lusher in others.
+	float grassy = 0.0;
+	for (int i = 2; i < 4; i++) {
+		grassy += max(hb[i] - (hmax - blend_depth), 0.0);
+	}
+	grassy /= max(wsum, 0.0001);
+	float dry = smoothstep(0.35, 0.75, m1 * 0.75 + m2 * 0.25);
+	albedo *= mix(vec3(1.0), mix(vec3(0.85, 0.95, 0.82), vec3(1.25, 1.1, 0.78), dry), grassy);
+	albedo *= mix(0.88, 1.08, m1) * mix(0.95, 1.04, m2);
 	float rough = ar_sum.y;
 	float ao = ar_sum.x;
 	// The water's edge: soaked dark and glossy, the light's caustics on the bed under it.
@@ -278,7 +300,7 @@ static var _noise: NoiseTexture2D
 ## The Jungle Keep's ground: laid out by its `splat` (r the banks, g the clearing's grass, a the quarry's rock)
 ## over the square at `origin` `size` m across; the water's surface at `water_y`.
 static func jungle(splat: Texture2D, origin: Vector2, size: float, water_y: float) -> ShaderMaterial:
-	var m := _base(JUNGLE_TINT)
+	var m := _base(JUNGLE_RECOLOR, JUNGLE_NORMAL)
 	m.set_shader_parameter("map_kind", 0)
 	m.set_shader_parameter("splat", splat)
 	m.set_shader_parameter("map_origin", origin)
@@ -290,7 +312,7 @@ static func jungle(splat: Texture2D, origin: Vector2, size: float, water_y: floa
 ## The classic field's ground: tracks worn up the `lanes` ([from, to] Vector3s, up to four) and scree round the
 ## foot of the mountain (`mountain_half` m from the middle to its foot).
 static func classic(lanes: Array, mountain_half: float) -> ShaderMaterial:
-	var m := _base(CLASSIC_TINT)
+	var m := _base(CLASSIC_RECOLOR, CLASSIC_NORMAL)
 	m.set_shader_parameter("map_kind", 1)
 	var packed: Array[Vector4] = []
 	for l in lanes.slice(0, 4):
@@ -305,7 +327,7 @@ static func classic(lanes: Array, mountain_half: float) -> ShaderMaterial:
 	return m
 
 
-static func _base(tints: Array) -> ShaderMaterial:
+static func _base(recolors: Array, normals: Array) -> ShaderMaterial:
 	if _shader == null:
 		_shader = Shader.new()
 		_shader.code = SHADER
@@ -317,10 +339,9 @@ static func _base(tints: Array) -> ShaderMaterial:
 	m.set_shader_parameter("caustics", load(CAUSTICS))
 	m.set_shader_parameter("macro_noise", macro_noise())
 	m.set_shader_parameter("tile", PackedFloat32Array(TILE))
-	var t := PackedColorArray()
-	for c in tints:
-		t.append(c)
-	m.set_shader_parameter("tint", t)
+	m.set_shader_parameter("layer_luma", PackedFloat32Array(LUMA))
+	m.set_shader_parameter("normal_strength", PackedFloat32Array(normals))
+	m.set_shader_parameter("recolor", PackedColorArray(recolors))
 	return m
 
 

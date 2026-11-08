@@ -64,8 +64,13 @@ uniform sampler2D macro_noise : filter_linear_mipmap, repeat_enable;
 uniform float rock_layer = 6.0;
 uniform float grass_layer = 3.0;
 uniform float soil_layer = 4.0;
-uniform vec3 rock_tint = vec3(1.0);
-uniform vec3 grass_tint = vec3(1.0);
+// The rock's mean colour (linear) and the scan's brightness: the scan's detail recoloured to it.
+uniform vec3 rock_color = vec3(0.16, 0.15, 0.13);
+uniform float rock_luma = 0.16;
+uniform float rock_recolor = 0.75;
+// The same for what grows on the ledges.
+uniform vec3 grass_color = vec3(0.1, 0.135, 0.045);
+uniform float grass_luma = 0.247;
 uniform float moss = 0.3;
 uniform float rock_tile = 6.0;
 uniform float macro_tile = 48.0;
@@ -92,24 +97,31 @@ void fragment() {
 	vec3 ma = texture(macro_albedo, ux * k).rgb * bw.x + texture(macro_albedo, uy * k).rgb * bw.y + texture(macro_albedo, uz * k).rgb * bw.z;
 	vec3 mdet = tri_detail(texture(macro_normal, ux * k).rg * 2.0 - 1.0, texture(macro_normal, uy * k).rg * 2.0 - 1.0,
 			texture(macro_normal, uz * k).rg * 2.0 - 1.0, bw, sg);
-	vec3 rock = ra * rock_tint * mix(vec3(1.0), ma / max(vec3(luma(ma)), vec3(0.02)) * 0.35 + vec3(luma(ma) / 0.18) * 0.65, 0.55);
+	vec3 rock = mix(ra, rock_color * (luma(ra) / rock_luma), rock_recolor);
+	// The cliff's light and shade, a hint of its colour.
+	float ml = luma(ma);
+	rock *= mix(1.0, ml / 0.13, 0.55);
+	rock = mix(rock, rock * ma / max(vec3(ml), vec3(0.02)), 0.12);
 	// Faint strata.
-	rock *= 0.93 + 0.14 * (0.5 + 0.5 * sin(wpos.y * 1.9 + m1 * 9.0 + m3 * 2.0));
-	rock *= mix(0.85, 1.1, m1);
+	rock *= 0.96 + 0.08 * (0.5 + 0.5 * sin(wpos.y * 1.9 + m1 * 9.0 + m3 * 2.0));
+	rock *= mix(0.88, 1.08, m1);
 	float rough = ro.g;
 	float ao = ro.r;
 	// Moss in the crevices and on what faces up.
 	float mossy = moss * smoothstep(0.35, 0.75, (1.0 - ao) * 0.7 + N.y * 0.45 + (m3 - 0.5) * 0.6);
 	rock = mix(rock, vec3(0.05, 0.075, 0.025) * (0.6 + 0.8 * luma(ra) / 0.25), mossy);
 	// Grass and soil settled on the ledges and flat tops, blended by height.
-	float flat_up = smoothstep(0.62, 0.85, N.y + (m3 - 0.5) * 0.25);
+	float patchy = smoothstep(0.38, 0.62, texture(macro_noise, wpos.xz * 0.11 + vec2(0.13, 0.57)).r);
+	float flat_up = smoothstep(0.7, 0.9, N.y + (m3 - 0.5) * 0.3) * patchy;
 	vec3 col = rock;
 	vec3 det = rdet * 1.25 + mdet * 0.9;
 	if (flat_up > 0.002) {
 		vec2 gu = wpos.xz / 2.6;
 		float soil = smoothstep(0.38, 0.62, m1);
-		vec4 g = mix(vec4(texture(layer_albedo, vec3(gu, grass_layer)).rgb * grass_tint, texture(layer_orh, vec3(gu, grass_layer)).b),
-				vec4(texture(layer_albedo, vec3(gu, soil_layer)).rgb, texture(layer_orh, vec3(gu, soil_layer)).b), soil);
+		vec3 gc = texture(layer_albedo, vec3(gu, grass_layer)).rgb;
+		gc = mix(gc, grass_color * (luma(gc) / grass_luma), 0.8);
+		vec4 g = mix(vec4(gc, texture(layer_orh, vec3(gu, grass_layer)).b),
+				vec4(texture(layer_albedo, vec3(gu, soil_layer)).rgb * 0.8, texture(layer_orh, vec3(gu, soil_layer)).b), soil);
 		vec2 gn = mix(texture(layer_normal, vec3(gu, grass_layer)).rg, texture(layer_normal, vec3(gu, soil_layer)).rg, soil) * 2.0 - 1.0;
 		float gw = smoothstep(0.0, 0.25, g.a + flat_up * 1.3 - ro.b - 0.55);
 		col = mix(col, g.rgb, gw);
@@ -158,15 +170,15 @@ void fragment() {
 	float m1 = texture(macro_noise, (wpos.xz + wpos.y) * 0.02).r;
 	float m2 = texture(macro_noise, (wpos.xz - wpos.y) * 0.09 + vec2(0.3, 0.6)).r;
 	// Patches of weathering.
-	col *= mix(0.8, 1.08, m1) * mix(0.94, 1.04, m2);
+	col *= mix(0.86, 1.08, m1) * mix(0.95, 1.04, m2);
 	float wall = 1.0 - bw.y;
 	// Rain streaks run down the walls.
 	float streak = texture(macro_noise, vec2((wpos.x + wpos.z) * 0.45, wpos.y * 0.015)).r;
 	float streaks = smoothstep(0.52, 0.78, streak + (m2 - 0.5) * 0.2) * wall;
-	col *= 1.0 - streaks * 0.34;
+	col *= 1.0 - streaks * 0.22;
 	// Grime and splashed earth at the foot.
 	float foot = 1.0 - smoothstep(0.0, 2.4, wpos.y - ground_y + (m2 - 0.5) * 0.8);
-	col = mix(col, col * vec3(0.58, 0.5, 0.4), foot * 0.75);
+	col = mix(col, col * vec3(0.62, 0.55, 0.45), foot * 0.55);
 	float rough = mix(o.g, 0.97, streaks * 0.3);
 	// Moss on what faces up, green algae down the streaks (the jungle).
 	float mossy = moss * max(smoothstep(0.55, 0.8, N.y * 0.7 + m2 * 0.5), streaks * 0.6 + foot * 0.4) * smoothstep(0.35, 0.6, m1 + m2 * 0.3);
@@ -266,16 +278,19 @@ static func material(key: String, jungle: bool) -> ShaderMaterial:
 			m.set_shader_parameter("rock_layer", float(GroundMaterial.ROCK))
 			m.set_shader_parameter("grass_layer", float(GroundMaterial.GRASS_DARK if jungle else GroundMaterial.GRASS))
 			m.set_shader_parameter("soil_layer", float(GroundMaterial.MOSSY if jungle else GroundMaterial.DIRT))
-			m.set_shader_parameter("rock_tint", Vector3(0.82, 0.8, 0.76) if jungle else Vector3(0.95, 0.9, 0.82))
-			m.set_shader_parameter("grass_tint", Vector3(0.8, 1.0, 0.7) if jungle else Vector3(0.95, 1.0, 0.8))
-			m.set_shader_parameter("moss", 0.75 if jungle else 0.2)
+			var grass: int = GroundMaterial.GRASS_DARK if jungle else GroundMaterial.GRASS
+			m.set_shader_parameter("rock_color", Vector3(0.11, 0.105, 0.095) if jungle else Vector3(0.165, 0.15, 0.13))
+			m.set_shader_parameter("rock_luma", GroundMaterial.LUMA[GroundMaterial.ROCK])
+			m.set_shader_parameter("grass_color", Vector3(0.045, 0.075, 0.02) if jungle else Vector3(0.09, 0.12, 0.04))
+			m.set_shader_parameter("grass_luma", GroundMaterial.LUMA[grass])
+			m.set_shader_parameter("moss", 0.75 if jungle else 0.15)
 		"Concrete", "ConcreteDark":
 			m = _shader_material(CONCRETE_SHADER)
 			for part in ["albedo", "normal", "orh"]:
 				m.set_shader_parameter("wall_" + part, load(WALL % part))
 				m.set_shader_parameter("deck_" + part, load(DECK % part))
 			m.set_shader_parameter("macro_noise", GroundMaterial.macro_noise())
-			var t := 0.55 if key == "ConcreteDark" else 0.95
+			var t := 0.75 if key == "ConcreteDark" else 1.3
 			m.set_shader_parameter("tint", Vector3(t, t * 0.98, t * 0.95))
 			m.set_shader_parameter("moss", 0.7 if jungle else 0.1)
 		"Metal":

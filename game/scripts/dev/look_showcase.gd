@@ -8,18 +8,19 @@ extends Node3D
 ## settle), and nothing is drawn in between. The classic field's views first; `--jungle` takes the Jungle Keep's instead.
 ## `--lighting=standard` (GameConfig) for the standard lighting.
 
-## [camera, looking at, fov, heights over the ground (camera, target)]
+## [camera, looking at, fov, the camera's height is over the ground, the target's is (default: as the camera's)]
 const CLASSIC := {
-	"field": [Vector3(34, 1.7, 150), Vector3(0, 7, 84), 68.0],
+	"field": [Vector3(8, 1.7, 165), Vector3(0, 8, 84), 68.0],
 	"rts": [Vector3(6, 34, 150), Vector3(0, 0, 112), 55.0],
 	"bunker": [Vector3(16, 2.2, 104), Vector3(-4, 7.5, 84), 66.0],
 	"mountain": [Vector3(150, 46, 170), Vector3(10, 28, 20), 55.0],
-	"ground": [Vector3(18, 1.6, 128), Vector3(21, 0, 120), 70.0],
+	"ground": [Vector3(6, 1.6, 130), Vector3(9, 0, 122), 70.0],
 	"deck": [Vector3(-8, 8.9, 82.5), Vector3(-30, 1, 150), 70.0],
 }
 const JUNGLE := {
-	"river": [Vector3(-24, 2.0, 522), Vector3(8, -1.0, 470), 62.0, true],
-	"river_low": [Vector3(-6, 1.2, 497), Vector3(30, -1.5, 455), 66.0, true],
+	"river": [Vector3(-24, 2.0, 522), Vector3(8, -1.0, 470), 62.0, true, false],
+	"river_low": [Vector3(-6, 1.0, 510), Vector3(40, -1.8, 470), 66.0, true, false],
+	"bank": [Vector3(10, 2.5, 516), Vector3(13, -1.8, 503), 66.0, true, false],
 	"rts_river": [Vector3(-40, 42, 470), Vector3(-30, 0, 440), 55.0],
 	"lake": [Vector3(-590, 13, 200), Vector3(-675, 4, 320), 62.0],
 	"keep": [Vector3(210, 120, 330), Vector3(0, 10, 0), 50.0],
@@ -82,7 +83,8 @@ func _process(_delta: float) -> void:
 	var at: Vector3 = v[1]
 	if v.size() > 3 and v[3]:
 		from.y += LevelBuilder.ground_height(from)
-		at.y += LevelBuilder.ground_height(at)
+		if v.size() < 5 or v[4]:
+			at.y += LevelBuilder.ground_height(at)
 	cam.fov = v[2]
 	cam.global_position = from
 	cam.look_at(at)
