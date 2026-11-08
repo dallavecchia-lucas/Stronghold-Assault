@@ -6,8 +6,9 @@ extends RefCounted
 ## three axes in world space, each projection in a right-handed frame so its normal map lights the right way.
 ##
 ## - Rock: the mountain. Scanned rock face up close, a scanned cliff (aerial) over it at fifty metres for the
-##   big shapes, cracks and colour; faint strata; grass and soil settling on the ledges and flat tops, moss in
-##   the crevices (thicker in the jungle).
+##   big shapes, cracks and colour; faint strata; broad zones of lighter, darker and iron-stained rock; dark and
+##   pale weathering streaks down the steep faces; grass and soil settling on the ledges and flat tops (and in
+##   the jungle over all but the steep faces), moss in the crevices (thicker in the jungle).
 ## - Concrete: board-formed walls (their pour lines level) and worn slab decks, rain streaks run down the walls
 ##   from every ledge, grime and splashed earth at their foot, patches of weathering; moss and algae in the
 ##   jungle. ConcreteDark is the same, darker.
@@ -72,6 +73,8 @@ uniform float rock_recolor = 0.75;
 uniform vec3 grass_color = vec3(0.1, 0.135, 0.045);
 uniform float grass_luma = 0.247;
 uniform float moss = 0.3;
+// How much grows on it: 0 a bare crag, 1 the jungle's (on all but the steep faces).
+uniform float green = 0.4;
 uniform float rock_tile = 6.0;
 uniform float macro_tile = 48.0;
 %TRIPLANAR%
@@ -105,19 +108,32 @@ void fragment() {
 	// Faint strata.
 	rock *= 0.96 + 0.08 * (0.5 + 0.5 * sin(wpos.y * 1.9 + m1 * 9.0 + m3 * 2.0));
 	rock *= mix(0.88, 1.08, m1);
+	// Broad zones across the mountain, lighter and darker, warm where iron stains the rock.
+	float m2 = texture(macro_noise, wpos.xz * 0.021 + vec2(wpos.y * 0.017, 0.41)).r;
+	float m4 = texture(macro_noise, wpos.xz * 0.013 + vec2(0.77, wpos.y * 0.011)).r;
+	rock *= mix(0.82, 1.14, m2);
+	rock = mix(rock, rock * vec3(1.16, 0.97, 0.8), smoothstep(0.55, 0.8, m4) * 0.6);
+	// Weathering down the steep faces: dark streaks where the rain runs off, pale ones where it leaves lime.
+	float steep = 1.0 - smoothstep(0.5, 0.85, N.y);
+	float stx = texture(macro_noise, vec2(wpos.z * 0.08 + m1, wpos.y * 0.006)).r;
+	float stz = texture(macro_noise, vec2(wpos.x * 0.08 + m1, wpos.y * 0.006 + 0.5)).r;
+	float st = (stx * bw.x + stz * bw.z) / max(bw.x + bw.z, 0.001);
+	rock *= 1.0 - smoothstep(0.55, 0.78, st) * 0.32 * steep;
+	rock *= 1.0 + (1.0 - smoothstep(0.12, 0.3, st)) * 0.14 * steep;
 	float rough = ro.g;
 	float ao = ro.r;
 	// Moss in the crevices and on what faces up.
 	float mossy = moss * smoothstep(0.35, 0.75, (1.0 - ao) * 0.7 + N.y * 0.45 + (m3 - 0.5) * 0.6);
 	rock = mix(rock, vec3(0.05, 0.075, 0.025) * (0.6 + 0.8 * luma(ra) / 0.25), mossy);
-	// Grass and soil settled on the ledges and flat tops, blended by height.
-	float patchy = smoothstep(0.38, 0.62, texture(macro_noise, wpos.xz * 0.11 + vec2(0.13, 0.57)).r);
-	float flat_up = smoothstep(0.7, 0.9, N.y + (m3 - 0.5) * 0.3) * patchy;
+	// Grass and soil settled on the ledges, the flat tops and (as much as grows here) the gentler slopes,
+	// blended by height.
+	float patchy = smoothstep(0.5 - 0.3 * green, 0.68 - 0.25 * green, texture(macro_noise, wpos.xz * 0.11 + vec2(0.13, 0.57)).r * 0.7 + m2 * 0.3);
+	float flat_up = smoothstep(0.82 - 0.27 * green, 0.94 - 0.2 * green, N.y + (m3 - 0.5) * 0.3) * patchy;
 	vec3 col = rock;
 	vec3 det = rdet * 1.25 + mdet * 0.9;
 	if (flat_up > 0.002) {
 		vec2 gu = wpos.xz / 2.6;
-		float soil = smoothstep(0.38, 0.62, m1);
+		float soil = smoothstep(0.42, 0.66, m1) * (1.0 - 0.7 * green);
 		vec3 gc = texture(layer_albedo, vec3(gu, grass_layer)).rgb;
 		gc = mix(gc, grass_color * (luma(gc) / grass_luma), 0.8);
 		vec4 g = mix(vec4(gc, texture(layer_orh, vec3(gu, grass_layer)).b),
@@ -284,6 +300,7 @@ static func material(key: String, jungle: bool) -> ShaderMaterial:
 			m.set_shader_parameter("grass_color", Vector3(0.045, 0.075, 0.02) if jungle else Vector3(0.09, 0.12, 0.04))
 			m.set_shader_parameter("grass_luma", GroundMaterial.LUMA[grass])
 			m.set_shader_parameter("moss", 0.75 if jungle else 0.15)
+			m.set_shader_parameter("green", 1.0 if jungle else 0.4)
 		"Concrete", "ConcreteDark":
 			m = _shader_material(CONCRETE_SHADER)
 			for part in ["albedo", "normal", "orh"]:

@@ -5,10 +5,11 @@ extends RefCounted
 ## Eight layers, each a colour, a normal map and its ambient occlusion, roughness and height, in three texture
 ## arrays (assets/textures/terrain, one slice a layer): jungle leaf litter, mossy mud and leaves, grass, dark
 ## grass, bare earth, wet mud, rock, river pebbles. Where a layer lies comes from the map (the jungle's splat:
-## the clearing's grass, the banks, the quarry; the classic field's worn tracks up the attack lanes and the
-## scree at the mountain's foot), from the slope (rock on the steep faces, projected from three sides so it
-## never stretches), from the water (wet and glossy at its edge, pebbles and mud under it with the light's
-## caustics playing over them) and from large-scale noise (moss, bare patches, dry and lush grass).
+## the clearing's grass, the banks, the quarry; the classic field's worn tracks up the attack lanes, with wheel
+## ruts sunk in them, mud in the ruts and rain standing in puddles, and the scree at the mountain's foot), from
+## the slope (rock on the steep faces, projected from three sides so it never stretches), from the water (wet
+## and glossy at its edge, pebbles and mud under it with the light's caustics playing over them) and from
+## large-scale noise (moss, grass worn thin to the soil and to bare earth, dry and lush grass).
 ##
 ## Layers meet by their heights: the grass grows up between the stones and the mud fills the dips, rather than
 ## the two fading into each other. Every layer is sampled twice at offsets that change with a slow noise, so
@@ -29,13 +30,13 @@ const LUMA := [0.198, 0.106, 0.247, 0.054, 0.117, 0.077, 0.16, 0.201]
 ## Per layer: the mean colour (linear) it is moved toward and how far (alpha), its normal map's strength. The
 ## grass scan is a dry yellow meadow, the rock an orange sandstone: both are recoloured.
 const JUNGLE_RECOLOR := [
-	Color(0.11, 0.075, 0.035, 0.55), Color(0.065, 0.08, 0.03, 0.5), Color(0.06, 0.11, 0.025, 0.85), Color(0.035, 0.06, 0.015, 0.6),
-	Color(0.11, 0.08, 0.05, 0.35), Color(0.075, 0.062, 0.045, 0.2), Color(0.11, 0.105, 0.095, 0.7), Color(0.16, 0.15, 0.13, 0.3),
+	Color(0.085, 0.062, 0.036, 0.7), Color(0.06, 0.075, 0.03, 0.55), Color(0.075, 0.14, 0.03, 0.9), Color(0.045, 0.08, 0.02, 0.65),
+	Color(0.095, 0.075, 0.05, 0.55), Color(0.075, 0.062, 0.045, 0.3), Color(0.11, 0.105, 0.095, 0.7), Color(0.16, 0.15, 0.13, 0.3),
 ]
 const JUNGLE_NORMAL := [1.0, 1.0, 1.0, 1.0, 1.1, 1.0, 1.35, 1.2]
 const CLASSIC_RECOLOR := [
-	Color(0.2, 0.13, 0.05, 0.4), Color(0.1, 0.09, 0.04, 0.4), Color(0.1, 0.135, 0.045, 0.85), Color(0.055, 0.075, 0.025, 0.65),
-	Color(0.14, 0.11, 0.075, 0.45), Color(0.09, 0.075, 0.055, 0.2), Color(0.165, 0.15, 0.13, 0.75), Color(0.2, 0.185, 0.16, 0.3),
+	Color(0.2, 0.13, 0.05, 0.4), Color(0.085, 0.09, 0.045, 0.65), Color(0.12, 0.175, 0.05, 0.9), Color(0.07, 0.105, 0.03, 0.7),
+	Color(0.13, 0.11, 0.085, 0.6), Color(0.085, 0.075, 0.06, 0.35), Color(0.165, 0.15, 0.13, 0.75), Color(0.2, 0.185, 0.16, 0.3),
 ]
 const CLASSIC_NORMAL := [1.0, 1.0, 1.0, 1.0, 1.1, 1.0, 1.35, 1.2]
 
@@ -100,17 +101,29 @@ vec4 layer(int i, vec2 uv, vec2 dx, vec2 dy, float k, out vec2 nrm, out vec2 ar)
 	return vec4(mix(c, moved, recolor[i].a), o.b);
 }
 
-float lane_distance(vec2 p) {
+// The nearest track: how far from it (returned), how far across its middle line (signed) and along it, and
+// which way across is.
+float lane_frame(vec2 p, out float across, out float along, out vec2 side) {
 	float d = 1e9;
+	across = 0.0;
+	along = 0.0;
+	side = vec2(0.0, 1.0);
 	for (int i = 0; i < 4; i++) {
 		if (i >= lane_count) {
 			break;
 		}
 		vec2 a = lanes[i].xy;
-		vec2 b = lanes[i].zw;
-		vec2 ab = b - a;
-		float t = clamp(dot(p - a, ab) / dot(ab, ab), 0.0, 1.0);
-		d = min(d, length(p - (a + ab * t)));
+		vec2 ab = lanes[i].zw - a;
+		float len = max(length(ab), 0.001);
+		vec2 u = ab / len;
+		float t = clamp(dot(p - a, u), 0.0, len);
+		float di = length(p - (a + u * t));
+		if (di < d) {
+			d = di;
+			along = t;
+			side = vec2(-u.y, u.x);
+			across = dot(p - a, side);
+		}
 	}
 	return d;
 }
@@ -123,14 +136,21 @@ void fragment() {
 	float m3 = texture(macro_noise, wpos.xz * 0.07 + vec2(0.71, 0.53)).r;
 	float above = wpos.y - water_y;
 
-	// Where each layer lies.
+	// Where each layer lies (and, on the classic field, the wheel ruts: how far from a rut's middle, which way
+	// its floor rises, how much rut there is).
+	float across = 0.0;
+	float along = 0.0;
+	vec2 side = vec2(0.0, 1.0);
+	float rut_x = 1.0;
+	float rut_sign = 0.0;
+	float rut = 0.0;
 	float w[8];
 	for (int i = 0; i < 8; i++) {
 		w[i] = 0.0;
 	}
 	if (map_kind == 0) {
 		vec4 s = texture(splat, (wpos.xz - map_origin) / map_size);
-		float moss = smoothstep(0.42, 0.62, m2 * 0.7 + m3 * 0.3);
+		float moss = smoothstep(0.36, 0.6, m2 * 0.7 + m3 * 0.3);
 		w[0] = 1.0 - moss;
 		w[1] = moss;
 		// The clearing: grass with darker tufts in clumps, worn to bare earth here and there.
@@ -162,22 +182,35 @@ void fragment() {
 		}
 		w[6] = rock;
 	} else {
-		// The classic field: grass, dry in big patches, worn into earth tracks up the attack lanes, scree at the
-		// mountain's foot.
+		// The classic field: grass, dry in big patches, worn thin (the soil showing between sprouts) and bare in
+		// places, worn into earth tracks up the attack lanes with wheel ruts down them, scree at the mountain's foot.
 		float tufts = smoothstep(0.52, 0.72, m3 * 0.7 + m2 * 0.3) * 0.75;
 		w[2] = 1.0;
 		w[3] = tufts;
-		float d = lane_distance(wpos.xz) + (m3 - 0.5) * 5.0 + (m2 - 0.5) * 6.0;
-		float track = 1.0 - smoothstep(2.5, 7.5, d);
-		float bare = smoothstep(0.68, 0.77, m2 * 0.6 + m3 * 0.4) * 0.7;
-		float earth = max(track, bare);
-		w[2] *= 1.0 - earth;
-		w[3] *= 1.0 - earth;
-		w[4] = earth;
+		float dl = lane_frame(wpos.xz, across, along, side);
+		float d = dl + (m3 - 0.5) * 5.0 + (m2 - 0.5) * 6.0;
+		float track = 1.0 - smoothstep(2.0, 6.0, d);
+		float wear = m2 * 0.6 + m3 * 0.4;
+		float thin = max(smoothstep(0.64, 0.76, wear), 1.0 - smoothstep(4.0, 9.0, d));
+		float bare = max(smoothstep(0.75, 0.85, wear) * 0.85, track);
+		w[2] *= 1.0 - thin * 0.8;
+		w[3] *= 1.0 - thin;
+		w[1] = thin * (1.0 - bare) * 0.9;
+		w[4] = bare;
+		// The ruts: two, a vehicle's track apart, wandering, here and there worn out; mud in them.
+		float wob = (texture(macro_noise, vec2(along * 0.006, 0.31)).r - 0.5) * 3.0;
+		float off = across - wob;
+		rut_x = abs(off) - 1.1;
+		rut_sign = sign(rut_x) * sign(off);
+		rut = (1.0 - smoothstep(0.1, 0.42, abs(rut_x))) * smoothstep(0.5, 0.9, track)
+				* smoothstep(0.3, 0.5, texture(macro_noise, vec2(along * 0.021, 0.73)).r);
+		w[5] = rut * 0.9;
 		vec2 q = abs(wpos.xz) - vec2(mountain_half);
-		float foot = length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0);
-		float scree = (1.0 - smoothstep(1.0, 7.0, foot + (m3 - 0.5) * 4.0)) * step(0.0, mountain_half - 0.5);
-		for (int i = 0; i < 5; i++) {
+		float foot = length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0) + (m3 - 0.5) * 6.0 + (m2 - 0.5) * 8.0;
+		float has_mountain = step(0.0, mountain_half - 0.5);
+		w[1] = max(w[1], (1.0 - smoothstep(5.0, 11.0, foot)) * 0.85 * has_mountain);
+		float scree = (1.0 - smoothstep(1.0, 7.0, foot)) * has_mountain;
+		for (int i = 0; i < 6; i++) {
 			w[i] *= 1.0 - scree;
 		}
 		w[7] = scree * 0.6;
@@ -268,8 +301,8 @@ void fragment() {
 	}
 	grassy /= max(wsum, 0.0001);
 	float dry = smoothstep(0.35, 0.75, m1 * 0.75 + m2 * 0.25);
-	albedo *= mix(vec3(1.0), mix(vec3(0.85, 0.95, 0.82), vec3(1.25, 1.1, 0.78), dry), grassy);
-	albedo *= mix(0.88, 1.08, m1) * mix(0.95, 1.04, m2);
+	albedo *= mix(vec3(1.0), mix(vec3(0.92, 1.02, 0.88), vec3(1.18, 1.08, 0.82), dry), grassy);
+	albedo *= mix(0.92, 1.06, m1) * mix(0.96, 1.03, m2);
 	float rough = ar_sum.y;
 	float ao = ar_sum.x;
 	// The water's edge: soaked dark and glossy, the light's caustics on the bed under it.
@@ -284,6 +317,14 @@ void fragment() {
 		albedo *= 1.0 + caus * 2.2;
 		detail *= 0.5;
 	}
+	// The ruts sunk 12 cm (their walls tilt the ground), rain standing in them here and there: dark, flat, a mirror.
+	float rut_slope = 0.12 * 6.0 * clamp((abs(rut_x) - 0.1) / 0.32, 0.0, 1.0) * (1.0 - clamp((abs(rut_x) - 0.1) / 0.32, 0.0, 1.0)) / 0.32;
+	detail -= vec3(side.x, 0.0, side.y) * rut_slope * rut_sign * rut;
+	float pn = texture(macro_noise, vec2(along * 0.05, across * 0.05 + 0.17)).r + (m3 - 0.5) * 0.15;
+	float puddle = smoothstep(0.6, 0.63, pn + (0.3 - abs(rut_x)) * 0.25) * step(0.5, rut);
+	albedo = mix(albedo, albedo * 0.45, puddle);
+	rough = mix(rough, 0.03, puddle);
+	detail *= 1.0 - puddle;
 	ALBEDO = albedo;
 	ROUGHNESS = rough;
 	AO = mix(1.0, ao, 0.85);

@@ -605,14 +605,16 @@ func _make_material() -> ShaderMaterial:
 
 
 ## The water. A jungle river: murky, olive-brown in its depths, showing its bed in the shallows. Seen through,
-## the bed (and anything swimming) is bent by the waves and dimmed colour by colour with the depth of water
-## the light comes through (read from the depth buffer); waves of two wind-chop scales (an FFT heightfield's
-## normals) flow down the river (two-phase flow mapping, so they never stretch) and chop across the lake.
-## Reflections are ray-marched across the screen against the depth buffer, so the banks, the trees, the
-## bridges and the rafts mirror in it; where a reflected ray finds nothing, the sky's reflection (its clouds,
-## the sun's glint) is the engine's own, which is switched off where a ray does find something (the bank
-## hides the sky there). Foam gathers where the water is thin: along the shore and round anything standing in
-## it (a bridge's piers, a swimmer, a raft), and in streaks down the current.
+## the bed (and anything swimming) is bent by the ripples and dimmed colour by colour with the depth of water
+## the light comes through (read from the depth buffer). Its surface is calm: fine ripples and a broad slow
+## swell (an FFT heightfield's normals) flowing down the rivers with the current (two-phase flow mapping,
+## blended so the waves neither stretch nor pulse), rougher where the current runs fast, all but still on the
+## lake, and smoothing out with distance. It is a mirror at a low angle (water's own Fresnel): reflections are
+## ray-marched across the screen against the depth buffer, so the banks, the trees, the bridges and the rafts
+## mirror in it; where a reflected ray finds nothing, the sky's reflection (its clouds, the sun's glint) is the
+## engine's own, switched off where a ray does find something (the bank hides the sky there). It thins to a
+## film where it laps on the bank, so it meets the bank without a seam. A little foam gathers along the shore
+## and round anything standing in it (a bridge's piers, a swimmer, a raft), and in streaks down fast water.
 const WATER_SHADER := """
 shader_type spatial;
 render_mode blend_mix, depth_draw_always, cull_back, diffuse_burley, specular_schlick_ggx;
@@ -629,8 +631,10 @@ uniform float flow_max = 1.5;
 // How fast the water swallows light (per metre, red green blue) and the colour of what is stirred up in it.
 uniform vec3 absorption = vec3(0.95, 0.72, 1.15);
 uniform vec3 murk = vec3(0.045, 0.06, 0.03);
-uniform float wave_tile = 7.0;
-uniform float wave_strength = 0.55;
+// The ripples' and the swell's tiles (m), and how much they tilt the surface.
+uniform float ripple_tile = 2.6;
+uniform float swell_tile = 12.0;
+uniform float wave_strength = 0.3;
 uniform float refraction = 0.035;
 
 varying vec3 wpos;
@@ -661,25 +665,37 @@ vec3 scene_view(vec2 uv, mat4 inv_proj) {
 	return v.xyz / v.w;
 }
 
+// The waves' normal map (tilt, -1..1) at `p` (m) on a `tile` m tile, carried along by `flow` (m/s): two
+// phases half a cycle apart, crossfaded and rescaled so the blend keeps the waves' strength.
+vec2 flowing(vec2 p, float tile, vec2 flow, float t, float period) {
+	float p0 = fract(t / period);
+	float p1 = fract(t / period + 0.5);
+	float w = 1.0 - abs(2.0 * p0 - 1.0);
+	vec2 uv = p / tile;
+	vec2 a = texture(wave_normal, uv - flow * p0 * period / tile).rg * 2.0 - 1.0;
+	vec2 b = texture(wave_normal, uv - flow * p1 * period / tile + vec2(0.37, 0.61)).rg * 2.0 - 1.0;
+	return (a * w + b * (1.0 - w)) * inversesqrt(w * w + (1.0 - w) * (1.0 - w));
+}
+
 void fragment() {
-	// Waves: the chop flowing down the river (two phases half a cycle apart, crossfaded), and a slower one
-	// across it everywhere.
 	vec2 flow = (texture(flow_tex, (wpos.xz - map_origin) / map_size).rg * 2.0 - 1.0) * flow_max;
-	float period = 3.0;
-	float p0 = fract(TIME / period);
-	float p1 = fract(TIME / period + 0.5);
-	vec2 uv = wpos.xz / wave_tile;
-	vec2 na = texture(wave_normal, uv - flow * p0 * period / wave_tile).rg * 2.0 - 1.0;
-	vec2 nb = texture(wave_normal, uv - flow * p1 * period / wave_tile + vec2(0.37, 0.61)).rg * 2.0 - 1.0;
-	float wa = 1.0 - abs(2.0 * p0 - 1.0);
-	vec2 nf = na * wa + nb * (1.0 - wa);
-	vec2 nc = texture(wave_normal, wpos.xz / (wave_tile * 2.7) + vec2(TIME * 0.011, -TIME * 0.007)).rg * 2.0 - 1.0;
+	float speed = length(flow);
 	float dist = length(VERTEX);
-	vec2 tilt = (nf + nc * 0.7) * wave_strength * mix(1.0, 0.35, smoothstep(30.0, 250.0, dist));
+	vec3 vdir = VERTEX / dist;
+	// Fine ripples riding the current and a broad, slower swell; a breath of wind across the still water.
+	vec2 drift = vec2(0.05, -0.03);
+	vec2 ripples = flowing(wpos.xz, ripple_tile, flow + drift, TIME, 2.4);
+	vec2 swell = flowing(wpos.xz + vec2(31.0, 17.0), swell_tile, flow * 0.85 + drift * 0.6, TIME + 1.1, 4.2);
+	float far = smoothstep(15.0, 240.0, dist);
+	float lively = mix(0.7, 1.3, smoothstep(0.15, 1.0, speed));
+	vec2 tilt = (ripples * 0.5 + swell * 0.8) * wave_strength * lively * (1.0 - far * 0.65);
 	// On the water the texture's right is +x and its up is -z.
 	vec3 nw = normalize(vec3(tilt.x, 1.0, -tilt.y));
 	vec3 nv = normalize((VIEW_MATRIX * vec4(nw, 0.0)).xyz);
-	NORMAL = nv;
+	vec3 up = normalize((VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
+	// The mirror is bent by the waves, but less than the light glinting off them.
+	vec3 nr = normalize(mix(up, nv, 0.55));
+	NORMAL = normalize(mix(up, nv, 0.85));
 
 	// What is under the water, seen through it, bent by the waves (not where that would show something above
 	// the surface).
@@ -690,35 +706,39 @@ void fragment() {
 	}
 	vec3 below = textureLod(screen_tex, ruv, 0.0).rgb;
 	vec3 bed = scene_view(ruv, INV_PROJECTION_MATRIX);
-	float through = max(-bed.z - surface, 0.0) * length(VERTEX) / max(surface, 0.001);
+	float through = max(-bed.z - surface, 0.0) * dist / max(surface, 0.001);
 	vec3 transmit = exp(-absorption * through);
 	vec3 bed_world = (INV_VIEW_MATRIX * vec4(bed, 1.0)).xyz;
 	float depth = max(water_y - bed_world.y, 0.0);
+	// Where it laps on the bank it is a film: no mirror, no sheen.
+	float edge = smoothstep(0.0, 0.18, depth);
 
-	// Reflections: march the reflected ray across the screen until it passes behind something.
-	vec3 rd = reflect(normalize(VERTEX), nv);
+	// Reflections: march the reflected ray across the screen; where it first passes behind something, narrow
+	// the crossing down and take it if the ray is at that surface (not passing behind something thin).
+	vec3 rd = reflect(vdir, nr);
 	float hit = 0.0;
 	vec3 mirrored = vec3(0.0);
-	float t = 0.4;
+	float t = 0.25;
 	vec3 last = VERTEX;
-	for (int i = 0; i < 28; i++) {
+	bool in_front = true;
+	for (int i = 0; i < 36; i++) {
 		vec3 q = VERTEX + rd * t;
 		vec4 c = PROJECTION_MATRIX * vec4(q, 1.0);
-		vec2 quv = c.xy / c.w * 0.5 + 0.5;
-		if (c.w <= 0.0 || quv.x < 0.0 || quv.y < 0.0 || quv.x > 1.0 || quv.y > 1.0) {
+		if (c.w <= 0.0) {
 			break;
 		}
-		float sd = scene_distance(quv, INV_PROJECTION_MATRIX);
-		float qd = -q.z;
-		if (qd > sd + 0.05 && qd < sd + 1.0 + t * 0.08) {
-			// Narrow it down between the last step and this one.
+		vec2 quv = c.xy / c.w * 0.5 + 0.5;
+		if (quv.x < 0.0 || quv.y < 0.0 || quv.x > 1.0 || quv.y > 1.0) {
+			break;
+		}
+		bool behind = -q.z > scene_distance(quv, INV_PROJECTION_MATRIX);
+		if (behind && in_front) {
 			vec3 lo = last;
 			vec3 hi = q;
-			for (int k = 0; k < 5; k++) {
+			for (int k = 0; k < 6; k++) {
 				vec3 mid = (lo + hi) * 0.5;
 				vec4 mc = PROJECTION_MATRIX * vec4(mid, 1.0);
-				vec2 muv = mc.xy / mc.w * 0.5 + 0.5;
-				if (-mid.z > scene_distance(muv, INV_PROJECTION_MATRIX)) {
+				if (-mid.z > scene_distance(mc.xy / mc.w * 0.5 + 0.5, INV_PROJECTION_MATRIX)) {
 					hi = mid;
 				} else {
 					lo = mid;
@@ -726,32 +746,38 @@ void fragment() {
 			}
 			vec4 hc = PROJECTION_MATRIX * vec4(hi, 1.0);
 			vec2 huv = hc.xy / hc.w * 0.5 + 0.5;
-			mirrored = textureLod(screen_tex, huv, 0.0).rgb;
-			vec2 edge = min(huv, 1.0 - huv);
-			hit = smoothstep(0.0, 0.08, min(edge.x, edge.y)) * (1.0 - smoothstep(0.6, 0.95, float(i) / 28.0));
-			break;
+			float gap = -hi.z - scene_distance(huv, INV_PROJECTION_MATRIX);
+			if (gap < 0.35 + 0.05 * length(hi - VERTEX)) {
+				mirrored = textureLod(screen_tex, huv, 0.0).rgb;
+				vec2 e = min(huv, 1.0 - huv);
+				hit = smoothstep(0.0, 0.06, min(e.x, e.y)) * (1.0 - smoothstep(0.75, 1.0, float(i) / 36.0));
+				break;
+			}
 		}
+		in_front = !behind;
 		last = q;
-		t *= 1.28;
+		t *= 1.22;
 	}
-	float cosv = clamp(dot(nv, -normalize(VERTEX)), 0.0, 1.0);
-	float fresnel = 0.02 + 0.98 * pow(1.0 - cosv, 5.0);
+	float cosv = clamp(dot(nr, -vdir), 0.0, 1.0);
+	float fresnel = (0.02 + 0.98 * pow(1.0 - cosv, 5.0)) * edge;
 
-	// Foam where the water is thin, and in streaks down the current.
-	float speed = length(flow);
-	vec2 fuv = wpos.xz / 3.0 - flow * p0 * period / 3.0;
-	float f1 = texture(foam_tex, fuv).r * wa + texture(foam_tex, wpos.xz / 3.0 - flow * p1 * period / 3.0 + vec2(0.5)).r * (1.0 - wa);
-	float shore = 1.0 - smoothstep(0.0, 0.55, depth);
-	float streak = smoothstep(0.62, 0.9, texture(foam_tex, vec2(dot(wpos.xz, vec2(-flow.y, flow.x)) * 0.25, dot(wpos.xz, flow) * 0.02 - TIME * 0.1)).r)
-			* smoothstep(0.3, 1.0, speed) * 0.35;
-	float foam = clamp(smoothstep(0.35, 0.75, f1 * (shore * 1.4 + streak)), 0.0, 1.0);
+	// Foam: a ragged line along the shore and round whatever stands in the water, streaks down fast water.
+	float p0 = fract(TIME / 2.4);
+	float wa = 1.0 - abs(2.0 * p0 - 1.0);
+	float f1 = texture(foam_tex, wpos.xz / 3.0 - flow * p0 * 2.4 / 3.0).r * wa
+			+ texture(foam_tex, wpos.xz / 3.0 - flow * fract(TIME / 2.4 + 0.5) * 2.4 / 3.0 + vec2(0.5)).r * (1.0 - wa);
+	float shore = (1.0 - smoothstep(0.02, 0.35, depth)) * edge;
+	float streak = smoothstep(0.66, 0.92, texture(foam_tex, vec2(dot(wpos.xz, vec2(-flow.y, flow.x)) * 0.25, dot(wpos.xz, flow) * 0.02 - TIME * 0.1)).r)
+			* smoothstep(0.5, 1.2, speed) * 0.3;
+	float foam = clamp(smoothstep(0.45, 0.8, f1 * (shore * 1.3 + streak)), 0.0, 1.0);
 
 	vec3 scatter = murk * (1.0 - transmit);
-	ALBEDO = mix(scatter, vec3(0.78, 0.8, 0.76), foam);
-	EMISSION = below * transmit * (1.0 - fresnel) * (1.0 - foam) + mirrored * fresnel * hit * (1.0 - foam);
-	// The engine's own reflection (the sky, its clouds, the sun's glint) wherever the ray found nothing.
-	SPECULAR = 0.25 * (1.0 - hit) * (1.0 - foam);
-	ROUGHNESS = mix(0.035, 0.8, foam);
+	ALBEDO = mix(scatter, vec3(0.75, 0.77, 0.72), foam);
+	EMISSION = (below * transmit * (1.0 - fresnel) + mirrored * fresnel * hit) * (1.0 - foam);
+	// The engine's own reflection (the sky, its clouds, the sun's glint) wherever the ray found nothing: water's
+	// F0 of 0.02.
+	SPECULAR = 0.354 * (1.0 - hit) * (1.0 - foam) * edge;
+	ROUGHNESS = mix(mix(0.03, 0.09, far), 0.8, foam);
 	METALLIC = 0.0;
 	// Drawn over the finished opaque scene (it reads it): everything behind is already in EMISSION.
 	ALPHA = 1.0;

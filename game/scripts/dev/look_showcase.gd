@@ -6,7 +6,8 @@ extends Node3D
 ##
 ## Each view is drawn for FRAMES frames (`--frames=N`) before it is saved (the GI, the fog and the reflections
 ## settle), and nothing is drawn in between. The classic field's views first; `--jungle` takes the Jungle Keep's instead.
-## `--lighting=standard` (GameConfig) for the standard lighting.
+## `--lighting=standard` (GameConfig) for the standard lighting. `--no-msaa` for a software GPU (lavapipe), which
+## leaves the depth texture the water reads empty when it is multisampled.
 
 ## [camera, looking at, fov, the camera's height is over the ground, the target's is (default: as the camera's)]
 const CLASSIC := {
@@ -15,10 +16,11 @@ const CLASSIC := {
 	"bunker": [Vector3(16, 2.2, 104), Vector3(-4, 7.5, 84), 66.0],
 	"mountain": [Vector3(150, 46, 170), Vector3(10, 28, 20), 55.0],
 	"ground": [Vector3(6, 1.6, 130), Vector3(9, 0, 122), 70.0],
+	"track": [Vector3(0.6, 1.5, 150), Vector3(-0.5, 0, 128), 66.0],
 	"deck": [Vector3(-8, 8.9, 82.5), Vector3(-30, 1, 150), 70.0],
 }
 const JUNGLE := {
-	"river": [Vector3(-24, 2.0, 522), Vector3(8, -1.0, 470), 62.0, true, false],
+	"river": [Vector3(-30, -0.7, 482), Vector3(90, -1.6, 468), 62.0],
 	"river_low": [Vector3(-6, 1.0, 510), Vector3(40, -1.8, 470), 66.0, true, false],
 	"bank": [Vector3(10, 2.5, 516), Vector3(13, -1.8, 503), 66.0, true, false],
 	"rts_river": [Vector3(-40, 42, 470), Vector3(-30, 0, 440), 55.0],
@@ -51,6 +53,8 @@ func _ready() -> void:
 			only = arg.get_slice("=", 1).split(",")
 		elif arg.begins_with("--frames="):
 			_frames = maxi(arg.get_slice("=", 1).to_int(), 1)
+		elif arg == "--no-msaa":
+			get_viewport().msaa_3d = Viewport.MSAA_DISABLED
 	views = JUNGLE if jungle else CLASSIC
 	_names = views.keys().filter(func(k): return only.is_empty() or k in only)
 	RenderingServer.render_loop_enabled = false

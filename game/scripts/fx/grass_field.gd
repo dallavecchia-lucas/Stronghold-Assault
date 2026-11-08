@@ -1,15 +1,17 @@
 class_name GrassField
 extends MultiMeshInstance3D
-## Grass: clumps of blades standing on the ground round the camera, where the ground is grass.
+## Grass: blades standing on the ground round the camera, where the ground is grass.
 ##
 ## A grid of GRID x GRID clumps, CELL apart, moves with the camera a cell at a time; the vertex shader places
 ## each clump in its world cell (a hash of the cell picks its spot, its turn, its size, so the grass stays put as
-## the grid moves), on the ground's height (a height map on the Jungle Keep, the flat field on the classic map),
-## and only where the ground is grass: not on the tracks worn up the lanes, the bare patches, the scree, the
-## banks and the water, the rock, or under a helipad's deck. The blades sway in gusts of wind, dark at the root
-## and lighter at the tip, drier where the ground's grass is sun-dried, the light shining through them. They
-## shrink away toward the grid's edge (the ground's texture carries on), and the field is hidden once the
-## camera is high enough that blades would be specks. The CPU only moves the grid.
+## the grid moves), its blades spread over the cell so the field has no tufts, on the ground's height (a height
+## map on the Jungle Keep, the flat field on the classic map), and only where the ground is grass: not on the
+## tracks worn up the lanes, the bare patches, the scree, the banks and the water, the rock, or under a helipad's
+## deck. Where the grass gives out it thins blade by blade, the last ones shorter. The blades sway in gusts of
+## wind, lighter toward the tip, drier where the ground's grass is sun-dried, a few dead and straw-coloured, the
+## light shining through them and a sheen on them. They thin away toward the grid's edge (the ground's texture
+## carries on), and the field is hidden once the camera is high enough that blades would be specks. The CPU only
+## moves the grid.
 
 ## Clumps a side, metres between them, how far out they fade. Half as many with the standard lighting; `-- --grass=0.3`
 ## thins the field further (for renders on a software GPU): fewer clumps over the same ground, farther apart.
@@ -17,7 +19,7 @@ const GRID := 170
 const CELL := 0.55
 const FADE := [26.0, 44.0]
 ## Blades a clump.
-const BLADES := 12
+const BLADES := 40
 ## Hidden above this height over the ground (m).
 const MAX_VIEW_HEIGHT := 34.0
 
@@ -30,9 +32,10 @@ uniform float cell = 0.55;
 uniform int grid = 170;
 uniform vec2 fade = vec2(26.0, 44.0);
 uniform float blade_height = 0.42;
-uniform vec3 root_color = vec3(0.025, 0.04, 0.012);
-uniform vec3 tip_color = vec3(0.12, 0.16, 0.045);
-uniform vec3 dry_color = vec3(0.24, 0.2, 0.07);
+uniform vec3 root_color = vec3(0.075, 0.105, 0.03);
+uniform vec3 tip_color = vec3(0.13, 0.18, 0.05);
+uniform vec3 dry_color = vec3(0.22, 0.2, 0.08);
+uniform vec3 dead_color = vec3(0.3, 0.25, 0.14);
 uniform vec2 wind = vec2(0.8, 0.45);
 uniform sampler2D macro_noise : filter_linear_mipmap, repeat_enable;
 // The Jungle Keep: its heights and its splat (g: grass) over the square at map_origin, map_size across.
@@ -54,6 +57,7 @@ uniform int lot_count = 0;
 varying float v_t;
 varying vec3 v_col;
 varying float v_dry;
+varying float v_dead;
 
 float hash(vec2 p) {
 	vec3 q = fract(vec3(p.xyx) * vec3(0.1031, 0.103, 0.0973));
@@ -97,7 +101,7 @@ void vertex() {
 	float m1 = textureLod(macro_noise, p * 0.0035, 0.0).r;
 	float m2 = textureLod(macro_noise, p * 0.016 + vec2(0.37, 0.11), 0.0).r;
 	float m3 = textureLod(macro_noise, p * 0.07 + vec2(0.71, 0.53), 0.0).r;
-	float grass = 1.0 - smoothstep(0.64, 0.74, m2 * 0.6 + m3 * 0.4);
+	float grass = 1.0 - smoothstep(0.66, 0.8, m2 * 0.6 + m3 * 0.4);
 	float gy = ground_height(p);
 	if (jungle) {
 		vec2 suv = (p - map_origin) / map_size;
@@ -110,10 +114,10 @@ void vertex() {
 		grass *= 1.0 - smoothstep(0.5, 1.2, slope);
 	} else {
 		float d = lane_distance(p) + (m3 - 0.5) * 5.0 + (m2 - 0.5) * 6.0;
-		grass *= smoothstep(4.0, 8.5, d);
+		grass *= smoothstep(3.5, 9.0, d);
 		vec2 q = abs(p) - vec2(mountain_half);
 		float foot = length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0);
-		grass *= smoothstep(4.0, 9.0, foot);
+		grass *= smoothstep(4.0, 10.0, foot + (m3 - 0.5) * 4.0);
 	}
 	for (int i = 0; i < 8; i++) {
 		if (i >= lot_count) {
@@ -127,41 +131,56 @@ void vertex() {
 			grass = 0.0;
 		}
 	}
-	// Fading toward the edge of the field.
+	// Thinning toward the edge of the field and where the grass gives out: blade by blade (each has its turn,
+	// COLOR.a), the last ones shorter.
 	vec3 cam = INV_VIEW_MATRIX[3].xyz;
 	float dist = length(vec3(p.x, gy, p.y) - cam);
-	float size = grass * (1.0 - smoothstep(fade.x, fade.y, dist)) * (0.65 + 0.7 * h3);
+	float keep = grass * (1.0 - smoothstep(fade.x, fade.y, dist));
+	float turn = COLOR.a;
 	v_t = UV.y;
 	v_dry = smoothstep(0.35, 0.75, m1 * 0.75 + m2 * 0.25);
-	v_col = COLOR.rgb * (0.85 + 0.3 * h4);
-	if (size < 0.05) {
+	v_dead = COLOR.b;
+	// A blade's own shade and hue, and its clump's.
+	float shade = mix(0.82, 1.12, COLOR.r) * (0.9 + 0.2 * h4);
+	v_col = shade * mix(vec3(1.06, 1.0, 0.86), vec3(0.92, 1.0, 1.1), COLOR.g);
+	if (keep < 0.02 || turn > keep * 1.2) {
 		VERTEX = vec3(0.0, 0.0, 10.0);
 	} else {
+		float size = blade_height * (0.7 + 0.6 * h3) * mix(0.5, 1.0, keep) * mix(0.8, 1.2, m3);
 		float yaw = h3 * 6.2831853;
 		mat2 rot = mat2(vec2(cos(yaw), sin(yaw)), vec2(-sin(yaw), cos(yaw)));
-		vec3 lv = VERTEX;
+		// The blade (its root at the origin) turned with its clump, spread over the clump's cell.
+		vec3 lv = VERTEX * size;
 		lv.xz = rot * lv.xz;
-		lv.y *= blade_height * size;
+		vec2 root = p + rot * UV2 * cell * 0.62;
 		// Gusts sweep across the field; the tips sway most.
-		float gust = sin(TIME * 1.3 + dot(p, vec2(0.21, 0.13))) * 0.6 + sin(TIME * 2.7 + dot(p, vec2(-0.47, 0.39))) * 0.3 + 0.5;
-		lv.xz += normalize(wind) * gust * 0.16 * UV.y * UV.y * blade_height * size;
-		vec3 world = vec3(p.x, gy, p.y) + lv;
+		float gust = sin(TIME * 1.3 + dot(root, vec2(0.21, 0.13))) * 0.6 + sin(TIME * 2.7 + dot(root, vec2(-0.47, 0.39))) * 0.3 + 0.5;
+		lv.xz += normalize(wind) * gust * 0.16 * UV.y * UV.y * size;
+		vec3 world = vec3(root.x, ground_height(root), root.y) + lv;
 		VERTEX = (VIEW_MATRIX * vec4(world, 1.0)).xyz;
 		vec3 n = NORMAL;
 		n.xz = rot * n.xz;
-		NORMAL = normalize((VIEW_MATRIX * vec4(normalize(mix(n, vec3(0.0, 1.0, 0.0), 0.55)), 0.0)).xyz);
+		// Lit as much like the ground as like a blade, so the field shades as one.
+		NORMAL = normalize((VIEW_MATRIX * vec4(normalize(mix(n, vec3(0.0, 1.0, 0.0), 0.45)), 0.0)).xyz);
 	}
 }
 
 void fragment() {
-	vec3 tip = mix(tip_color, dry_color, v_dry * 0.7);
-	ALBEDO = mix(root_color, tip, smoothstep(0.0, 0.85, v_t)) * v_col;
-	// Light through the blades.
-	BACKLIGHT = tip * 0.6 * v_t;
-	ROUGHNESS = 0.7;
-	SPECULAR = 0.25;
-	AO = mix(0.35, 1.0, v_t);
-	AO_LIGHT_AFFECT = 0.35;
+	// Both faces of a blade lit alike (the engine turns a back face's normal away).
+	if (!FRONT_FACING) {
+		NORMAL = -NORMAL;
+	}
+	vec3 tip = mix(tip_color, dry_color, v_dry * 0.6);
+	vec3 col = mix(root_color, tip, smoothstep(0.0, 0.6, v_t)) * v_col;
+	col = mix(col, dead_color * (0.8 + 0.4 * v_col.g), v_dead);
+	ALBEDO = col;
+	// Light through the blades, and the waxy sheen on them.
+	BACKLIGHT = col * 0.45;
+	ROUGHNESS = mix(0.55, 0.85, v_dead);
+	SPECULAR = 0.35;
+	// The light gets down to the roots less.
+	AO = mix(0.6, 1.0, smoothstep(0.0, 0.45, v_t));
+	AO_LIGHT_AFFECT = 0.45;
 }
 """
 
@@ -216,9 +235,10 @@ func _setup(level: LevelBuilder, terrain: JungleTerrain) -> void:
 		_mat.set_shader_parameter("map_size", size)
 		_mat.set_shader_parameter("water_y", JungleLayout.WATER_Y)
 		_mat.set_shader_parameter("blade_height", 0.55)
-		_mat.set_shader_parameter("root_color", Vector3(0.02, 0.035, 0.01))
-		_mat.set_shader_parameter("tip_color", Vector3(0.07, 0.14, 0.03))
+		_mat.set_shader_parameter("root_color", Vector3(0.05, 0.085, 0.022))
+		_mat.set_shader_parameter("tip_color", Vector3(0.085, 0.16, 0.035))
 		_mat.set_shader_parameter("dry_color", Vector3(0.15, 0.16, 0.05))
+		_mat.set_shader_parameter("dead_color", Vector3(0.22, 0.18, 0.09))
 	else:
 		var lanes: Array[Vector4] = []
 		for side in LevelBuilder.SIDES:
@@ -264,8 +284,10 @@ func _process(_delta: float) -> void:
 	_mat.set_shader_parameter("center", Vector2(c.x, c.z))
 
 
-## A clump: BLADES blades scattered over a small disc, each tapering from its root to its tip in two segments
-## and bending away. UV.y is how far up the blade a point is; COLOR a blade's own shade.
+## A clump: BLADES blades, each a tapering strip curving away from its root (at the origin; UV2 is where in the
+## clump's cell it stands, in a unit disc) in two segments, for a blade a metre tall (the shader sizes it). UV.x is
+## across the blade, UV.y how far up it a point is; COLOR is its shade, its hue, whether it is dead and its turn to
+## go where the grass thins. Its normals are rounded across it.
 static func _clump() -> ArrayMesh:
 	if _mesh:
 		return _mesh
@@ -274,36 +296,40 @@ static func _clump() -> ArrayMesh:
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var uvs := PackedVector2Array()
+	var uv2s := PackedVector2Array()
 	var cols := PackedColorArray()
 	var idx := PackedInt32Array()
 	for b in BLADES:
-		var r := sqrt(rng.randf()) * 0.3
+		var r := sqrt(rng.randf())
 		var a := rng.randf() * TAU
-		var root := Vector3(cos(a) * r, 0.0, sin(a) * r)
+		var root := Vector2(cos(a) * r, sin(a) * r)
 		var yaw := rng.randf() * TAU
 		var side := Vector3(cos(yaw), 0.0, sin(yaw))
 		var out := Vector3(-side.z, 0.0, side.x)
-		var h := rng.randf_range(0.55, 1.0)
-		var w := rng.randf_range(0.022, 0.04)
-		var bend := rng.randf_range(0.08, 0.35)
-		var shade := rng.randf_range(0.8, 1.15)
-		var col := Color(shade, shade * rng.randf_range(0.95, 1.08), shade * rng.randf_range(0.85, 1.05))
+		var h := rng.randf_range(0.35, 1.0)
+		var w := rng.randf_range(0.02, 0.034)
+		var bend := rng.randf_range(0.08, 0.45)
+		var col := Color(rng.randf(), rng.randf(), 1.0 if rng.randf() < 0.07 else 0.0, rng.randf())
 		var first := verts.size()
 		for lvl in 3:
 			var t := lvl / 2.0
-			var c := root + Vector3.UP * h * t + out * bend * h * t * t
-			var n := (out + Vector3.UP * 0.4).normalized()
+			var c := Vector3.UP * h * t + out * bend * h * t * t
+			# Along the blade, and its face square to that.
+			var along := (Vector3.UP + out * bend * 2.0 * t).normalized()
+			var face := side.cross(along).normalized()
 			if lvl < 2:
-				var ww := w * (1.0 - t * 0.6)
+				var ww := w * (1.0 - t * 0.55)
 				for s in [-1.0, 1.0]:
 					verts.append(c + side * ww * s)
-					normals.append(n)
+					normals.append((face + side * s * 0.5).normalized())
 					uvs.append(Vector2(0.5 + s * 0.5, t * h))
+					uv2s.append(root)
 					cols.append(col)
 			else:
 				verts.append(c)
-				normals.append(n)
+				normals.append(face)
 				uvs.append(Vector2(0.5, h))
+				uv2s.append(root)
 				cols.append(col)
 		idx.append_array(PackedInt32Array([first, first + 1, first + 2, first + 1, first + 3, first + 2, first + 2, first + 3, first + 4]))
 	var arrays := []
@@ -311,6 +337,7 @@ static func _clump() -> ArrayMesh:
 	arrays[Mesh.ARRAY_VERTEX] = verts
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	arrays[Mesh.ARRAY_TEX_UV2] = uv2s
 	arrays[Mesh.ARRAY_COLOR] = cols
 	arrays[Mesh.ARRAY_INDEX] = idx
 	_mesh = ArrayMesh.new()
