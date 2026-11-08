@@ -86,6 +86,10 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_frame_camera(delta)
+	if shots_dir != "":
+		# Taking stills, only the last moments before each are drawn (the GI and the fog settle in them); the run
+		# in between goes at full speed.
+		RenderingServer.render_loop_enabled = _t >= 0.0 and _shot < SHOTS.size() and _t >= float(SHOTS[_shot][1]) - 0.8
 	if _t < 0.0:
 		return
 	_t += delta
