@@ -538,6 +538,10 @@ func _build_water() -> void:
 	mi.mesh = pm
 	mi.position.y = JungleLayout.WATER_Y
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Lit by the GI but kept out of its distance field: its emission is the scene behind and mirrored in it, read
+	# off the screen, which there is none of while the field is built; it was baking in as white-hot specks that
+	# lit glowing balls in the fog along the banks.
+	mi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 	var sh := Shader.new()
 	sh.code = WATER_SHADER
 	var m := ShaderMaterial.new()
@@ -636,8 +640,14 @@ uniform float ripple_tile = 2.6;
 uniform float swell_tile = 12.0;
 uniform float wave_strength = 0.3;
 uniform float refraction = 0.035;
+// The sun's glint: the ripples too small to see spread it as a rougher surface would, and it is held under a
+// ceiling, so it glitters instead of swelling into a white-hot blob under the bloom.
+uniform float glint_roughness = 0.22;
+uniform float glint_max = 0.8;
 
 varying vec3 wpos;
+// How much of the sun's glint gets through (none where the mirror shows the bank, under foam, at the edge).
+varying float v_glint;
 
 void vertex() {
 	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
@@ -707,6 +717,8 @@ void fragment() {
 		ruv = SCREEN_UV;
 	}
 	vec3 below = textureLod(screen_tex, ruv, 0.0).rgb;
+	// Whatever is behind, never a NaN carried over (it would come out a white-hot ball under the bloom).
+	below = any(isnan(below)) ? vec3(0.0) : below;
 	vec3 bed = scene_view(ruv, INV_PROJECTION_MATRIX);
 	float through = max(-bed.z - surface, 0.0) * dist / max(surface, 0.001);
 	vec3 transmit = exp(-absorption * through);
@@ -773,6 +785,7 @@ void fragment() {
 		vec2 e = min(spare_uv, 1.0 - spare_uv);
 		hit = smoothstep(0.0, 0.06, min(e.x, e.y)) * 0.85;
 	}
+	mirrored = any(isnan(mirrored)) ? vec3(0.0) : mirrored;
 	float cosv = clamp(dot(nr, -vdir), 0.0, 1.0);
 	float fresnel = (0.02 + 0.98 * pow(1.0 - cosv, 5.0)) * edge;
 
@@ -797,5 +810,23 @@ void fragment() {
 	METALLIC = 0.0;
 	// Drawn over the finished opaque scene (it reads it): everything behind is already in EMISSION.
 	ALPHA = 1.0;
+	v_glint = (1.0 - hit) * (1.0 - foam) * edge;
+}
+
+// The sun's (and a blast's) light on the water: what is stirred up in it lit evenly; the glint off the ripples
+// (GGX, with water's Fresnel) from a lobe as wide as the ripples' slopes make it, under a ceiling.
+void light() {
+	float NdotL = max(dot(NORMAL, LIGHT), 0.0);
+	DIFFUSE_LIGHT += LIGHT_COLOR * ATTENUATION * NdotL / PI;
+	vec3 H = normalize(VIEW + LIGHT);
+	float NdotH = max(dot(NORMAL, H), 0.0);
+	float NdotV = max(dot(NORMAL, VIEW), 1e-4);
+	float a = glint_roughness * glint_roughness;
+	float d = NdotH * NdotH * (a * a - 1.0) + 1.0;
+	float D = a * a / (PI * d * d);
+	float k = a * 0.5;
+	float G = 0.25 / ((NdotL * (1.0 - k) + k) * (NdotV * (1.0 - k) + k));
+	float F = 0.02 + 0.98 * pow(1.0 - max(dot(LIGHT, H), 0.0), 5.0);
+	SPECULAR_LIGHT += LIGHT_COLOR * ATTENUATION * SPECULAR_AMOUNT * min(D * G * F * NdotL, glint_max) * v_glint;
 }
 """

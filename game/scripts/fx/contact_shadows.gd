@@ -56,12 +56,16 @@ void fragment() {
 	float facing = 0.0;
 	if (d0 > 0.0 && d0 < fade_far) {
 		vec3 sun_v = normalize((VIEW_MATRIX * vec4(sun_dir, 0.0)).xyz);
-		// The surface's normal from the depth around it, turned to face the camera.
-		vec3 n = normalize(cross(dFdx(vp), dFdy(vp)));
+		// The surface's normal from the depth around it, turned to face the camera (none where the depth gives
+		// no plane: a zero normal would be NaN, and a NaN multiplied into the scene comes out as a white-hot ball
+		// under the bloom).
+		vec3 c = cross(dFdx(vp), dFdy(vp));
+		float cl = length(c);
+		vec3 n = cl > 1e-12 ? c / cl : -normalize(vp);
 		if (dot(n, vp) > 0.0) {
 			n = -n;
 		}
-		facing = smoothstep(0.02, 0.3, dot(n, sun_v));
+		facing = cl > 1e-12 ? smoothstep(0.02, 0.3, dot(n, sun_v)) : 0.0;
 		if (facing > 0.0) {
 			// The sun as a homogeneous point on the screen: toward it the ray runs, its depth changing linearly.
 			vec4 L = PROJECTION_MATRIX * vec4(sun_v, 0.0);
@@ -97,7 +101,7 @@ void fragment() {
 		}
 	}
 	float k = strength * facing * shade * (1.0 - smoothstep(fade_far * 0.6, fade_far, d0));
-	ALBEDO = vec3(1.0 - k);
+	ALBEDO = vec3(isnan(k) ? 1.0 : 1.0 - clamp(k, 0.0, 1.0));
 }
 """
 

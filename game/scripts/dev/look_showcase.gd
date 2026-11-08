@@ -40,6 +40,8 @@ var views := {}
 var _names: Array = []
 var _frame := -1
 var _frames := FRAMES
+## Environment effects switched off (`--env-off=sdfgi,ssr,ssil,ssao,volumetric_fog,glow`), to see what each does.
+var env_off := []
 
 
 func _ready() -> void:
@@ -56,6 +58,8 @@ func _ready() -> void:
 			_frames = maxi(arg.get_slice("=", 1).to_int(), 1)
 		elif arg == "--no-msaa":
 			get_viewport().msaa_3d = Viewport.MSAA_DISABLED
+		elif arg.begins_with("--env-off="):
+			env_off = arg.get_slice("=", 1).split(",")
 	views = JUNGLE if jungle else CLASSIC
 	_names = views.keys().filter(func(k): return only.is_empty() or k in only)
 	RenderingServer.render_loop_enabled = false
@@ -67,6 +71,9 @@ func _ready() -> void:
 		s.process_mode = Node.PROCESS_MODE_DISABLED
 	for t in level.aa_turrets:
 		t.process_mode = Node.PROCESS_MODE_DISABLED
+	for we in level.find_children("*", "WorldEnvironment", true, false):
+		for k in env_off:
+			(we as WorldEnvironment).environment.set("%s_enabled" % k, false)
 	cam = Camera3D.new()
 	cam.near = 0.05
 	cam.far = 1600.0
