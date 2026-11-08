@@ -85,7 +85,9 @@ vec4 march_clouds(vec3 d, vec3 sun_dir, vec3 sun, vec2 uv) {
 	float t1 = min(cloud_top / d.y, t0 + 5000.0);
 	float dt = (t1 - t0) / 22.0;
 	float mu = dot(d, sun_dir);
-	float phase = (hg(mu, 0.62) * 0.7 + hg(mu, -0.2) * 0.3) * 4.0 * PI;
+	// A softer forward lobe than real droplets' (the eye adapts; a camera's sky would clip): the clouds round the
+	// sun get about three times the light, not eight, so they glow there instead of blowing out flat white.
+	float phase = (hg(mu, 0.5) * 0.55 + hg(mu, -0.15) * 0.45) * 0.8 * 4.0 * PI;
 	vec3 sky_light = mix(horizon.rgb, zenith.rgb, 0.45);
 	float dither = fract(sin(dot(uv, vec2(12.9898, 78.233))) * 43758.5453) * 0.7;
 	float trans = 1.0;
