@@ -8,6 +8,7 @@ extends Node3D
 ##   godot --path game --resolution 1600x900 res://scenes/dev/fx_showcase.tscn -- --shots=DIR
 ##                                                                                # its stills, then quits
 ##   godot --path game --headless res://scenes/dev/fx_showcase.tscn -- --test    # FX SHOWCASE PASS / FAIL
+## `-- --lighting=standard` shows it without the ray-traced lighting (GameConfig.lighting).
 
 ## Where it all happens (the south field, clear of the mountain), and how long the loop runs.
 const FIELD := Vector3(0.0, 0.0, 120.0)
@@ -213,7 +214,13 @@ func _finish_test() -> void:
 	_check(not fx._lights.is_empty(), "blasts lit lights")
 	_check(not fx._scorch.is_empty(), "blasts left scorch marks")
 	_check(not fx._debris.is_empty(), "blasts threw debris")
-	_check(level.atmosphere != null and level.atmosphere.env.volumetric_fog_enabled, "the atmosphere is up")
+	var atmo := level.atmosphere
+	_check(atmo != null and atmo.env.volumetric_fog_enabled, "the atmosphere is up")
+	if atmo and atmo.raytraced:
+		_check(atmo.contact_shadows != null and atmo.contact_shadows.is_inside_tree(), "ray-traced contact shadows are on")
+		_check((atmo.env.sky.sky_material as ShaderMaterial).get_shader_parameter("volumetric") == true, "the clouds are ray-marched")
+		if RenderingServer.get_current_rendering_method() == "forward_plus":
+			_check(atmo.env.sdfgi_enabled, "SDFGI global illumination is on")
 	print("FX SHOWCASE %s" % ("FAIL" if _failed else "PASS"))
 	get_tree().quit(1 if _failed else 0)
 

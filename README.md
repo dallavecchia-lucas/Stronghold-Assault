@@ -166,6 +166,13 @@ Balance numbers live in `game/scripts/units/unit_types.gd` and the constants at 
 
 **The light** (`game/scripts/fx/atmosphere.gd`, both maps). The sky is drawn by a shader: deep blue overhead paling to a bright haze at the horizon, the haze over the far land below it (the fog's colour, so the land fades into it), a warm glow round the sun and its disk blooming, and clouds lit from the sun's side and shadowed underneath, thinning into the haze. The sun is warm and its shadows soft, hardening where they touch, over four cascades. ACES tone mapping with a wide bloom: anything brighter than white (the sun, fire, flashes) glows. Ambient occlusion darkens the creases, screen-space indirect light bounces colour (and a blast's glare) onto what stands round it, and volumetric fog fills the air: shafts of sunlight through the canopy, a halo round every fire, muzzle flash and blast. The fog thins as the camera climbs (it follows the camera's height over the ground), so the strategy view stays clear. The volumetric fog, the indirect light and the warp below are Forward+ (and Mobile) only; the Compatibility renderer draws the rest.
 
+**Ray-traced lighting** (the menu's **Lighting** option, `Ray-traced` by default; `Standard` is lighter on the GPU; `-- --lighting=standard` on the command line). Godot has no hardware ray tracing; these are its rays, marched in software:
+
+- **Global illumination** (SDFGI, Forward+): the map's scenery is kept as a signed distance field round the camera, out to a few hundred metres in cascades, and rays are marched through it from probes, so light bounces. Sunlit ground lights the walls and the undersides of things, the canopy shuts the sky out of the forest floor, the tunnels and gun decks darken inside, and every blast's and fire's light bounces off what is round it (a light is caught every other frame). The volumetric fog is lit by the bounced light too. Only the scenery is in the field: whatever moves (units, the garrison, the guns, shells, bridges, effects) is lit by it but kept out of it, so it leaves no dark ghosts behind (`Atmosphere._classify`).
+- **Contact shadows** (`game/scripts/fx/contact_shadows.gd`): from every pixel a ray is marched toward the sun through the depth buffer (in the camera's clip space, where the ray's depth runs linearly across the screen to the sun's vanishing point), and where something stands in its way the sun's share of the pixel's light is taken off: the crisp dark line where feet, wheels, rocks, sandbags and roots meet the ground, which the shadow maps blur at a distance. A full-screen pass drawn before the transparent effects, so it works with MSAA and under the smoke and fire.
+- **Volumetric clouds**: ray-marched through a layer of 3D noise 900-2300 m up (22 steps, each lit by three more toward the sun): cumulus with dark bellies and bright tops, a silver lining against the sun, fading into the haze at the horizon. At half resolution; standard lighting paints flat clouds instead.
+- **Reflections** ray-marched in screen space on both maps (the rivers and the lake, metal, wet stone), the rest from the distance field; the sun's soft shadows filtered finer, and the biggest blasts' lights cast soft shadows too.
+
 **The effects** (`game/scripts/fx/fx.gd`, the scene's `FX`; `Combat.spawn_*` go through it). Particles live in a few MultiMeshes, a draw call each, and move on the GPU: each is written once, when it is spawned, and the vertex shader works out where it is from its age (launched, dragged toward the wind, pulled down by gravity or lifted by its heat, in closed form), so thousands cost the CPU nothing frame to frame:
 
 - **Smoke** billows, lit: the sun, the sky and the blasts' own lights fall on it (wrapping round each puff, shining through its thin edges against the light), it glows orange from the fire inside for its first moments, pales as it thins, drifts on the wind and fades softly where it meets the ground instead of cutting into it.
@@ -184,6 +191,8 @@ godot --path game res://scenes/dev/fx_showcase.tscn                             
 godot --path game --resolution 1600x900 res://scenes/dev/fx_showcase.tscn -- --shots=/tmp/fx   # its stills, then quits
 godot --path game --headless res://scenes/dev/fx_showcase.tscn -- --test         # prints and checks: FX SHOWCASE PASS / FAIL
 ```
+
+Add `--lighting=standard` after the `--` to see it without the ray-traced lighting.
 
 ### Intro cinematic
 

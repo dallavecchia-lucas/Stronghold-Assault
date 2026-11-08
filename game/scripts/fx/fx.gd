@@ -465,7 +465,7 @@ func _init() -> void:
 		var quad := QuadMesh.new()
 		quad.size = Vector2.ONE
 		mm.mesh = quad
-		mm.set("custom_aabb", WORLD_AABB)
+		mm.custom_aabb = WORLD_AABB
 		mm.instance_count = CAPS[layer]
 		# Written one particle at a time from now on: the renderer keeps a copy here to patch (made now, at load,
 		# rather than fetched back from the GPU at the first shot).
@@ -479,6 +479,7 @@ func _init() -> void:
 		mi.multimesh = mm
 		mi.material_override = mat
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
 		mi.custom_aabb = WORLD_AABB
 		mi.visible = layer != WARP or _rich
 		add_child(mi)
@@ -491,7 +492,7 @@ func _init() -> void:
 	_deb_mm.transform_format = MultiMesh.TRANSFORM_3D
 	_deb_mm.use_colors = true
 	_deb_mm.mesh = _chunk()
-	_deb_mm.set("custom_aabb", WORLD_AABB)
+	_deb_mm.custom_aabb = WORLD_AABB
 	_deb_mm.instance_count = MAX_DEBRIS
 	_deb_mm.set_instance_transform(0, Transform3D(Basis.from_scale(Vector3.ZERO), Vector3.ZERO))
 	var dmat := ShaderMaterial.new()
@@ -501,6 +502,7 @@ func _init() -> void:
 	dmi.multimesh = _deb_mm
 	dmi.material_override = dmat
 	dmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	dmi.gi_mode = GeometryInstance3D.GI_MODE_DYNAMIC
 	dmi.custom_aabb = WORLD_AABB
 	add_child(dmi)
 
@@ -883,6 +885,8 @@ func light(pos: Vector3, hot: Color, cool: Color, energy: float, reach: float, l
 	slot.wobble = 0.0
 	slot.now = energy + flash
 	slot.node.shadow_enabled = shadow and _rich and shadowed < MAX_SHADOWED
+	# A fireball is no point: its shadows are soft, sharpening where they touch.
+	slot.node.light_size = minf(reach * 0.04, 1.5) if slot.node.shadow_enabled else 0.0
 	slot.node.position = pos
 	slot.node.light_color = hot
 	slot.node.light_energy = slot.now
