@@ -281,7 +281,7 @@ func _build(level: Node3D, jungle: bool) -> void:
 	env.fog_sky_affect = 0.2 if jungle else 0.4
 	# The air itself: sun shafts, and a halo round every fire, flash and blast (Forward+).
 	env.volumetric_fog_enabled = true
-	fog_density = 0.0045 if jungle else 0.0035
+	fog_density = 0.0036 if jungle else 0.0035
 	env.volumetric_fog_density = fog_density
 	env.volumetric_fog_albedo = Color(0.9, 0.92, 0.93)
 	env.volumetric_fog_anisotropy = 0.55

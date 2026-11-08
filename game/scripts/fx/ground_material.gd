@@ -30,12 +30,12 @@ const LUMA := [0.198, 0.106, 0.247, 0.054, 0.117, 0.077, 0.16, 0.201]
 ## Per layer: the mean colour (linear) it is moved toward and how far (alpha), its normal map's strength. The
 ## grass scan is a dry yellow meadow, the rock an orange sandstone: both are recoloured.
 const JUNGLE_RECOLOR := [
-	Color(0.085, 0.062, 0.036, 0.7), Color(0.06, 0.075, 0.03, 0.55), Color(0.075, 0.14, 0.03, 0.9), Color(0.045, 0.08, 0.02, 0.65),
+	Color(0.085, 0.062, 0.036, 0.7), Color(0.06, 0.075, 0.03, 0.55), Color(0.07, 0.15, 0.03, 0.9), Color(0.045, 0.095, 0.02, 0.65),
 	Color(0.095, 0.075, 0.05, 0.55), Color(0.075, 0.062, 0.045, 0.3), Color(0.11, 0.105, 0.095, 0.7), Color(0.16, 0.15, 0.13, 0.3),
 ]
 const JUNGLE_NORMAL := [1.0, 1.0, 1.0, 1.0, 1.1, 1.0, 1.35, 1.2]
 const CLASSIC_RECOLOR := [
-	Color(0.2, 0.13, 0.05, 0.4), Color(0.085, 0.09, 0.045, 0.65), Color(0.12, 0.175, 0.05, 0.9), Color(0.07, 0.105, 0.03, 0.7),
+	Color(0.2, 0.13, 0.05, 0.4), Color(0.085, 0.09, 0.045, 0.65), Color(0.095, 0.165, 0.04, 0.9), Color(0.058, 0.1, 0.026, 0.7),
 	Color(0.13, 0.11, 0.085, 0.6), Color(0.085, 0.075, 0.06, 0.35), Color(0.165, 0.15, 0.13, 0.75), Color(0.2, 0.185, 0.16, 0.3),
 ]
 const CLASSIC_NORMAL := [1.0, 1.0, 1.0, 1.0, 1.1, 1.0, 1.35, 1.2]
@@ -153,15 +153,18 @@ void fragment() {
 		float moss = smoothstep(0.36, 0.6, m2 * 0.7 + m3 * 0.3);
 		w[0] = 1.0 - moss;
 		w[1] = moss;
-		// The clearing: grass with darker tufts in clumps, worn to bare earth here and there.
+		// The clearing: grass with darker tufts in clumps, worn thin to the soil and its sprouts here and there,
+		// bare earth at the heart of the worn patches.
 		float g = s.g;
-		float bare = smoothstep(0.66, 0.76, m2 * 0.6 + m3 * 0.4) * 0.8;
+		float wear = m2 * 0.6 + m3 * 0.4;
+		float thin = smoothstep(0.62, 0.78, wear);
+		float bare = smoothstep(0.74, 0.86, wear) * 0.8;
 		float tufts = smoothstep(0.52, 0.72, m3 * 0.7 + m2 * 0.3) * 0.75;
-		w[2] = g * (1.0 - bare);
-		w[3] = g * (1.0 - bare) * tufts;
+		w[2] = g * (1.0 - thin * 0.8);
+		w[3] = g * (1.0 - thin) * tufts;
+		w[1] = mix(w[1], thin * (1.0 - bare) * 0.9, g);
 		w[4] = g * bare;
 		w[0] *= 1.0 - g;
-		w[1] *= 1.0 - g;
 		// The banks: earth above the water, wet mud at its edge, pebbles and silt under it.
 		float shore = s.r;
 		float wetband = 1.0 - smoothstep(0.2, 1.6, above);
@@ -313,8 +316,9 @@ void fragment() {
 		vec2 cuv = wpos.xz * 0.33;
 		float c1 = texture(caustics, cuv + vec2(TIME * 0.031, TIME * 0.017)).r;
 		float c2 = texture(caustics, cuv * 1.27 + vec2(-TIME * 0.023, TIME * 0.029) + vec2(0.37, 0.61)).r;
-		float caus = min(c1, c2) * exp(above * 0.45);
-		albedo *= 1.0 + caus * 2.2;
+		// Murky water: the caustics only in the first half metre or so.
+		float caus = min(c1, c2) * exp(above * 1.1);
+		albedo *= 1.0 + caus * 1.3;
 		detail *= 0.5;
 	}
 	// The ruts sunk 12 cm (their walls tilt the ground), rain standing in them here and there: dark, flat, a mirror.

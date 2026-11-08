@@ -688,14 +688,16 @@ void fragment() {
 	vec2 swell = flowing(wpos.xz + vec2(31.0, 17.0), swell_tile, flow * 0.85 + drift * 0.6, TIME + 1.1, 4.2);
 	float far = smoothstep(15.0, 240.0, dist);
 	float lively = mix(0.7, 1.3, smoothstep(0.15, 1.0, speed));
-	vec2 tilt = (ripples * 0.5 + swell * 0.8) * wave_strength * lively * (1.0 - far * 0.65);
+	float calm = wave_strength * lively * (1.0 - far * 0.65);
+	vec2 tilt = (ripples * 0.5 + swell * 0.8) * calm;
 	// On the water the texture's right is +x and its up is -z.
 	vec3 nw = normalize(vec3(tilt.x, 1.0, -tilt.y));
 	vec3 nv = normalize((VIEW_MATRIX * vec4(nw, 0.0)).xyz);
 	vec3 up = normalize((VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
-	// The mirror is bent by the waves, but less than the light glinting off them.
-	vec3 nr = normalize(mix(up, nv, 0.55));
 	NORMAL = normalize(mix(up, nv, 0.85));
+	// The mirror is bent by the swell; the fine ripples only blur it (each pixel spans many of them).
+	vec2 rtilt = (ripples * 0.12 + swell * 0.7) * calm * 0.6;
+	vec3 nr = normalize((VIEW_MATRIX * vec4(normalize(vec3(rtilt.x, 1.0, -rtilt.y)), 0.0)).xyz);
 
 	// What is under the water, seen through it, bent by the waves (not where that would show something above
 	// the surface).
@@ -716,8 +718,12 @@ void fragment() {
 	// Reflections: march the reflected ray across the screen; where it first passes behind something, narrow
 	// the crossing down and take it if the ray is at that surface (not passing behind something thin).
 	vec3 rd = reflect(vdir, nr);
+	// Never into the water: off the back of a wave the ray would only meet the next one.
+	rd = normalize(rd + up * max(0.015 - dot(rd, up), 0.0));
 	float hit = 0.0;
 	vec3 mirrored = vec3(0.0);
+	// The first crossing that looked too far behind its surface, kept in case the ray finds nothing nearer.
+	vec2 spare_uv = vec2(-1.0);
 	float t = 0.25;
 	vec3 last = VERTEX;
 	bool in_front = true;
@@ -747,16 +753,25 @@ void fragment() {
 			vec4 hc = PROJECTION_MATRIX * vec4(hi, 1.0);
 			vec2 huv = hc.xy / hc.w * 0.5 + 0.5;
 			float gap = -hi.z - scene_distance(huv, INV_PROJECTION_MATRIX);
-			if (gap < 0.35 + 0.05 * length(hi - VERTEX)) {
+			float thick = 0.5 + 0.08 * length(hi - VERTEX);
+			if (gap < thick) {
 				mirrored = textureLod(screen_tex, huv, 0.0).rgb;
 				vec2 e = min(huv, 1.0 - huv);
 				hit = smoothstep(0.0, 0.06, min(e.x, e.y)) * (1.0 - smoothstep(0.75, 1.0, float(i) / 36.0));
 				break;
 			}
+			if (spare_uv.x < 0.0 && gap < thick * 4.0) {
+				spare_uv = huv;
+			}
 		}
 		in_front = !behind;
 		last = q;
 		t *= 1.22;
+	}
+	if (hit == 0.0 && spare_uv.x >= 0.0) {
+		mirrored = textureLod(screen_tex, spare_uv, 0.0).rgb;
+		vec2 e = min(spare_uv, 1.0 - spare_uv);
+		hit = smoothstep(0.0, 0.06, min(e.x, e.y)) * 0.85;
 	}
 	float cosv = clamp(dot(nr, -vdir), 0.0, 1.0);
 	float fresnel = (0.02 + 0.98 * pow(1.0 - cosv, 5.0)) * edge;
@@ -766,7 +781,7 @@ void fragment() {
 	float wa = 1.0 - abs(2.0 * p0 - 1.0);
 	float f1 = texture(foam_tex, wpos.xz / 3.0 - flow * p0 * 2.4 / 3.0).r * wa
 			+ texture(foam_tex, wpos.xz / 3.0 - flow * fract(TIME / 2.4 + 0.5) * 2.4 / 3.0 + vec2(0.5)).r * (1.0 - wa);
-	float shore = (1.0 - smoothstep(0.02, 0.35, depth)) * edge;
+	float shore = (1.0 - smoothstep(0.02, 0.3, depth)) * edge * smoothstep(0.45, 0.7, texture(foam_tex, wpos.xz * 0.021).r);
 	float streak = smoothstep(0.66, 0.92, texture(foam_tex, vec2(dot(wpos.xz, vec2(-flow.y, flow.x)) * 0.25, dot(wpos.xz, flow) * 0.02 - TIME * 0.1)).r)
 			* smoothstep(0.5, 1.2, speed) * 0.3;
 	float foam = clamp(smoothstep(0.45, 0.8, f1 * (shore * 1.3 + streak)), 0.0, 1.0);
@@ -777,7 +792,8 @@ void fragment() {
 	// The engine's own reflection (the sky, its clouds, the sun's glint) wherever the ray found nothing: water's
 	// F0 of 0.02.
 	SPECULAR = 0.354 * (1.0 - hit) * (1.0 - foam) * edge;
-	ROUGHNESS = mix(mix(0.03, 0.09, far), 0.8, foam);
+	// Not quite a perfect mirror: each pixel spans many ripples, and the sun's glint spreads over them.
+	ROUGHNESS = mix(mix(0.07, 0.12, far), 0.8, foam);
 	METALLIC = 0.0;
 	// Drawn over the finished opaque scene (it reads it): everything behind is already in EMISSION.
 	ALPHA = 1.0;

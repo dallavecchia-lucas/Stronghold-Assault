@@ -32,9 +32,9 @@ uniform float cell = 0.55;
 uniform int grid = 170;
 uniform vec2 fade = vec2(26.0, 44.0);
 uniform float blade_height = 0.42;
-uniform vec3 root_color = vec3(0.075, 0.105, 0.03);
-uniform vec3 tip_color = vec3(0.13, 0.18, 0.05);
-uniform vec3 dry_color = vec3(0.22, 0.2, 0.08);
+uniform vec3 root_color = vec3(0.065, 0.1, 0.028);
+uniform vec3 tip_color = vec3(0.11, 0.18, 0.045);
+uniform vec3 dry_color = vec3(0.2, 0.19, 0.07);
 uniform vec3 dead_color = vec3(0.3, 0.25, 0.14);
 uniform vec2 wind = vec2(0.8, 0.45);
 uniform sampler2D macro_noise : filter_linear_mipmap, repeat_enable;
@@ -101,7 +101,7 @@ void vertex() {
 	float m1 = textureLod(macro_noise, p * 0.0035, 0.0).r;
 	float m2 = textureLod(macro_noise, p * 0.016 + vec2(0.37, 0.11), 0.0).r;
 	float m3 = textureLod(macro_noise, p * 0.07 + vec2(0.71, 0.53), 0.0).r;
-	float grass = 1.0 - smoothstep(0.66, 0.8, m2 * 0.6 + m3 * 0.4);
+	float grass = 1.0 - smoothstep(0.66, 0.82, m2 * 0.6 + m3 * 0.4);
 	float gy = ground_height(p);
 	if (jungle) {
 		vec2 suv = (p - map_origin) / map_size;
@@ -235,9 +235,9 @@ func _setup(level: LevelBuilder, terrain: JungleTerrain) -> void:
 		_mat.set_shader_parameter("map_size", size)
 		_mat.set_shader_parameter("water_y", JungleLayout.WATER_Y)
 		_mat.set_shader_parameter("blade_height", 0.55)
-		_mat.set_shader_parameter("root_color", Vector3(0.05, 0.085, 0.022))
-		_mat.set_shader_parameter("tip_color", Vector3(0.085, 0.16, 0.035))
-		_mat.set_shader_parameter("dry_color", Vector3(0.15, 0.16, 0.05))
+		_mat.set_shader_parameter("root_color", Vector3(0.042, 0.08, 0.018))
+		_mat.set_shader_parameter("tip_color", Vector3(0.075, 0.165, 0.032))
+		_mat.set_shader_parameter("dry_color", Vector3(0.14, 0.16, 0.045))
 		_mat.set_shader_parameter("dead_color", Vector3(0.22, 0.18, 0.09))
 	else:
 		var lanes: Array[Vector4] = []
