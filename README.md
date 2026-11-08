@@ -184,6 +184,18 @@ Balance numbers live in `game/scripts/units/unit_types.gd` and the constants at 
 
 A blast (`FX.blast`, `Combat.explode`) is all of it: the flash and its light, a fireball rolling up into a column of dark smoke lit from inside, sparks and embers, burning debris, and on the ground a skirt of dust rolling out, dirt thrown up in columns that fall back, the shock wave and the scorch mark. Guns flash with tongues of flame out of the muzzle and a star of them round it (`FX.muzzle_flash`; the Heavy Gunner's and the Sniper's carry a `MuzzleFlash` of their own, on the Sniper's body layer so her scope doesn't see it); cannons, mortars and launchers go off in a gout of flame with a ring of smoke blown out round the muzzle (`FX.muzzle_blast`); rounds strike with sparks off the surface and a puff of its dust; flak bursts black with shrapnel; missiles and rockets fly on a jet of flame trailing thick white smoke; shells fly glowing with a wake of heat; a knocked-out gun or turret smoulders (`WreckSmoke`). The flamethrowers and the burning forest (`FireFX`) burn with the same fire and smoke.
 
+**The ground, the stronghold and the water** are photoscanned materials (CC0, see *Texture credits* below), laid out in world space and blended by shaders:
+
+- **The ground** (`game/scripts/fx/ground_material.gd`, both maps): eight layers (jungle leaf litter, mossy mud and leaves, grass, dark grass, bare earth, wet mud, rock, river pebbles), each a colour, a normal map and its ambient occlusion, roughness and height, in three texture arrays (`game/assets/textures/terrain`). Where a layer lies comes from the map (the Jungle Keep's splat: the clearing's grass, the banks, the quarry; the classic field's earth tracks worn up the attack lanes and the scree at the mountain's foot), from the slope (rock on the steep faces, projected from three sides so it never stretches), from the water (soaked dark and glossy at its edge, pebbles and silt under it with the light's caustics playing over them) and from large-scale noise (moss, bare patches, dry and lush grass). Layers meet by their heights, so grass grows up between the stones rather than the two fading into each other, and every layer is sampled twice at offsets a slow noise moves, so its tiles never show in rows.
+- **The stronghold** (`game/scripts/fx/stronghold_look.gd`): the model's flat colours are replaced at load, by its material names. The mountain is scanned rock up close under a scanned cliff's big shapes and colour, with faint strata, grass and soil on its ledges and moss in its crevices (thick in the jungle); its normals are smooth now (the rock had been flat-shaded, every facet showing). The bunkers are board-formed concrete (level pour lines) with worn slab decks, rain streaks down the walls from every ledge, grime at their foot and moss and algae in the jungle; the steel is worn plate, the hatches hazard orange flaking off rust, the door frames and the gates' blast doors striped yellow and black.
+- **The water** (`JungleTerrain.WATER_SHADER`): a murky jungle river, olive-brown in its depths and showing its bed in the shallows, the bed and anything swimming seen through it bent by the waves and dimmed colour by colour with the depth of water the light comes through. Waves from an FFT wind-chop spectrum flow down each river (a flow map baked from their courses) and chop across the lake. Reflections are ray-marched across the screen against the depth buffer (the banks, the trees, the bridges and rafts mirror in it), the sky's own (its clouds, the sun's glint) wherever the ray finds nothing. Foam gathers where the water is thin, along the shore and round anything standing in it, and in streaks down the current.
+
+The textures are made by `tools/textures/fetch_and_pack.py` (downloads the Poly Haven sets and packs them) and `tools/textures/gen_water.py` (the water's wave normals, caustics and foam, generated). `game/scenes/dev/look_showcase.tscn` takes stills of how the maps look from where players see them:
+
+```sh
+godot --path game --resolution 1600x900 res://scenes/dev/look_showcase.tscn -- --shots=/tmp/look [--jungle] [--only=field,bunker] [--frames=24]
+```
+
 `game/scenes/dev/fx_showcase.tscn` plays them all on a loop on the classic field (`-- --jungle`: the Jungle Keep), a camera circling: a grenade's, a mine's and a heavy shell's blasts, an air burst, flak, a field gun firing a shell over, riflemen firing tracers into the ground, a rocket diving in, a salvo of shells and a burning wreck:
 
 ```sh
@@ -822,6 +834,10 @@ python tools/blender/build_stronghold.py -- --output game/assets/stronghold/stro
 ```
 
 The game strips the placeholder weapons (`PH_*`) from its mounts and puts the turret models there, and hooks gates, stations and the Keep onto its markers (`EXIT_C_*`, `MOUNT_*`, `Reactor`).
+
+## Texture credits
+
+The ground's, the stronghold's and the water's photoscanned materials are from [Poly Haven](https://polyhaven.com), released under CC0 (public domain): `forest_leaves_02`, `brown_mud_leaves_01`, `leafy_grass`, `sparse_grass`, `forest_ground_04`, `brown_mud_03`, `rock_face_03`, `ganges_river_pebbles`, `aerial_rocks_02`, `concrete_layers_02`, `dirty_concrete`, `metal_plate_02`, `rusty_metal_02`. The water's wave normals, caustics and foam are generated (`tools/textures/gen_water.py`).
 
 ## Asset layout
 

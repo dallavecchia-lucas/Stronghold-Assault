@@ -286,14 +286,22 @@ func _build_environment() -> void:
 
 func _build_ground() -> void:
 	var size := MAP_HALF * 2.0 + 40.0
-	var ground := _box(Vector3(size, 2.0, size), Vector3(0, -1.0, 0), Mats.ground())
+	# Photoscanned grass and earth (GroundMaterial), worn into tracks up the attack lanes, scree at the
+	# mountain's foot.
+	var lanes := []
+	for side in SIDES:
+		if SIDES[side].gate:
+			var out: Vector3 = SIDES[side].dir
+			lanes.append([out * FACE_DIST, out * MAP_HALF])
+	var mat := GroundMaterial.classic(lanes, MOUNTAIN_HALF)
+	var ground := _box(Vector3(size, 2.0, size), Vector3(0, -1.0, 0), mat)
 	ground.name = "Ground"
 	# Visual-only skirt so the horizon isn't a hard edge.
 	var skirt := MeshInstance3D.new()
 	var pm := PlaneMesh.new()
 	pm.size = Vector2(1400, 1400)
 	skirt.mesh = pm
-	skirt.material_override = Mats.ground()
+	skirt.material_override = mat
 	skirt.position.y = -0.05
 	add_child(skirt)
 
@@ -301,6 +309,8 @@ func _build_ground() -> void:
 func _build_stronghold() -> void:
 	_stronghold = (load(STRONGHOLD) as PackedScene).instantiate() as Node3D
 	_stronghold.position = STRONGHOLD_OFFSET
+	# Scanned rock, board-formed concrete and worn steel in place of the model's flat colours.
+	StrongholdLook.apply(_stronghold, jungle)
 	nav_region.add_child(_stronghold)
 	# Placeholder weapons on the mounts make way for turret models (_build_mounts).
 	for n in _stronghold.find_children("PH_*", "", true, false):
@@ -362,8 +372,11 @@ func _route_link(route: Array[Vector3]) -> NavigationLink3D:
 
 ## Steel door with hazard stripes, centered on `parent`, facing out along its +Z.
 func _blast_door(parent: Node3D, stripe_color: Color) -> void:
-	parent.add_child(Mats.box_mesh(DOOR_SIZE, Vector3.ZERO, Mats.flat(Color(0.2, 0.21, 0.22), 0.8, 0.4)))
-	var stripe := Mats.flat(stripe_color, 0.3, 0.6)
+	# Worn steel, its bands in hazard paint (StrongholdLook); `stripe_color` only where that can't be had.
+	parent.add_child(Mats.box_mesh(DOOR_SIZE, Vector3.ZERO, StrongholdLook.material("Metal", jungle)))
+	var stripe: Material = StrongholdLook.material("HatchStripes", jungle)
+	if stripe == null:
+		stripe = Mats.flat(stripe_color, 0.3, 0.6)
 	for y in [-0.9, 0.0, 0.9]:
 		parent.add_child(Mats.box_mesh(Vector3(DOOR_SIZE.x, 0.18, DOOR_SIZE.z + 0.08), Vector3(0, y, 0), stripe))
 

@@ -526,6 +526,8 @@ const EDGE_SEGMENTS := [[], [[3, 0]], [[0, 1]], [[3, 1]], [[1, 2]], [[3, 0], [1,
 		[[2, 3]], [[0, 2]], [[0, 1], [2, 3]], [[1, 2]], [[1, 3]], [[0, 1]], [[0, 3]], []]
 
 
+## The water: one plane at JungleLayout.WATER_Y, showing only where the land dips under it (WATER_SHADER),
+## flowing down the rivers (a flow map baked from their courses) and still on the lake.
 func _build_water() -> void:
 	var mi := MeshInstance3D.new()
 	mi.name = "Water"
@@ -540,113 +542,96 @@ func _build_water() -> void:
 	sh.code = WATER_SHADER
 	var m := ShaderMaterial.new()
 	m.shader = sh
-	m.set_shader_parameter("wave_a", _noise_tex(0.012, 71, true))
-	m.set_shader_parameter("wave_b", _noise_tex(0.02, 93, true))
+	m.set_shader_parameter("wave_normal", load("res://assets/textures/water/water_normal.png"))
+	m.set_shader_parameter("foam_tex", load("res://assets/textures/water/water_foam.png"))
+	m.set_shader_parameter("flow_tex", ImageTexture.create_from_image(_flow_map()))
+	m.set_shader_parameter("map_origin", Vector2(-HALF, -HALF))
+	m.set_shader_parameter("map_size", HALF * 2.0)
+	m.set_shader_parameter("water_y", JungleLayout.WATER_Y)
 	mi.material_override = m
 	add_child(mi)
 
 
+## Which way and how fast the water runs (m/s) every FLOW_CELL m: down each river's course (the order its
+## points are listed in), fading out across the lake. Encoded round 0.5 (FLOW_MAX either way).
+const FLOW_CELL := 8.0
+const FLOW_MAX := 1.5
+const FLOW_SPEED := 0.9
+
+
+func _flow_map() -> Image:
+	var fn := int(HALF * 2.0 / FLOW_CELL) + 1
+	var best := PackedFloat32Array()
+	best.resize(fn * fn)
+	best.fill(1.0e6)
+	var data := PackedByteArray()
+	data.resize(fn * fn * 2)
+	data.fill(128)
+	var lake_c: Vector2 = JungleLayout.LAKE[0]
+	var lake_r: Vector2 = JungleLayout.LAKE[1]
+	for seg in _river_segments():
+		var a: Vector2 = seg[0]
+		var b: Vector2 = seg[1]
+		var band: float = seg[2] + JungleLayout.BANK + 8.0
+		var ab := b - a
+		var dir := ab.normalized()
+		var inv := 1.0 / maxf(ab.length_squared(), 1e-6)
+		var i0 := clampi(int(floor((minf(a.x, b.x) - band + HALF) / FLOW_CELL)), 0, fn - 1)
+		var i1 := clampi(int(ceil((maxf(a.x, b.x) + band + HALF) / FLOW_CELL)), 0, fn - 1)
+		var j0 := clampi(int(floor((minf(a.y, b.y) - band + HALF) / FLOW_CELL)), 0, fn - 1)
+		var j1 := clampi(int(ceil((maxf(a.y, b.y) + band + HALF) / FLOW_CELL)), 0, fn - 1)
+		for j in range(j0, j1 + 1):
+			for i in range(i0, i1 + 1):
+				var p := Vector2(-HALF + i * FLOW_CELL, -HALF + j * FLOW_CELL)
+				var t := clampf((p - a).dot(ab) * inv, 0.0, 1.0)
+				var d := p.distance_to(a + ab * t)
+				var k := j * fn + i
+				if d < best[k] and d < band:
+					best[k] = d
+					# Fastest mid-stream, slack at the banks, still out on the lake.
+					var lake := Vector2((p.x - lake_c.x) / lake_r.x, (p.y - lake_c.y) / lake_r.y).length()
+					var speed := FLOW_SPEED * (1.0 - smoothstep(0.55, 1.0, d / maxf(seg[2], 1.0)) * 0.6) * smoothstep(0.7, 1.1, lake)
+					var f := dir * speed / FLOW_MAX
+					data[k * 2] = clampi(int((f.x * 0.5 + 0.5) * 255.0 + 0.5), 0, 255)
+					data[k * 2 + 1] = clampi(int((f.y * 0.5 + 0.5) * 255.0 + 0.5), 0, 255)
+	return Image.create_from_data(fn, fn, false, Image.FORMAT_RG8, data)
+
+
+## The ground's material: photoscanned forest floor, grass, earth, mud, rock and river pebbles laid by the
+## splat, the slope and the water (GroundMaterial).
 func _make_material() -> ShaderMaterial:
-	var sh := Shader.new()
-	sh.code = GROUND_SHADER
-	var m := ShaderMaterial.new()
-	m.shader = sh
-	m.set_shader_parameter("splat", ImageTexture.create_from_image(splat))
-	m.set_shader_parameter("map_origin", Vector2(-HALF - CELL * 0.5, -HALF - CELL * 0.5))
-	m.set_shader_parameter("map_size", HALF * 2.0 + CELL)
-	m.set_shader_parameter("detail", _noise_tex(0.03, 11, false))
-	m.set_shader_parameter("macro", _noise_tex(0.008, 12, false))
-	m.set_shader_parameter("detail_normal", _noise_tex(0.06, 13, true))
-	return m
+	return GroundMaterial.jungle(ImageTexture.create_from_image(splat), Vector2(-HALF - CELL * 0.5, -HALF - CELL * 0.5),
+			HALF * 2.0 + CELL, JungleLayout.WATER_Y)
 
 
-static func _noise_tex(freq: float, seed_val: int, as_normal: bool) -> NoiseTexture2D:
-	var noise := FastNoiseLite.new()
-	noise.seed = seed_val
-	noise.frequency = freq
-	noise.fractal_octaves = 5
-	var tex := NoiseTexture2D.new()
-	tex.width = 512
-	tex.height = 512
-	tex.seamless = true
-	tex.noise = noise
-	tex.generate_mipmaps = true
-	if as_normal:
-		tex.as_normal_map = true
-		tex.bump_strength = 4.0
-	return tex
-
-
-const GROUND_SHADER := """
-shader_type spatial;
-render_mode diffuse_burley, specular_schlick_ggx;
-
-uniform sampler2D splat : filter_linear, repeat_disable;
-uniform vec2 map_origin;
-uniform float map_size;
-uniform sampler2D detail : filter_linear_mipmap_anisotropic, repeat_enable;
-uniform sampler2D macro : filter_linear_mipmap, repeat_enable;
-uniform sampler2D detail_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
-
-varying vec3 wpos;
-varying vec3 wnrm;
-
-void vertex() {
-	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	wnrm = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
-}
-
-float tri(vec3 p, vec3 n, float scale) {
-	vec3 w = pow(abs(n), vec3(4.0));
-	w /= (w.x + w.y + w.z);
-	return texture(detail, p.yz * scale).r * w.x + texture(detail, p.xz * scale).r * w.y + texture(detail, p.xy * scale).r * w.z;
-}
-
-void fragment() {
-	vec4 s = texture(splat, (wpos.xz - map_origin) / map_size);
-	float n1 = texture(detail, wpos.xz * 0.09).r;
-	float n0 = texture(detail, wpos.xz * 0.55 + vec2(0.37, 0.11)).r;
-	float n2 = texture(detail, wpos.xz * 0.021).r;
-	float m = texture(macro, wpos.xz * 0.0025).r;
-	float m2 = texture(macro, wpos.xz * 0.011 + vec2(0.3, 0.7)).r;
-	// Jungle floor: leaf litter, dark soil and moss.
-	vec3 litter = mix(vec3(0.17, 0.12, 0.07), vec3(0.32, 0.24, 0.13), n1);
-	vec3 moss = mix(vec3(0.12, 0.18, 0.06), vec3(0.24, 0.3, 0.1), n2);
-	vec3 col = mix(litter, moss, smoothstep(0.35, 0.65, m2 * 0.7 + n2 * 0.3));
-	// The clearing: cropped grass, patchy.
-	vec3 grass = mix(vec3(0.19, 0.26, 0.09), vec3(0.33, 0.38, 0.15), n1 * 0.5 + n2 * 0.3 + n0 * 0.2);
-	// Worn, sun-dried patches and bare earth here and there.
-	grass = mix(grass, vec3(0.4, 0.36, 0.2), smoothstep(0.6, 0.78, m) * 0.6);
-	grass = mix(grass, vec3(0.36, 0.27, 0.17), smoothstep(0.66, 0.74, m2 * 0.6 + n0 * 0.4) * 0.7);
-	col = mix(col, grass, s.g);
-	// Mud by the water, darker toward it.
-	vec3 mud = mix(vec3(0.16, 0.12, 0.08), vec3(0.3, 0.24, 0.16), n1);
-	float wet = smoothstep(-1.2, -2.4, wpos.y);
-	mud *= 1.0 - wet * 0.35;
-	col = mix(col, mud, s.r);
-	// Rock: the steep faces, the quarry's benches.
-	float slope = 1.0 - wnrm.y;
-	float rockw = max(smoothstep(0.32, 0.5, slope), s.a * smoothstep(0.02, 0.12, slope + 0.05) );
-	float rn = tri(wpos, wnrm, 0.12) * 0.6 + tri(wpos, wnrm, 0.5) * 0.4;
-	vec3 rock = mix(vec3(0.24, 0.22, 0.19), vec3(0.46, 0.43, 0.38), rn);
-	rock = mix(rock, vec3(0.62, 0.6, 0.54), s.a * 0.5);
-	rock = mix(rock, vec3(0.2, 0.26, 0.1), smoothstep(0.55, 0.75, n2) * (1.0 - s.a) * 0.6);
-	col = mix(col, rock, rockw);
-	col *= (0.85 + 0.3 * m) * (0.9 + 0.2 * n0);
-	// The colours above are picked in sRGB.
-	ALBEDO = pow(col, vec3(2.2));
-	ROUGHNESS = mix(0.95, 0.55, s.r * wet);
-	NORMAL_MAP = texture(detail_normal, wpos.xz * 0.15).rgb;
-	NORMAL_MAP_DEPTH = 0.6 + rockw;
-}
-"""
-
+## The water. A jungle river: murky, olive-brown in its depths, showing its bed in the shallows. Seen through,
+## the bed (and anything swimming) is bent by the waves and dimmed colour by colour with the depth of water
+## the light comes through (read from the depth buffer); waves of two wind-chop scales (an FFT heightfield's
+## normals) flow down the river (two-phase flow mapping, so they never stretch) and chop across the lake.
+## Reflections are ray-marched across the screen against the depth buffer, so the banks, the trees, the
+## bridges and the rafts mirror in it; where a reflected ray finds nothing, the sky's reflection (its clouds,
+## the sun's glint) is the engine's own, which is switched off where a ray does find something (the bank
+## hides the sky there). Foam gathers where the water is thin: along the shore and round anything standing in
+## it (a bridge's piers, a swimmer, a raft), and in streaks down the current.
 const WATER_SHADER := """
 shader_type spatial;
-render_mode cull_disabled, specular_schlick_ggx;
+render_mode blend_mix, depth_draw_always, cull_back, diffuse_burley, specular_schlick_ggx;
 
-uniform sampler2D wave_a : hint_normal, filter_linear_mipmap, repeat_enable;
-uniform sampler2D wave_b : hint_normal, filter_linear_mipmap, repeat_enable;
+uniform sampler2D screen_tex : hint_screen_texture, filter_linear_mipmap, repeat_disable;
+uniform sampler2D depth_tex : hint_depth_texture, filter_nearest, repeat_disable;
+uniform sampler2D wave_normal : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D foam_tex : filter_linear_mipmap, repeat_enable;
+uniform sampler2D flow_tex : filter_linear, repeat_disable;
+uniform vec2 map_origin = vec2(-880.0);
+uniform float map_size = 1760.0;
+uniform float water_y = -1.8;
+uniform float flow_max = 1.5;
+// How fast the water swallows light (per metre, red green blue) and the colour of what is stirred up in it.
+uniform vec3 absorption = vec3(0.95, 0.72, 1.15);
+uniform vec3 murk = vec3(0.045, 0.06, 0.03);
+uniform float wave_tile = 7.0;
+uniform float wave_strength = 0.55;
+uniform float refraction = 0.035;
 
 varying vec3 wpos;
 
@@ -654,18 +639,121 @@ void vertex() {
 	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
+float scene_distance(vec2 uv, mat4 inv_proj) {
+	float d = texture(depth_tex, uv).r;
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+	vec3 ndc = vec3(uv, d) * 2.0 - 1.0;
+#else
+	vec3 ndc = vec3(uv * 2.0 - 1.0, d);
+#endif
+	vec4 v = inv_proj * vec4(ndc, 1.0);
+	return -v.z / v.w;
+}
+
+vec3 scene_view(vec2 uv, mat4 inv_proj) {
+	float d = texture(depth_tex, uv).r;
+#if CURRENT_RENDERER == RENDERER_COMPATIBILITY
+	vec3 ndc = vec3(uv, d) * 2.0 - 1.0;
+#else
+	vec3 ndc = vec3(uv * 2.0 - 1.0, d);
+#endif
+	vec4 v = inv_proj * vec4(ndc, 1.0);
+	return v.xyz / v.w;
+}
+
 void fragment() {
-	vec2 flow = vec2(0.012, 0.004) * TIME;
-	vec3 na = texture(wave_a, wpos.xz * 0.03 + flow).rgb;
-	vec3 nb = texture(wave_b, wpos.xz * 0.07 - flow * 1.7).rgb;
-	NORMAL_MAP = normalize(mix(na, nb, 0.5));
-	NORMAL_MAP_DEPTH = 0.5;
-	float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 4.0);
-	// A jungle river: dark, murky water (opaque, so it mirrors the banks and the sky: screen-space
-	// reflections skip see-through surfaces), the sky's sheen at a glancing angle.
-	ALBEDO = pow(mix(vec3(0.17, 0.17, 0.11), vec3(0.3, 0.34, 0.32), fres), vec3(2.2));
-	ROUGHNESS = 0.06;
+	// Waves: the chop flowing down the river (two phases half a cycle apart, crossfaded), and a slower one
+	// across it everywhere.
+	vec2 flow = (texture(flow_tex, (wpos.xz - map_origin) / map_size).rg * 2.0 - 1.0) * flow_max;
+	float period = 3.0;
+	float p0 = fract(TIME / period);
+	float p1 = fract(TIME / period + 0.5);
+	vec2 uv = wpos.xz / wave_tile;
+	vec2 na = texture(wave_normal, uv - flow * p0 * period / wave_tile).rg * 2.0 - 1.0;
+	vec2 nb = texture(wave_normal, uv - flow * p1 * period / wave_tile + vec2(0.37, 0.61)).rg * 2.0 - 1.0;
+	float wa = 1.0 - abs(2.0 * p0 - 1.0);
+	vec2 nf = na * wa + nb * (1.0 - wa);
+	vec2 nc = texture(wave_normal, wpos.xz / (wave_tile * 2.7) + vec2(TIME * 0.011, -TIME * 0.007)).rg * 2.0 - 1.0;
+	float dist = length(VERTEX);
+	vec2 tilt = (nf + nc * 0.7) * wave_strength * mix(1.0, 0.35, smoothstep(30.0, 250.0, dist));
+	// On the water the texture's right is +x and its up is -z.
+	vec3 nw = normalize(vec3(tilt.x, 1.0, -tilt.y));
+	vec3 nv = normalize((VIEW_MATRIX * vec4(nw, 0.0)).xyz);
+	NORMAL = nv;
+
+	// What is under the water, seen through it, bent by the waves (not where that would show something above
+	// the surface).
+	float surface = -VERTEX.z;
+	vec2 ruv = SCREEN_UV + tilt * refraction * clamp(scene_distance(SCREEN_UV, INV_PROJECTION_MATRIX) - surface, 0.0, 1.5) / max(surface * 0.05, 1.0);
+	if (scene_distance(ruv, INV_PROJECTION_MATRIX) < surface) {
+		ruv = SCREEN_UV;
+	}
+	vec3 below = textureLod(screen_tex, ruv, 0.0).rgb;
+	vec3 bed = scene_view(ruv, INV_PROJECTION_MATRIX);
+	float through = max(-bed.z - surface, 0.0) * length(VERTEX) / max(surface, 0.001);
+	vec3 transmit = exp(-absorption * through);
+	vec3 bed_world = (INV_VIEW_MATRIX * vec4(bed, 1.0)).xyz;
+	float depth = max(water_y - bed_world.y, 0.0);
+
+	// Reflections: march the reflected ray across the screen until it passes behind something.
+	vec3 rd = reflect(normalize(VERTEX), nv);
+	float hit = 0.0;
+	vec3 mirrored = vec3(0.0);
+	float t = 0.4;
+	vec3 last = VERTEX;
+	for (int i = 0; i < 28; i++) {
+		vec3 q = VERTEX + rd * t;
+		vec4 c = PROJECTION_MATRIX * vec4(q, 1.0);
+		vec2 quv = c.xy / c.w * 0.5 + 0.5;
+		if (c.w <= 0.0 || quv.x < 0.0 || quv.y < 0.0 || quv.x > 1.0 || quv.y > 1.0) {
+			break;
+		}
+		float sd = scene_distance(quv, INV_PROJECTION_MATRIX);
+		float qd = -q.z;
+		if (qd > sd + 0.05 && qd < sd + 1.0 + t * 0.08) {
+			// Narrow it down between the last step and this one.
+			vec3 lo = last;
+			vec3 hi = q;
+			for (int k = 0; k < 5; k++) {
+				vec3 mid = (lo + hi) * 0.5;
+				vec4 mc = PROJECTION_MATRIX * vec4(mid, 1.0);
+				vec2 muv = mc.xy / mc.w * 0.5 + 0.5;
+				if (-mid.z > scene_distance(muv, INV_PROJECTION_MATRIX)) {
+					hi = mid;
+				} else {
+					lo = mid;
+				}
+			}
+			vec4 hc = PROJECTION_MATRIX * vec4(hi, 1.0);
+			vec2 huv = hc.xy / hc.w * 0.5 + 0.5;
+			mirrored = textureLod(screen_tex, huv, 0.0).rgb;
+			vec2 edge = min(huv, 1.0 - huv);
+			hit = smoothstep(0.0, 0.08, min(edge.x, edge.y)) * (1.0 - smoothstep(0.6, 0.95, float(i) / 28.0));
+			break;
+		}
+		last = q;
+		t *= 1.28;
+	}
+	float cosv = clamp(dot(nv, -normalize(VERTEX)), 0.0, 1.0);
+	float fresnel = 0.02 + 0.98 * pow(1.0 - cosv, 5.0);
+
+	// Foam where the water is thin, and in streaks down the current.
+	float speed = length(flow);
+	vec2 fuv = wpos.xz / 3.0 - flow * p0 * period / 3.0;
+	float f1 = texture(foam_tex, fuv).r * wa + texture(foam_tex, wpos.xz / 3.0 - flow * p1 * period / 3.0 + vec2(0.5)).r * (1.0 - wa);
+	float shore = 1.0 - smoothstep(0.0, 0.55, depth);
+	float streak = smoothstep(0.62, 0.9, texture(foam_tex, vec2(dot(wpos.xz, vec2(-flow.y, flow.x)) * 0.25, dot(wpos.xz, flow) * 0.02 - TIME * 0.1)).r)
+			* smoothstep(0.3, 1.0, speed) * 0.35;
+	float foam = clamp(smoothstep(0.35, 0.75, f1 * (shore * 1.4 + streak)), 0.0, 1.0);
+
+	vec3 scatter = murk * (1.0 - transmit);
+	ALBEDO = mix(scatter, vec3(0.78, 0.8, 0.76), foam);
+	EMISSION = below * transmit * (1.0 - fresnel) * (1.0 - foam) + mirrored * fresnel * hit * (1.0 - foam);
+	// The engine's own reflection (the sky, its clouds, the sun's glint) wherever the ray found nothing.
+	SPECULAR = 0.25 * (1.0 - hit) * (1.0 - foam);
+	ROUGHNESS = mix(0.035, 0.8, foam);
 	METALLIC = 0.0;
-	SPECULAR = 0.6;
+	// Drawn over the finished opaque scene (it reads it): everything behind is already in EMISSION.
+	ALPHA = 1.0;
 }
 """
