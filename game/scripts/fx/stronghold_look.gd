@@ -185,13 +185,19 @@ void fragment() {
 	col *= tint;
 	float m1 = texture(macro_noise, (wpos.xz + wpos.y) * 0.02).r;
 	float m2 = texture(macro_noise, (wpos.xz - wpos.y) * 0.09 + vec2(0.3, 0.6)).r;
-	// Patches of weathering.
-	col *= mix(0.86, 1.08, m1) * mix(0.95, 1.04, m2);
+	// Patches of weathering: no two pours, no two stretches of wall quite the same shade.
+	col *= mix(0.8, 1.1, m1) * mix(0.93, 1.05, m2);
 	float wall = 1.0 - bw.y;
-	// Rain streaks run down the walls.
-	float streak = texture(macro_noise, vec2((wpos.x + wpos.z) * 0.45, wpos.y * 0.015)).r;
+	// Rain streaks run down the walls, dark where the water runs, pale lime where it dries.
+	float sx = texture(macro_noise, vec2(wpos.z * 0.45, wpos.y * 0.015)).r;
+	float sz = texture(macro_noise, vec2(wpos.x * 0.45, wpos.y * 0.015 + 0.5)).r;
+	float streak = (sx * bw.x + sz * bw.z) / max(bw.x + bw.z, 0.001);
 	float streaks = smoothstep(0.52, 0.78, streak + (m2 - 0.5) * 0.2) * wall;
-	col *= 1.0 - streaks * 0.22;
+	col *= 1.0 - streaks * 0.34;
+	col *= 1.0 + (1.0 - smoothstep(0.18, 0.32, streak)) * 0.1 * wall;
+	// Dust and grit settled on what faces up.
+	float top = smoothstep(0.75, 0.95, N.y);
+	col = mix(col, col * vec3(0.8, 0.74, 0.64), top * smoothstep(0.35, 0.7, m2) * 0.6);
 	// Grime and splashed earth at the foot.
 	float foot = 1.0 - smoothstep(0.0, 2.4, wpos.y - ground_y + (m2 - 0.5) * 0.8);
 	col = mix(col, col * vec3(0.62, 0.55, 0.45), foot * 0.55);
@@ -300,7 +306,7 @@ static func material(key: String, jungle: bool) -> ShaderMaterial:
 			m.set_shader_parameter("grass_color", Vector3(0.045, 0.075, 0.02) if jungle else Vector3(0.09, 0.12, 0.04))
 			m.set_shader_parameter("grass_luma", GroundMaterial.LUMA[grass])
 			m.set_shader_parameter("moss", 0.75 if jungle else 0.15)
-			m.set_shader_parameter("green", 1.0 if jungle else 0.4)
+			m.set_shader_parameter("green", 1.0 if jungle else 0.55)
 		"Concrete", "ConcreteDark":
 			m = _shader_material(CONCRETE_SHADER)
 			for part in ["albedo", "normal", "orh"]:

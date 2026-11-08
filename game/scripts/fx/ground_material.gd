@@ -36,7 +36,7 @@ const JUNGLE_RECOLOR := [
 const JUNGLE_NORMAL := [1.0, 1.0, 1.0, 1.0, 1.1, 1.0, 1.35, 1.2]
 const CLASSIC_RECOLOR := [
 	Color(0.2, 0.13, 0.05, 0.4), Color(0.085, 0.09, 0.045, 0.65), Color(0.095, 0.165, 0.04, 0.9), Color(0.058, 0.1, 0.026, 0.7),
-	Color(0.13, 0.11, 0.085, 0.6), Color(0.085, 0.075, 0.06, 0.35), Color(0.165, 0.15, 0.13, 0.75), Color(0.2, 0.185, 0.16, 0.3),
+	Color(0.13, 0.11, 0.085, 0.6), Color(0.085, 0.075, 0.06, 0.35), Color(0.165, 0.15, 0.13, 0.75), Color(0.14, 0.13, 0.115, 0.5),
 ]
 const CLASSIC_NORMAL := [1.0, 1.0, 1.0, 1.0, 1.1, 1.0, 1.35, 1.2]
 
@@ -216,8 +216,10 @@ void fragment() {
 		for (int i = 0; i < 6; i++) {
 			w[i] *= 1.0 - scree;
 		}
-		w[7] = scree * 0.6;
-		w[4] += scree * 0.4;
+		// Scree: stones and grit fallen from the faces, earth between them, weeds pushing through at its edge.
+		w[7] = scree * mix(0.35, 0.75, m3);
+		w[4] += scree * 0.45;
+		w[1] += scree * smoothstep(2.0, 6.0, foot) * 0.6;
 		float rock = smoothstep(0.3, 0.48, slope);
 		for (int i = 0; i < 8; i++) {
 			w[i] *= 1.0 - rock;

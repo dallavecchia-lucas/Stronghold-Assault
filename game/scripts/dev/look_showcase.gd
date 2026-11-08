@@ -18,6 +18,7 @@ const CLASSIC := {
 	"ground": [Vector3(6, 1.6, 130), Vector3(9, 0, 122), 70.0],
 	"track": [Vector3(0.6, 1.5, 150), Vector3(-0.5, 0, 128), 66.0],
 	"deck": [Vector3(-8, 8.9, 82.5), Vector3(-30, 1, 150), 70.0],
+	"gate": [Vector3(6, 1.8, 93), Vector3(0, 3.0, 80.5), 62.0],
 }
 const JUNGLE := {
 	"river": [Vector3(-30, -0.7, 482), Vector3(90, -1.6, 468), 62.0],

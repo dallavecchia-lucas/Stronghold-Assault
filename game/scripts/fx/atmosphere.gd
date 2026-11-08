@@ -275,7 +275,7 @@ func _build(level: Node3D, jungle: bool) -> void:
 	# Haze: the distance fades into the sky's colour, glowing toward the sun.
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.66, 0.71, 0.7) if jungle else Color(0.66, 0.69, 0.72)
-	env.fog_density = 0.00045 if jungle else 0.0022
+	env.fog_density = 0.00045 if jungle else 0.0015
 	env.fog_sun_scatter = 0.3
 	env.fog_aerial_perspective = 0.35 if jungle else 0.6
 	env.fog_sky_affect = 0.2 if jungle else 0.4
