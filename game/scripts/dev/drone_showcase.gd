@@ -92,7 +92,8 @@ func _floor() -> void:
 	add_child(sun)
 
 
-func _new_bay(swarms: int, manual := true) -> void:
+## A fresh bay with `slots` swarms, `full` of them starting with all five drones (the rest empty, to be rebuilt).
+func _new_bay(full: int, slots := DroneBay.MAX_SWARMS, manual := true) -> void:
 	if bay != null:
 		bay.queue_free()
 		for u in get_tree().get_nodes_in_group("attacker_units"):
@@ -101,7 +102,8 @@ func _new_bay(swarms: int, manual := true) -> void:
 	bay = DroneBay.new()
 	bay.manual = manual
 	bay.auto_calls = manual == false
-	bay.initial_swarms = swarms
+	bay.slots = slots
+	bay.initial_swarms = full
 	var mounts: Array = []
 	for k in MOUNTS:
 		var a := TAU * float(k) / float(MOUNTS)
@@ -167,21 +169,23 @@ func _kill(d: DefenderDrone) -> void:
 
 func _run_tests() -> void:
 	_test_fuel_rules()
-	await _new_bay(0)
+	await _new_bay(1, 1)
 	_test_flight_and_fuel()
-	await _new_bay(0)
-	_test_cap()
-	await _new_bay(0)
+	await _new_bay(6)
+	_test_rebuild()
+	await _new_bay(1, 1)
 	await _test_focus()
-	await _new_bay(0)
+	await _new_bay(1, 1)
 	await _test_hunters()
-	await _new_bay(2)
+	await _new_bay(2, 2)
 	_test_calls()
-	await _new_bay(1)
+	await _new_bay(3, 3)
+	_test_freshest()
+	await _new_bay(1, 1)
 	_test_stand_down()
-	await _new_bay(0)
+	await _new_bay(1, 1)
 	await _test_auto_calls()
-	await _new_bay(0)
+	await _new_bay(1, 1)
 	await _test_water()
 
 
@@ -204,7 +208,7 @@ func _test_fuel_rules() -> void:
 
 func _test_flight_and_fuel() -> void:
 	print("one drone: out, hovering, home, recharge")
-	var s := bay.build_swarm()
+	var s: DroneSwarm = bay.swarms[0]
 	var d := s.drones[0] as DefenderDrone
 	var start := d.global_position
 	var goal := Vector3(100.0, 12.0, 0.0)
@@ -266,28 +270,56 @@ func _test_flight_and_fuel() -> void:
 	_check("the far one lands too, with fuel to spare", far.state == DefenderDrone.State.DOCKED and far.fuel > 0.2, "(fuel %.3f)" % far.fuel)
 
 
-func _test_cap() -> void:
-	print("six swarms at most; a new one only after a whole swarm is dead")
-	for i in DroneBay.MAX_SWARMS:
-		bay.build_swarm()
+func _test_rebuild() -> void:
+	print("six swarms, always; a lost drone is rebuilt in 20 s, one at a time")
 	_check("six swarms", bay.swarms.size() == DroneBay.MAX_SWARMS)
-	_check("thirty drones", bay.alive_count() == DroneBay.MAX_SWARMS * DroneSwarm.SIZE)
-	_check("a seventh can't be built", bay.build_swarm() == null)
+	_check("thirty drones to start", bay.alive_count() == DroneBay.MAX_SWARMS * DroneSwarm.SIZE)
 	var first: DroneSwarm = bay.swarms[0]
-	for k in 4:
+	var other: DroneSwarm = bay.swarms[1]
+	for k in 3:
 		_kill(first.drones[0])
-	_check("four of five drones down: the swarm still counts", bay.swarms.size() == DroneBay.MAX_SWARMS and first.alive_count() == 1)
-	for i in int(200.0 / DT / 10.0):
-		bay.step(DT * 10.0)
-	_check("... and nothing replaces them, however long it waits", bay.swarms.size() == DroneBay.MAX_SWARMS and first.alive_count() == 1)
-	_kill(first.drones[0])
-	_check("the last drone down: the swarm is gone", bay.swarms.size() == DroneBay.MAX_SWARMS - 1)
-	for i in int((DroneBay.BUILD_TIME - 1.0) / DT):
-		bay.step(DT)
-	_check("the place isn't refilled at once", bay.swarms.size() == DroneBay.MAX_SWARMS - 1)
-	for i in int(2.0 / DT):
-		bay.step(DT)
-	_check("BUILD_TIME after the loss a new swarm is built", bay.swarms.size() == DroneBay.MAX_SWARMS)
+	_kill(other.drones[0])
+	_check("three drones down: a damaged swarm, still one of the six", first.alive_count() == 2 and bay.swarms.size() == DroneBay.MAX_SWARMS)
+	_check("a damaged swarm is less fresh than a whole one", is_equal_approx(first.freshness(), 0.4) and is_equal_approx(bay.swarms[2].freshness(), 1.0),
+			"(%.2f and %.2f)" % [first.freshness(), bay.swarms[2].freshness()])
+	_run(19.0)
+	_check("nothing is rebuilt before REBUILD_TIME", first.alive_count() == 2 and other.alive_count() == 4)
+	_run(2.0)
+	_check("20 s on, each swarm has one drone back (every swarm builds at once)", first.alive_count() == 3 and other.alive_count() == 5,
+			"(%d and %d)" % [first.alive_count(), other.alive_count()])
+	var newest: DefenderDrone = first.drones[first.drones.size() - 1]
+	_check("a rebuilt drone stands on a dock, hidden, full of fuel and mended",
+			newest.state == DefenderDrone.State.DOCKED and not newest.visible and is_equal_approx(newest.fuel, 1.0) and is_equal_approx(newest.hp, newest.max_hp))
+	_run(40.0)
+	_check("one at a time: the swarm is whole again after 3 x 20 s", first.alive_count() == DroneSwarm.SIZE, "(%d)" % first.alive_count())
+	for k in DroneSwarm.SIZE:
+		_kill(first.drones[0])
+	_check("a swarm shot to pieces is not removed: still six, none in it", first.alive_count() == 0 and bay.swarms.size() == DroneBay.MAX_SWARMS)
+	_check("... and it can't be called meanwhile", first.call_quality(Vector3(60.0, 0.0, 0.0)) == 0)
+	_run(21.0)
+	_check("21 s later it has its first drone back, one at a time, not five", first.alive_count() == 1, "(%d)" % first.alive_count())
+	_run(80.0)
+	_check("100 s from empty it is whole", first.alive_count() == DroneSwarm.SIZE, "(%d)" % first.alive_count())
+
+
+func _test_freshest() -> void:
+	print("every call gets the freshest swarm")
+	var a: DroneSwarm = bay.swarms[0]
+	var b: DroneSwarm = bay.swarms[1]
+	var c: DroneSwarm = bay.swarms[2]
+	_kill(b.drones[0])
+	_kill(b.drones[0])
+	for d in c.drones:
+		d.fuel = 0.9
+	_check("freshness: whole and full 1.0, tanks at 90% 0.9, two drones shot down 0.6",
+			is_equal_approx(a.freshness(), 1.0) and is_equal_approx(c.freshness(), 0.9) and is_equal_approx(b.freshness(), 0.6),
+			"(%.2f %.2f %.2f)" % [a.freshness(), c.freshness(), b.freshness()])
+	var r := bay.call_swarm(Vector3(60.0, 0.0, 0.0))
+	_check("the first call gets the freshest swarm", r.ok and r.swarm == a)
+	r = bay.call_swarm(Vector3(0.0, 0.0, 60.0))
+	_check("the next gets the next freshest, the first being busy", r.ok and r.swarm == c, "(%s)" % r.reason)
+	r = bay.call_swarm(Vector3(-60.0, 0.0, 0.0))
+	_check("the damaged swarm is called once the fresh ones are spent", r.ok and r.swarm == b, "(%s)" % r.reason)
 
 
 func _test_focus() -> void:
@@ -297,7 +329,7 @@ func _test_focus() -> void:
 	_attacker("hippo", Vector3(68.0, 0.0, 0.0))
 	await get_tree().physics_frame
 	await get_tree().physics_frame
-	var s := bay.build_swarm()
+	var s: DroneSwarm = bay.swarms[0]
 	var state := {"split": 0, "min_fuel": 1.0, "frames": 0}
 	var watch := func():
 		state.frames += 1
@@ -330,7 +362,7 @@ func _test_hunters() -> void:
 	var rhino := _attacker("rhino", Vector3(80.0, 0.0, -4.0))
 	await get_tree().physics_frame
 	await get_tree().physics_frame
-	var s := bay.build_swarm()
+	var s: DroneSwarm = bay.swarms[0]
 	var d := s.drones[0] as DefenderDrone
 	d.launch(Vector3(95.0, 12.0, 0.0))
 	d.global_position = Vector3(95.0, 12.0, 0.0)
@@ -368,7 +400,7 @@ func _test_hunters() -> void:
 
 func _test_calls() -> void:
 	print("calls")
-	_check("two swarms to start with", bay.swarms.size() == 2)
+	_check("two swarms in this bay", bay.swarms.size() == 2)
 	var r := bay.call_swarm(Vector3(100.0, 0.0, 0.0))
 	_check("a call 100 m out gets a swarm", r.ok and r.swarm != null)
 	r = bay.call_swarm(Vector3(110.0, 0.0, 6.0))
@@ -428,7 +460,7 @@ func _test_auto_calls() -> void:
 	var roo := _attacker("kangaroo", Vector3(62.0, 0.0, -12.0))
 	await get_tree().physics_frame
 	await get_tree().physics_frame
-	var s := bay.build_swarm()
+	var s: DroneSwarm = bay.swarms[0]
 	_run(8.0)
 	_check("the swarm is on the kangaroo", s.focus == roo and s.busy())
 	var far := Vector3(60.0, 0.0, 60.0)
@@ -446,7 +478,7 @@ func _test_water() -> void:
 	var roo := _attacker("kangaroo", Vector3(62.0, 0.0, 30.0))
 	await get_tree().physics_frame
 	await get_tree().physics_frame
-	var s := bay.build_swarm()
+	var s: DroneSwarm = bay.swarms[0]
 	bay.step(DT)
 	_check("the bay notes the diver as under the water", bay.submerged.has(diver.get_rid()) and not bay.submerged.has(swimmer.get_rid()))
 	_check("a swimming bear is worth more than a kangaroo on dry land (it can't hit back)",
@@ -483,7 +515,7 @@ func _test_water() -> void:
 # ---------------------------------------------------------------- watching it
 
 func _demo() -> void:
-	_new_bay(2, false)
+	_new_bay(2, DroneBay.MAX_SWARMS, false)
 	await get_tree().process_frame
 	_attacker("medic", Vector3(60.0, 0.0, 12.0))
 	_attacker("kangaroo", Vector3(62.0, 0.0, -12.0))

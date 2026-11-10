@@ -1,13 +1,13 @@
 class_name DroneBay
 extends Node
-## The defenders' drone hangar: the landing docks on the fortress roofs and up to MAX_SWARMS swarms of five drones
-## (DroneSwarm, DefenderDrone). It builds the swarms, takes the calls for them and keeps the books.
+## The defenders' drone hangar: the landing docks on the fortress roofs and MAX_SWARMS swarms of five drones
+## (DroneSwarm, DefenderDrone). It takes the calls for the swarms and keeps the books.
 ##
-## THE CAP: at most MAX_SWARMS swarms are alive at once, and a swarm only counts as gone when all five of its
-## drones are dead. Drones lost one at a time are never replaced, so a swarm that is down to its last drone still
-## holds its place; only when a whole swarm is wiped out does a place free up, and the next swarm is built
-## BUILD_TIME seconds later (the timer only runs while there's a place free). The match starts with
-## INITIAL_SWARMS; the rest are built one after another.
+## SIX SWARMS, no more, no fewer: they are the bay's slots from the first second and are never added or lost. A
+## drone that is shot down is rebuilt in the hangar, REBUILD_TIME seconds each (DroneSwarm: one at a time per
+## swarm, every swarm at once), so a swarm that was shot to pieces is whole again after at most 5 x 20 s and a
+## swarm with only a few drones left is a damaged swarm for a while, not a dead one and not a slot held for ever.
+## The match starts with INITIAL_SWARMS built; the others fill from empty at the same pace.
 ##
 ## DOCKS: SLOTS_PER_MOUNT pads on a ring round each AA turret mount on the roofs. A drone claims the free dock
 ## nearest to it when it turns for home, so it lands on the face it is working near rather than flying through
@@ -18,16 +18,17 @@ extends Node
 ## the same call_swarm(). The answer is a swarm that can get there: its drones price the trip like they price
 ## every trip (DefenderDrone.can_reach), so a caller too far out can't get one. A swarm already on the caller's
 ## spot isn't called twice, a spot isn't called again for CALL_COOLDOWN seconds, and a swarm that is within a few
-## rounds of killing its target isn't pulled off it. The garrison's own calls (auto) only ever take swarms that
-## aren't busy: a swarm keeps the target it is on, only a player can re-task one. A swarm that was called to
-## nothing comes home and docks (DroneSwarm), and is not busy again: it can be called again.
+## rounds of killing its target isn't pulled off it. THE FRESHEST SWARM ALWAYS GETS THE CALL: of the swarms that
+## aren't busy and can get there, the one in the best shape (DroneSwarm.freshness: its drones' fuel and health,
+## the ones shot down counting for nothing). A damaged or half-empty swarm is only called once the fresh ones are
+## spent, out on a target or recharging. The garrison's own calls (auto) only ever take swarms that aren't busy:
+## a swarm keeps the target it is on, only a player can re-task one. A swarm that was called to nothing comes home
+## and docks (DroneSwarm), and is not busy again: it can be called again.
 
 signal swarm_launched(swarm: DroneSwarm)
-signal swarm_lost(swarm: DroneSwarm)
 
 const MAX_SWARMS := 6
 const INITIAL_SWARMS := 2
-const BUILD_TIME := 45.0
 const SLOTS_PER_MOUNT := 5
 const DOCK_RING := 3.2
 const DOCK_RISE := 2.2
@@ -48,17 +49,18 @@ var hunters: Array = []
 ## The bodies of the attackers under the water (diving bears), as of the last scan: drones can't see them, and
 ## their rounds pass through.
 var submerged: Array[RID] = []
-## Swarms alive at the start, and whether defenders call for drones on their own.
+## How many swarms the bay has (MAX_SWARMS), how many of them start with all five drones (the others start empty
+## and fill up, one drone every DroneSwarm.REBUILD_TIME), and whether defenders call for drones on their own.
+var slots := MAX_SWARMS
 var initial_swarms := INITIAL_SWARMS
 var auto_calls := true
 ## Stepped by hand (tests).
 var manual := false
-var stats := {"swarms_built": 0, "swarms_lost": 0, "drones_lost": 0, "calls": 0, "calls_refused": 0, "auto_calls": 0}
+var stats := {"drones_built": 0, "drones_lost": 0, "calls": 0, "calls_refused": 0, "auto_calls": 0}
 
 var _docks: Array = []
 var _owner: Array = []
 var _next_number := 1
-var _build_cd := BUILD_TIME
 var _hunter_cd := 0.0
 var _auto_cd := 0.0
 var _recent: Array = []
@@ -69,8 +71,8 @@ var _clock := 0.0
 func _ready() -> void:
 	if _docks.is_empty():
 		_make_docks()
-	for k in initial_swarms:
-		build_swarm()
+	for k in slots:
+		_add_swarm(k < initial_swarms)
 
 
 func _process(delta: float) -> void:
@@ -80,13 +82,6 @@ func _process(delta: float) -> void:
 
 func step(delta: float) -> void:
 	_clock += delta
-	if swarms.size() < MAX_SWARMS:
-		_build_cd -= delta
-		if _build_cd <= 0.0:
-			_build_cd = BUILD_TIME
-			build_swarm()
-	else:
-		_build_cd = BUILD_TIME
 	_hunter_cd -= delta
 	if _hunter_cd <= 0.0:
 		_hunter_cd = HUNTER_EVERY
@@ -106,47 +101,43 @@ func step(delta: float) -> void:
 
 # ---------------------------------------------------------------- swarms
 
-## Builds a swarm on the docks (null if MAX_SWARMS are alive already).
-func build_swarm() -> DroneSwarm:
-	if swarms.size() >= MAX_SWARMS or _docks.is_empty():
-		return null
-	var s := DroneSwarm.new()
-	s.name = "Swarm%d" % _next_number
-	s.number = _next_number
+## Adds one of the bay's swarm slots: with all five drones on the docks, or empty, to be filled by the hangar.
+func _add_swarm(full: bool) -> DroneSwarm:
+	var sw := DroneSwarm.new()
+	sw.name = "Swarm%d" % _next_number
+	sw.number = _next_number
 	_next_number += 1
-	s.bay = self
-	s.centre = centre
-	s.manual = manual
-	add_child(s)
-	var near := _roomiest_mount()
-	for k in DroneSwarm.SIZE:
-		var d := DefenderDrone.new()
-		d.name = "Drone%d_%d" % [s.number, k]
-		d.bay = self
-		d.index = k
-		d.home_slot = claim_dock(near, d)
-		if d.home_slot < 0:
-			d.free()
-			break
-		add_child(d)
-		d.global_position = dock_pos(d.home_slot)
-		s.add_drone(d)
-	if s.drones.is_empty():
-		s.free()
-		return null
-	swarms.append(s)
-	s.wiped_out.connect(_on_swarm_wiped)
-	stats.swarms_built += 1
-	return s
+	sw.bay = self
+	sw.centre = centre
+	sw.manual = manual
+	add_child(sw)
+	swarms.append(sw)
+	if full:
+		for k in DroneSwarm.SIZE:
+			make_drone(sw)
+	return sw
 
 
-func _on_swarm_wiped(s: DroneSwarm) -> void:
-	swarms.erase(s)
-	stats.swarms_lost += 1
-	# A place has come free: the next swarm is built a full BUILD_TIME from now.
-	_build_cd = BUILD_TIME
-	swarm_lost.emit(s)
-	s.queue_free()
+## The hangar builds a drone for `sw` (the lowest free place in the ring) on the free dock nearest it, full of fuel
+## and mended. False if there is no free place or no free dock (it tries again next frame).
+func make_drone(sw: DroneSwarm) -> bool:
+	var index := sw.free_index()
+	if index < 0 or _docks.is_empty():
+		return false
+	var d := DefenderDrone.new()
+	d.name = "Drone%d_%d" % [sw.number, index]
+	d.bay = self
+	d.index = index
+	var near := sw.centroid() if not sw.drones.is_empty() else _roomiest_mount()
+	d.home_slot = claim_dock(near, d)
+	if d.home_slot < 0:
+		d.free()
+		return false
+	add_child(d)
+	d.global_position = dock_pos(d.home_slot)
+	sw.add_drone(d)
+	stats.drones_built += 1
+	return true
 
 
 func airborne_count() -> int:
@@ -170,9 +161,18 @@ func alive_count() -> int:
 	return n
 
 
+## Swarms with at least one drone (the CPU attacker reads it: an empty swarm is no threat yet).
+func live_swarms() -> int:
+	var n := 0
+	for sw in swarms:
+		if sw.alive_count() > 0:
+			n += 1
+	return n
+
+
 ## One line for the defender's HUD.
 func status_text() -> String:
-	return "DRONES  %d/%d swarms · %d aloft · %d ready" % [swarms.size(), MAX_SWARMS, airborne_count(), ready_count()]
+	return "DRONES  %d/%d · %d aloft · %d ready" % [alive_count(), swarms.size() * DroneSwarm.SIZE, airborne_count(), ready_count()]
 
 
 # ---------------------------------------------------------------- docks
@@ -283,8 +283,8 @@ func _roomiest_mount() -> Vector3:
 ## `auto`: the garrison calling on its own (refusals aren't counted).
 func call_swarm(point: Vector3, _caller: Node = null, auto := false) -> Dictionary:
 	_recent = _recent.filter(func(r): return r[1] > _clock)
-	if swarms.is_empty():
-		return _refused("no swarm has been built yet", auto)
+	if alive_count() == 0:
+		return _refused("no drones: the hangar is rebuilding them", auto)
 	for r in _recent:
 		if _flat(r[0], point) <= CALL_NEAR:
 			return _refused("a swarm is already on its way", auto)
@@ -304,10 +304,12 @@ func call_swarm(point: Vector3, _caller: Node = null, auto := false) -> Dictiona
 		could_go = true
 		if s.committed() or (auto and s.busy()):
 			continue
-		# The most drones able to go, the idle swarms before the busy ones, the nearest first.
+		# The freshest swarm: idle ones before busy ones (the 10 outweighs any difference in freshness, 0 to 1),
+		# then the one in the best shape (fuel and health of its drones, the ones shot down counting for nothing),
+		# the nearest only to settle a tie. A damaged swarm comes only when the fresh ones are spent.
 		var busy: bool = s.busy()
 		var gap: float = s.centroid().distance_to(point)
-		var score: float = float(q) * 10.0 - (8.0 if busy else 0.0) - gap * 0.02
+		var score: float = float(s.freshness()) - (10.0 if busy else 0.0) - gap * 0.00001
 		if score > best_score:
 			best_score = score
 			best = s

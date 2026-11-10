@@ -26,9 +26,11 @@ extends Node
 ## never gets a drone off the dock lapses after LAUNCH_GRACE seconds the same way. With no call and nothing to do
 ## for IDLE_RETURN seconds the drones go home too.
 
-signal wiped_out(swarm: DroneSwarm)
 
 const SIZE := 5
+## Seconds the hangar takes to rebuild one drone of the swarm. A swarm builds one at a time, so a swarm shot to
+## pieces is whole again after SIZE x REBUILD_TIME at most; every swarm builds at once.
+const REBUILD_TIME := 20.0
 ## How far out from the target the drones hang (m) and how high above its feet, and the angle between
 ## neighbours on that ring (rad).
 const STANDOFF := 26.0
@@ -83,6 +85,7 @@ var manual := false
 var picks := 0
 
 var _clock := 0.0
+var _rebuild := 0.0
 var _think_cd := 0.0
 var _angle := 0.0
 var _angle_cd := 0.0
@@ -104,7 +107,9 @@ func _on_drone_died(d: DefenderDrone) -> void:
 	if bay != null:
 		bay.stats.drones_lost += 1
 	if drones.is_empty():
-		wiped_out.emit(self)
+		# Nobody left to send: what it was on and any call it held are forgotten (the hangar rebuilds it).
+		focus = null
+		_forget_call()
 
 
 func _physics_process(delta: float) -> void:
@@ -114,6 +119,7 @@ func _physics_process(delta: float) -> void:
 
 func step(delta: float) -> void:
 	_clock += delta
+	_rebuild_tick(delta)
 	if drones.is_empty():
 		return
 	anchor_t = maxf(anchor_t - delta, 0.0)
@@ -124,6 +130,48 @@ func step(delta: float) -> void:
 		_think_cd = THINK_EVERY
 		_think()
 	_steer()
+
+
+# ---------------------------------------------------------------- the hangar
+
+## The hangar rebuilds the swarm's missing drones, one at a time: REBUILD_TIME after the first went missing (or
+## after the last was finished) a new one stands full and mended on a dock. The swarm may be out on a target, on
+## its docks or empty: it makes no difference.
+func _rebuild_tick(delta: float) -> void:
+	if bay == null or drones.size() >= SIZE:
+		_rebuild = 0.0
+		return
+	_rebuild = minf(_rebuild + delta, REBUILD_TIME)
+	if _rebuild >= REBUILD_TIME and bay.make_drone(self):
+		_rebuild = 0.0
+
+
+## Seconds until the next drone is finished (0: nothing is missing).
+func rebuild_left() -> float:
+	return 0.0 if drones.size() >= SIZE else REBUILD_TIME - _rebuild
+
+
+## The lowest place in the ring no living drone has (-1: all five are filled).
+func free_index() -> int:
+	for i in SIZE:
+		var taken := false
+		for d in drones:
+			if d.index == i:
+				taken = true
+				break
+		if not taken:
+			return i
+	return -1
+
+
+## How good a shape the swarm is in, 0 to 1: the fuel times the health of each drone it has, over the five it
+## should have. A full swarm with full tanks is 1; one with two drones shot down is at most 0.6; an empty one is 0.
+## The freshest swarm gets every call (DroneBay.call_swarm).
+func freshness() -> float:
+	var sum := 0.0
+	for d in drones:
+		sum += clampf(float(d.fuel), 0.0, 1.0) * clampf(float(d.hp) / float(d.max_hp), 0.0, 1.0)
+	return sum / float(SIZE)
 
 
 # ---------------------------------------------------------------- state

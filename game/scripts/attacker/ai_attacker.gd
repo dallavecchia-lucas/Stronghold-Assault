@@ -194,7 +194,7 @@ func _plan_wave() -> void:
 		"serpent": 0 if _wave < 3 else mini(1 + (_wave - 3) / 2, 3),
 	}
 	# Drones about: more bears, and Combat Rhinos (their guns are the AA that can follow a swarm about).
-	var swarms := drones.swarms.size() if drones != null else 0
+	var swarms := drones.live_swarms() if drones != null else 0
 	if swarms > 0:
 		counts["rifleman"] = mini(counts["rifleman"] + swarms, 14)
 		if swarms >= 3 and _wave >= 2:
