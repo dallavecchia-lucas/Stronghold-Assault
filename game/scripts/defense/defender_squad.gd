@@ -159,6 +159,15 @@ func cycle_order() -> void:
 	pass
 
 
+## Health pips for the hotbar: one fraction (0..1) per trooper, the leader first.
+func pips() -> Array:
+	var order: Array = [leader] if leader else []
+	for t in troopers:
+		if t != leader:
+			order.append(t)
+	return order.map(func(t): return clampf(t.hp / t.max_hp, 0.0, 1.0))
+
+
 func _ready() -> void:
 	formation.nav_layers = 1 | LevelBuilder.NAV_SQUAD
 	heading = home.basis.get_euler().y

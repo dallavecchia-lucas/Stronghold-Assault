@@ -38,6 +38,9 @@ var yaw_input := 0.0
 var throttle := 0.6
 var afterburner := 0.0
 var flaps := 0.0
+## The pilot's own afterburner (0..1: a boost pressed), over what its motion shows: following its motion the
+## afterburners light at whichever is greater.
+var boost := 0.0
 
 var _surf := {}
 var _flames: Array[Flame] = []
@@ -94,5 +97,5 @@ func _read_motion() -> void:
 	yaw_input = clampf(local_spin.y / YAW_RATE * 0.5 - local_velocity.x * 0.04, -1.0, 1.0)
 	var speed := -local_velocity.z if local_velocity.z < 0.0 else local_velocity.z
 	throttle = clampf(0.35 + 0.45 * speed / CRUISE + local_accel.z * 0.05, 0.15, 1.0)
-	afterburner = clampf((local_accel.z - 4.0) * 0.2 + (speed - CRUISE * 1.4) * 0.02, 0.0, 1.0)
+	afterburner = maxf(boost, clampf((local_accel.z - 4.0) * 0.2 + (speed - CRUISE * 1.4) * 0.02, 0.0, 1.0))
 	flaps = clampf((FLAPS_UP - speed) / (FLAPS_UP - FLAPS_FULL), 0.0, 1.0) if speed > 1.0 else 0.0

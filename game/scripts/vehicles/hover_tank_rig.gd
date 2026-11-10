@@ -64,6 +64,9 @@ const TRACER_EVERY := 3
 const MG_SPREAD := 0.008
 const MG_RANGE := 400.0
 const MG_SIDES := ["L", "R"]
+## Where the fixed machine guns' lines cross (m ahead of the hull), and how high over the ground (m): zeroed on a man standing there.
+const MG_CONVERGE := 70.0
+const MG_ZERO_HEIGHT := 1.0
 ## Thruster gimbal: the most it leans (rad) and how fast (rad/s); the rig's acceleration that leans it all the way.
 const GIMBAL := deg_to_rad(22.0)
 const GIMBAL_RATE := deg_to_rad(90.0)
@@ -74,6 +77,8 @@ const ROLL_PER_ACCEL := 0.012
 const TILT_MAX := deg_to_rad(5.0)
 
 const PADS := ["FL", "FR", "RL", "RR"]
+## How far the hull squats at full crouch (m).
+const CROUCH_DEPTH := 0.45
 
 ## Inputs (when not following its motion): the push (-1..1 in its own frame: x left, z forward), the turn (-1..1,
 ## left +) and the hover thrusters' power (0..1).
@@ -82,6 +87,23 @@ var turn := 0.0
 var lift := 0.7
 ## The machine guns fire while this is on.
 var mg_firing := false
+## Off: the machine guns turn onto the aim (aim()), as far as their sponsons let them. On: they hold straight ahead along the
+## hull, whatever the turret is on (the tank's own: what they hit is where the hull faces), boresighted to cross at MG_CONVERGE m
+## (they sit either side of the hull, so left parallel they would pass either side of what is dead ahead).
+var mg_fixed := false
+## The jump's thrusters (0..1): the hover jets flare into afterburners, a burst to throw the hull up and a retro burn to set it
+## down, the rear boosters with them. Whoever drives the tank sets it.
+var thrust_boost := 0.0
+## 0..1: the hull squats on its air cushion (the jump's charge, and the landing taking up the shock).
+var crouch := 0.0
+## 0..1: the hover jets point straight down whatever the hull is doing (a jump's burst, and its landing).
+var gimbal_hold := 0.0
+## On: the gun is stabilised: the turret and the barrel work against the hull's attitude as it is this instant (it sways on its
+## air cushion, and rocks when it fires), so the barrel holds its line in the world; the gun's servos make up the hull's sway.
+## Off: they are laid in the hull's steady frame and ride its sway.
+var gun_stabilised := false
+## Off: the rig draws no tracers of its own (whoever fires them draws them, to where each round ends).
+var mg_tracers := true
 
 ## A machine gun fired a round: from its muzzle to where it goes (world). For hit tests and sound.
 signal mg_round(from: Vector3, to: Vector3)
@@ -131,6 +153,7 @@ func _build() -> void:
 		f.length = 1.3
 		f.radius = 0.42
 		f.color = Color(0.35, 0.9, 2.8)
+		f.burner_color = Color(1.6, 2.2, 3.4)
 		f.light_range = 3.5
 		var jet := part("jet_" + pad)
 		if jet:
@@ -203,6 +226,14 @@ func fire() -> void:
 	main_gun_fired.emit(muzzle())
 
 
+## The whole tank takes a knock from dead ahead (a tree, a wall): the hull rocks back on its air cushion and is jolted back, like
+## the main gun's kick but harder (`strength` 1: a full-speed crash into something that stops it).
+func bump(strength := 1.0) -> void:
+	_rock_v += Vector3(-1.0, 0.0, 0.0) * ROCK * TAU * ROCK_HZ * 1.8 * strength
+	_jolt_v += Vector3(0.0, 0.0, -1.0) * JOLT * 9.0 * 2.2 * strength
+	_shake = SHAKE_TIME * 1.5
+
+
 ## How far the barrel is back in its cradle as of now (m; 0 run out).
 func recoil() -> float:
 	return _recoil_at(_since_shot)
@@ -260,7 +291,7 @@ func _process(delta: float) -> void:
 		_shake -= delta
 		var k := clampf(_shake / SHAKE_TIME, 0.0, 1.0)
 		shake = Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * 0.012 * k * k
-	model.position = Vector3(0.0, HOVER + sin(_age * 1.6) * BOB + sin(_age * 2.9) * BOB * 0.3, 0.0) + _jolt
+	model.position = Vector3(0.0, HOVER - crouch * CROUCH_DEPTH + sin(_age * 1.6) * BOB + sin(_age * 2.9) * BOB * 0.3, 0.0) + _jolt
 	var b := Basis.from_euler(Vector3(_tilt.x + sin(_age * 1.3) * 0.006, 0.0, _tilt.y + sin(_age * 1.1) * 0.006) + shake)
 	if _rock.length() > 1e-6:
 		b = Basis(_rock.normalized(), _rock.length()) * b
@@ -271,14 +302,14 @@ func _process(delta: float) -> void:
 		var pad: String = PADS[i]
 		var front := 1.0 if pad.begins_with("F") else -1.0
 		var push := Vector2(drive.y, -drive.x - turn * front * 0.8)
-		var want := Vector2(clampf(push.x, -1.0, 1.0), clampf(push.y, -1.0, 1.0)) * GIMBAL
+		var want := Vector2(clampf(push.x, -1.0, 1.0), clampf(push.y, -1.0, 1.0)) * GIMBAL * (1.0 - gimbal_hold)
 		var g: Vector2 = _gimbal.get(pad, Vector2.ZERO)
 		g = Vector2(servo(g.x, want.x, GIMBAL_RATE, delta), servo(g.y, want.y, GIMBAL_RATE, delta))
 		_gimbal[pad] = g
 		spin("thruster_" + pad, 0.0, g)
-		_jets[i].power = clampf(lift + 0.15 * sin(_age * 9.0 + i * 1.7), 0.0, 1.0)
+		_jets[i].power = clampf(lift + 0.15 * sin(_age * 9.0 + i * 1.7), 0.0, 1.0) + thrust_boost * 1.5
 	for f in _boosters:
-		f.power = clampf(drive.y * 1.2, 0.0, 1.0)
+		f.power = clampf(drive.y * 1.2, 0.0, 1.0) + thrust_boost * 1.2
 	# Turret and gun.
 	var want := _want()
 	_yaw = wrapf(rotate_toward(_yaw, want.x, TRAVERSE * delta), -PI, PI)
@@ -329,7 +360,11 @@ func _machine_guns(delta: float) -> void:
 		var side: String = MG_SIDES[i]
 		var out := 1.0 if side == "L" else -1.0  # its own side is +X (left) or -X
 		var want := Vector2.ZERO
-		if _aim != Vector3.INF:
+		if mg_fixed:
+			# Square to the front, toed in and down to cross MG_CONVERGE m out, MG_ZERO_HEIGHT over the ground.
+			var at := rest_of("mg_" + side).origin
+			want = Vector2(atan2(-at.x, MG_CONVERGE), atan2(MG_ZERO_HEIGHT - (HOVER + at.y), MG_CONVERGE))
+		elif _aim != Vector3.INF:
 			var d := steady.affine_inverse() * _aim - rest_of("mg_" + side).origin
 			want = Vector2(atan2(d.x, d.z), atan2(d.y, Vector2(d.x, d.z).length()))
 		var lo := -MG_YAW_IN if out > 0.0 else -MG_YAW_OUT
@@ -357,10 +392,10 @@ func _machine_guns(delta: float) -> void:
 		_mg_kick[i] = MG_KICK
 		_mg_flash[i * 2 + barrel].power = randf_range(0.8, 1.2)
 		var m := marker("mg_muzzle_%s%d" % [MG_SIDES[i], barrel + 1])
-		var reach := m.origin.distance_to(_aim) if _aim != Vector3.INF else MG_RANGE
+		var reach := m.origin.distance_to(_aim) if _aim != Vector3.INF and not mg_fixed else MG_RANGE
 		var dir := Combat.apply_spread(m.basis.z.normalized(), MG_SPREAD)
 		var to := m.origin + dir * reach
-		if _mg_rounds % TRACER_EVERY == 0:
+		if mg_tracers and _mg_rounds % TRACER_EVERY == 0:
 			Combat.spawn_tracer(self, m.origin, to, Color(1.0, 0.55, 0.2), 0.05)
 		mg_round.emit(m.origin, to)
 
@@ -385,8 +420,9 @@ func _smoke(at: Transform3D) -> void:
 func _want() -> Vector2:
 	if _aim == Vector3.INF:
 		return Vector2.ZERO
-	# In the hull's steady frame (not shaken by its own shots).
-	var local := (global_transform * Transform3D(Basis.IDENTITY, Vector3(0.0, HOVER, 0.0))).affine_inverse() * _aim
+	# In the hull's steady frame (not shaken by its own shots), or, stabilised, as it is now.
+	var frame := model.global_transform if gun_stabilised else global_transform * Transform3D(Basis.IDENTITY, Vector3(0.0, HOVER, 0.0))
+	var local := frame.affine_inverse() * _aim
 	var d := local - _turret_pivot
 	var yaw := atan2(d.x, d.z) if Vector2(d.x, d.z).length() > 0.5 else _yaw
 	var from := _turret_pivot + Basis(Vector3.UP, yaw) * _gun_pivot
