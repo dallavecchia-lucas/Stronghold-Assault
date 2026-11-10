@@ -17,9 +17,12 @@ extends Node
 ## and it hangs back, STANDOFF out and HOVER_HEIGHT up, on the side of its target that keeps its drones furthest
 ## out of the reach of the bears and AA about (_choose_angle), re-checked as they move.
 ##
-## CALLED to a spot (DroneBay.call_swarm) it flies there, takes the best target round it (ANCHOR_RADIUS) and
-## holds the spot for CALL_HOLD seconds even with nothing to shoot, then goes back to seeking on its own.
-## With nothing to do for IDLE_RETURN seconds the drones go home.
+## CALLED to a spot (DroneBay.call_swarm) it flies there and takes the best target round it (ANCHOR_RADIUS) for
+## CALL_HOLD seconds. Arrived with nothing to shoot (or done with what there was), it looks round for LOOK_AROUND
+## seconds, then stands down: every drone goes home, docks and stays there, the call forgotten. A swarm on its docks
+## is nothing, not busy and not holding anything: it can be called again, and seeks on its own meanwhile. A call that
+## never gets a drone off the dock lapses after LAUNCH_GRACE seconds the same way. With no call and nothing to do
+## for IDLE_RETURN seconds the drones go home too.
 
 signal wiped_out(swarm: DroneSwarm)
 
@@ -37,6 +40,10 @@ const ANCHOR_RADIUS := 80.0
 ## On its own a swarm looks this far from the middle of the map (flat): about the fortress's own size.
 const SEEK_RADIUS := LevelBuilder.MOUNTAIN_HALF * 2.0
 const IDLE_RETURN := 12.0
+## A called swarm that has arrived and finds nothing to shoot stands down after this long (s).
+const LOOK_AROUND := 5.0
+## A call with no drone off its dock after this long (s) lapses.
+const LAUNCH_GRACE := 3.0
 ## Seconds its drones can stand off its target without a line to it before it picks another for a while.
 const UNSEEN_LIMIT := 4.0
 const BAN_TIME := 12.0
@@ -161,6 +168,15 @@ func covers(p: Vector3) -> bool:
 	return anchor != Vector3.INF and _flat(anchor, p) <= COVER_RADIUS * 0.5
 
 
+## Drones with the fuel for a sortie at all (not recharging, not on their way home because they must).
+func fit_count() -> int:
+	var n := 0
+	for d in drones:
+		if d.fuel >= DefenderDrone.MIN_SORTIE and not (d.state == DefenderDrone.State.RETURNING and d.due_home()):
+			n += 1
+	return n
+
+
 func centroid() -> Vector3:
 	if drones.is_empty():
 		return centre
@@ -170,16 +186,17 @@ func centroid() -> Vector3:
 	return sum / float(drones.size())
 
 
-## How many of its drones could be sent to `p`: ready on their docks or already flying (not heading home), with
-## the fuel to get there and still be worth sending (DefenderDrone.can_reach). 0: the swarm can't be called there.
+## How many of its drones could be sent to `p`: on their docks (mended), flying, or on their way home without
+## having to be, with the fuel to get there and still be worth sending (DefenderDrone.can_reach). 0: the swarm can't
+## be called there.
 func call_quality(p: Vector3) -> int:
 	var spot := Vector3(p.x, p.y + HOVER_HEIGHT, p.z)
 	var home := bay.dock_distance(spot) if bay != null else 0.0
 	var n := 0
 	for d in drones:
-		if d.state == DefenderDrone.State.RETURNING:
+		if d.state == DefenderDrone.State.RETURNING and d.due_home():
 			continue
-		if d.state == DefenderDrone.State.DOCKED and not d.is_ready():
+		if d.state == DefenderDrone.State.DOCKED and d.hp < d.max_hp * 0.5:
 			continue
 		if DefenderDrone.can_reach(d.fuel, d.global_position, spot, home):
 			n += 1
@@ -208,10 +225,14 @@ func _think() -> void:
 			_angle_set = false
 			_unseen = 0.0
 	if focus == null:
-		_idle += THINK_EVERY
-		if _idle >= IDLE_RETURN and anchor_t <= 0.0:
-			for d in drones:
-				d.return_home()
+		var called := anchor != Vector3.INF
+		# A called swarm waits only once it has got there; one that was never called has nowhere to be.
+		if not called or _arrived():
+			_idle += THINK_EVERY
+		if _idle >= (LOOK_AROUND if called else IDLE_RETURN):
+			_stand_down()
+		elif called and CALL_HOLD - anchor_t > LAUNCH_GRACE and airborne_count() == 0:
+			_forget_call()  # nobody could leave the dock
 	else:
 		_idle = 0.0
 		_watch_line()
@@ -223,6 +244,28 @@ func _think() -> void:
 	for id in _banned.keys():
 		if _banned[id] <= _clock:
 			_banned.erase(id)
+
+
+## Nothing to shoot: every drone goes home to dock, and the swarm forgets the call, so it is free to be called again.
+func _stand_down() -> void:
+	_forget_call()
+	_idle = 0.0
+	for d in drones:
+		d.return_home()
+
+
+func _forget_call() -> void:
+	anchor = Vector3.INF
+	anchor_t = 0.0
+	_idle = 0.0
+
+
+## Any drone of it is on the spot it was sent to.
+func _arrived() -> bool:
+	for d in drones:
+		if d.state == DefenderDrone.State.FLYING and d.global_position.distance_to(d.goal) < 6.0:
+			return true
+	return false
 
 
 ## Still worth keeping: alive, above the water, not given up on, and where a full-tanked drone could go.
@@ -367,17 +410,24 @@ func _steer() -> void:
 			d.target = null
 
 
-## Drones that are full again go back out after the focus (or to the spot a call holds, with no focus yet).
+## Drones that are full again go back out after the focus (or to the spot a call holds, with no focus yet); a
+## called swarm doesn't wait for them to fill up, only for the trip to be worth it. Drones on their way home
+## without having to be (it stood down) turn round for a new target.
 func _dispatch() -> void:
 	if focus == null and anchor == Vector3.INF:
 		return
+	var early := anchor != Vector3.INF
 	for d in drones:
-		if not d.is_ready():
+		if d.state == DefenderDrone.State.FLYING:
 			continue
 		var spot := _spot(focus.global_position, d.index) if focus != null else _loiter_spot(d.index)
 		var home := bay.dock_distance(spot) if bay != null else 0.0
-		if DefenderDrone.can_reach(d.fuel, d.global_position, spot, home):
-			d.launch(spot)
+		if not DefenderDrone.can_reach(d.fuel, d.global_position, spot, home):
+			continue
+		if d.state == DefenderDrone.State.RETURNING:
+			d.redirect(spot)
+		else:
+			d.launch(spot, early)
 
 
 ## Drone `i`'s spot on the ring round `c`: STANDOFF out, HOVER_HEIGHT up (clear of the canopy where there is one).

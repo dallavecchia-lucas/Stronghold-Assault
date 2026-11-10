@@ -18,7 +18,9 @@ extends Node
 ## the same call_swarm(). The answer is a swarm that can get there: its drones price the trip like they price
 ## every trip (DefenderDrone.can_reach), so a caller too far out can't get one. A swarm already on the caller's
 ## spot isn't called twice, a spot isn't called again for CALL_COOLDOWN seconds, and a swarm that is within a few
-## rounds of killing its target isn't pulled off it.
+## rounds of killing its target isn't pulled off it. The garrison's own calls (auto) only ever take swarms that
+## aren't busy: a swarm keeps the target it is on, only a player can re-task one. A swarm that was called to
+## nothing comes home and docks (DroneSwarm), and is not busy again: it can be called again.
 
 signal swarm_launched(swarm: DroneSwarm)
 signal swarm_lost(swarm: DroneSwarm)
@@ -291,13 +293,13 @@ func call_swarm(point: Vector3, _caller: Node = null, auto := false) -> Dictiona
 	var could_go := false
 	var can_fly := false
 	for s in swarms:
-		if s.ready_count() > 0 or s.airborne_count() > 0:
+		if s.fit_count() > 0:
 			can_fly = true
 		var q: int = s.call_quality(point)
 		if q <= 0:
 			continue
 		could_go = true
-		if s.committed():
+		if s.committed() or (auto and s.busy()):
 			continue
 		# The most drones able to go, the idle swarms before the busy ones, the nearest first.
 		var busy: bool = s.busy()
@@ -309,7 +311,9 @@ func call_swarm(point: Vector3, _caller: Node = null, auto := false) -> Dictiona
 	if best == null:
 		if not can_fly:
 			return _refused("every drone is recharging", auto)
-		return _refused("out of the drones' reach" if not could_go else "every swarm is about to make a kill", auto)
+		if not could_go:
+			return _refused("out of the drones' reach", auto)
+		return _refused("every swarm is busy" if auto else "every swarm is about to make a kill", auto)
 	best.assign_call(point)
 	_recent.append([point, _clock + CALL_COOLDOWN])
 	if auto:

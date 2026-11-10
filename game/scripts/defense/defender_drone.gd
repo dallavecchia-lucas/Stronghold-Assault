@@ -40,6 +40,8 @@ const ARRIVAL_MARGIN := 0.1
 ## Seconds from empty to full (fuel and repairs), and the fuel it needs to leave the dock.
 const RECHARGE_TIME := 18.0
 const LAUNCH_FUEL := 0.95
+## Below this it can't be sent on any sortie worth the name (it would be due home on arrival): it is recharging.
+const MIN_SORTIE := RETURN_FLOOR + ARRIVAL_MARGIN + 0.05
 
 const MAX_HP := 70.0
 ## How near a round has to pass its middle to hit (m).
@@ -178,9 +180,16 @@ func dock_position() -> Vector3:
 	return _home_pos
 
 
-## Takes off for `to`. False unless it is ready (and, flying there, would not be due home at once).
-func launch(to: Vector3) -> bool:
-	if not is_ready():
+## True when the way home from where it is already says turn back (the fuel rule, from its dock if docked).
+func due_home() -> bool:
+	return must_return(fuel, global_position.distance_to(dock_position()))
+
+
+## Takes off for `to`. False unless it is ready. `early`: a call doesn't wait for it to fill up (95%): any mended
+## drone on its dock goes, as long as the caller has priced the trip (can_reach), so a swarm that came home from a
+## short sortie can be called again at once.
+func launch(to: Vector3, early := false) -> bool:
+	if not (is_ready() or (early and state == State.DOCKED and not _falling and hp >= max_hp * 0.5)):
 		return false
 	_home_pos = dock_position()
 	if bay != null and home_slot >= 0:
@@ -190,6 +199,21 @@ func launch(to: Vector3) -> bool:
 	goal = to
 	_home_cd = 0.0
 	_set_airborne(true)
+	return true
+
+
+## A drone on its way home turns round for `to` instead, if it is not going home because it must (the fuel rule):
+## a swarm that stood down finding nothing, called out again. False if it can't, or has to go on home.
+func redirect(to: Vector3) -> bool:
+	if state != State.RETURNING or _falling or due_home():
+		return false
+	if bay != null and home_slot >= 0:
+		_home_pos = dock_position()
+		bay.release_dock(home_slot)
+	home_slot = -1
+	state = State.FLYING
+	goal = to
+	_home_cd = 0.0
 	return true
 
 

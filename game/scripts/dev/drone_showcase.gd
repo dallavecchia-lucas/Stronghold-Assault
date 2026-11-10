@@ -127,6 +127,10 @@ func _run_tests() -> void:
 	await _test_hunters()
 	await _new_bay(2)
 	_test_calls()
+	await _new_bay(1)
+	_test_stand_down()
+	await _new_bay(0)
+	await _test_auto_calls()
 
 
 func _test_fuel_rules() -> void:
@@ -324,6 +328,60 @@ func _test_calls() -> void:
 	bay._recent.clear()
 	r = bay.call_swarm(Vector3(0.0, 0.0, 100.0))
 	_check("with every drone recharging there is none to send", not r.ok and r.reason.contains("recharging"), "(%s)" % r.reason)
+
+
+func _test_stand_down() -> void:
+	print("called to nothing: out, a look round, home, docked, free to be called again")
+	var s: DroneSwarm = bay.swarms[0]
+	var spot := Vector3(90.0, 0.0, 0.0)
+	var r := bay.call_swarm(spot)
+	_check("the call is taken", r.ok)
+	_run(1.0)
+	_check("the swarm is busy while it holds the spot", s.busy())
+	_run(4.0)
+	_check("it flies out to the spot", s.airborne_count() == s.alive_count(), "(%d aloft of %d)" % [s.airborne_count(), s.alive_count()])
+	_check("... and holds the call while it looks round", s.anchor != Vector3.INF)
+	_run(30.0)
+	var docked := 0
+	for d in s.drones:
+		if d.state == DefenderDrone.State.DOCKED:
+			docked += 1
+	_check("with nothing there it came home and docked, all five", docked == DroneSwarm.SIZE, "(%d docked)" % docked)
+	_check("a docked swarm is nothing: not busy, no call held, nothing aloft",
+			not s.busy() and s.anchor == Vector3.INF and s.airborne_count() == 0)
+	_check("... and it still counts as one of the swarms (nothing was lost)", bay.swarms.size() == 1 and s.alive_count() == DroneSwarm.SIZE)
+	_check("it didn't return empty-handed on fuel: it used some", s.drones[0].fuel < 1.0 or s.drones[0].burnt > 0.1)
+	_run(25.0)
+	_check("recharged", s.ready_count() == DroneSwarm.SIZE, "(%d ready)" % s.ready_count())
+	r = bay.call_swarm(spot)
+	_check("it can be called to the same spot again", r.ok, "(%s)" % r.reason)
+	_run(8.0)
+	_check("and goes", s.airborne_count() > 0)
+	# A call that can't get a drone off the dock lapses and leaves the swarm free.
+	for d in s.drones:
+		d.fuel = 0.6
+		d.state = DefenderDrone.State.DOCKED
+		d.global_position = d.dock_position()
+	s.anchor = Vector3(0.0, 0.0, 90.0)
+	s.anchor_t = DroneSwarm.CALL_HOLD
+	_run(DroneSwarm.LAUNCH_GRACE + 2.0)
+	_check("a call nobody could answer lapses", s.anchor == Vector3.INF and not s.busy())
+
+
+func _test_auto_calls() -> void:
+	print("the garrison's own calls never take a swarm off its target")
+	var roo := _attacker("kangaroo", Vector3(62.0, 0.0, -12.0))
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var s := bay.build_swarm()
+	_run(8.0)
+	_check("the swarm is on the kangaroo", s.focus == roo and s.busy())
+	var far := Vector3(60.0, 0.0, 60.0)
+	var r := bay.call_swarm(far, null, true)
+	_check("a garrison call can't take the only swarm, busy as it is", not r.ok and r.reason.contains("busy"), "(%s)" % r.reason)
+	_check("... and it stayed on its target", s.focus == roo)
+	r = bay.call_swarm(far)
+	_check("a player's call can", r.ok, "(%s)" % r.reason)
 
 
 # ---------------------------------------------------------------- watching it
