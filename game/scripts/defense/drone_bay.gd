@@ -45,6 +45,9 @@ var centre := Vector3.ZERO
 var swarms: Array = []
 ## The attackers that can hurt drones (bears, AA units), as of the last scan: {"unit", "pos", "reach"}.
 var hunters: Array = []
+## The bodies of the attackers under the water (diving bears), as of the last scan: drones can't see them, and
+## their rounds pass through.
+var submerged: Array[RID] = []
 ## Swarms alive at the start, and whether defenders call for drones on their own.
 var initial_swarms := INITIAL_SWARMS
 var auto_calls := true
@@ -356,8 +359,13 @@ func _auto_call() -> void:
 
 func _scan_hunters() -> void:
 	hunters.clear()
+	submerged.clear()
 	for u in get_tree().get_nodes_in_group("attacker_units"):
-		if u.is_alive() and u.hunts_drones() and not u.is_crossing():
+		if not u.is_alive():
+			continue
+		if u.is_submerged():
+			submerged.append(u.get_rid())
+		if u.hunts_drones() and not u.is_crossing():
 			var reach: float = float(u.stats.get("aa_range", u.stats.get("range", 30.0)))
 			hunters.append({"unit": u, "pos": u.global_position, "reach": reach})
 

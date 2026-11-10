@@ -11,6 +11,36 @@ const DT := 1.0 / 30.0
 ## Eight roof mounts round a fortress 40 m out, 16 m up.
 const MOUNTS := 8
 
+## A stand-in for an attacker in the water (a real one needs the Jungle Keep's rivers): the members the drones read.
+class FakeUnit:
+	extends CharacterBody3D
+	var team := GameConfig.TEAM_ATTACKER
+	var type_id := "rifleman"
+	var stats := {"hp": 100.0}
+	var hp := 100.0
+	var raiding := false
+	var swimming := false
+	var diving := false
+
+	func is_alive() -> bool:
+		return hp > 0.0
+
+	func is_crossing() -> bool:
+		return swimming
+
+	func is_submerged() -> bool:
+		return diving
+
+	func hunts_drones() -> bool:
+		return false
+
+	func take_damage(amount: float, _from_team: int) -> void:
+		hp -= amount
+
+	func get_aim_point() -> Vector3:
+		return global_position + Vector3.UP
+
+
 var bay: DroneBay
 var checks := 0
 var fails := 0
@@ -80,6 +110,26 @@ func _new_bay(swarms: int, manual := true) -> void:
 	add_child(bay)
 
 
+func _fake(type_id: String, at: Vector3, swimming: bool, diving: bool) -> FakeUnit:
+	var u := FakeUnit.new()
+	u.type_id = type_id
+	u.swimming = swimming
+	u.diving = diving
+	u.collision_layer = GameConfig.LAYER_ATTACKERS
+	var shape := CollisionShape3D.new()
+	var cap := CapsuleShape3D.new()
+	cap.radius = 0.5
+	cap.height = 1.8
+	shape.shape = cap
+	shape.position.y = 0.9
+	u.add_child(shape)
+	u.add_to_group("attacker_units")
+	u.add_to_group("damageable")
+	u.position = at
+	add_child(u)
+	return u
+
+
 func _attacker(type_id: String, at: Vector3) -> AttackerUnit:
 	var u := AttackerUnit.new()
 	u.setup(type_id, _next_id)
@@ -131,6 +181,8 @@ func _run_tests() -> void:
 	_test_stand_down()
 	await _new_bay(0)
 	await _test_auto_calls()
+	await _new_bay(0)
+	await _test_water()
 
 
 func _test_fuel_rules() -> void:
@@ -158,8 +210,10 @@ func _test_flight_and_fuel() -> void:
 	var goal := Vector3(100.0, 12.0, 0.0)
 	_check("a built drone sits docked with a full tank", d.state == DefenderDrone.State.DOCKED and is_equal_approx(d.fuel, 1.0))
 	_check("a docked drone isn't in air_units (nothing can target it)", not d.is_in_group("air_units"))
+	_check("a docked drone is gone from the field: hidden", not d.visible)
 	_check("it can take off", d.launch(goal))
 	_check("airborne it is in air_units", d.is_in_group("air_units"))
+	_check("airborne it is drawn", d.visible)
 	_check("airborne it is NOT damageable (blasts and strays can't reach it)", not d.is_in_group("damageable"))
 	var t := 0.0
 	while d.global_position.distance_to(goal) > 0.3 and t < 40.0:
@@ -185,6 +239,7 @@ func _test_flight_and_fuel() -> void:
 	_check("it lands", d.state == DefenderDrone.State.DOCKED)
 	_check("it lands with fuel to spare, never stranded", d.fuel > 0.25, "(fuel %.3f)" % d.fuel)
 	_check("landed, it is out of air_units again", not d.is_in_group("air_units"))
+	_check("... and gone from the field again", not d.visible)
 	_check("it isn't ready on a half tank", not d.is_ready())
 	guard = 0.0
 	while not d.is_ready() and guard < 60.0:
@@ -382,6 +437,47 @@ func _test_auto_calls() -> void:
 	_check("... and it stayed on its target", s.focus == roo)
 	r = bay.call_swarm(far)
 	_check("a player's call can", r.ok, "(%s)" % r.reason)
+
+
+func _test_water() -> void:
+	print("swimmers just get shot; divers can't be seen")
+	var swimmer := _fake("rifleman", Vector3(60.0, 0.0, 10.0), true, false)
+	var diver := _fake("rifleman", Vector3(60.0, 0.0, -10.0), true, true)
+	var roo := _attacker("kangaroo", Vector3(62.0, 0.0, 30.0))
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	var s := bay.build_swarm()
+	bay.step(DT)
+	_check("the bay notes the diver as under the water", bay.submerged.has(diver.get_rid()) and not bay.submerged.has(swimmer.get_rid()))
+	_check("a swimming bear is worth more than a kangaroo on dry land (it can't hit back)",
+			s._score(swimmer, Vector3.ZERO, false) > s._score(roo, Vector3.ZERO, false))
+	_run(6.0)
+	_check("the swarm is on the swimmer, not the diver, not the kangaroo", s.focus == swimmer, "(focus %s)" % [s.focus])
+	var shot_diver := false
+	for d in s.drones:
+		if d.target == diver:
+			shot_diver = true
+	_check("no drone has the diver as a target", not shot_diver)
+	_run(30.0)
+	_check("the swimmer is shot (it can't fight back)", swimmer.hp < 100.0, "(hp %.0f)" % swimmer.hp)
+	# A round straight through the diver's body: it hits it, unless it is the drones' (they can't see a diver).
+	var from := Vector3(40.0, 0.9, -10.0)
+	var aim := Vector3(80.0, 0.9, -10.0)
+	var drone_rounds: Array[RID] = bay.submerged
+	var plain: Array[RID] = []
+	Combat.fire_hitscan(self, from, aim, 0.0, 10.0, GameConfig.TEAM_DEFENDER, 1.0, drone_rounds)
+	_check("a drone's round passes through a diver", is_equal_approx(diver.hp, 100.0), "(hp %.1f)" % diver.hp)
+	Combat.fire_hitscan(self, from, aim, 0.0, 10.0, GameConfig.TEAM_DEFENDER, 1.0, plain)
+	_check("... where any other round would hit it (so the line was true)", is_equal_approx(diver.hp, 90.0), "(hp %.1f)" % diver.hp)
+	swimmer.diving = true
+	_run(3.0)
+	_check("the swimmer dives: it is dropped (undetectable), the swarm goes for the kangaroo", s.focus == roo, "(focus %s)" % [s.focus])
+	swimmer.diving = false
+	swimmer.hp = 100.0
+	roo.hp = 100.0
+	s.focus = null
+	_run(2.0)
+	_check("up again, it is prey again", s.focus == swimmer, "(focus %s)" % [s.focus])
 
 
 # ---------------------------------------------------------------- watching it

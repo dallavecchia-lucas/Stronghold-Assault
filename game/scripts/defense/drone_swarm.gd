@@ -12,7 +12,9 @@ extends Node
 ##     it the fog closes in), the artillery, the snakes, the kangaroos (PREY);
 ##   - units that can't do anything about drones, over the bears and the AA, which are the only things that can;
 ##     and, among those, ones that have no bear or AA unit guarding them (GUARD_RADIUS);
-##   - helpless ones: swimming or riding a raft, they can't even shoot back at the bears' targets;
+##   - helpless ones: no attacker attacks while it swims or rides a raft, so they just get shot (HELPLESS: four times
+##     as good a target). A bear diving under the water is the exception: it is undetectable to a drone, never
+##     picked, dropped the moment it dives, and its body is not in the way of the drones' rounds;
 ##   - ones already hurt, ones near where it was sent, ones no other swarm is on.
 ## and it hangs back, STANDOFF out and HOVER_HEIGHT up, on the side of its target that keeps its drones furthest
 ## out of the reach of the bears and AA about (_choose_angle), re-checked as they move.
@@ -51,6 +53,9 @@ const BAN_TIME := 12.0
 const GUARD_RADIUS := 32.0
 ## A swarm whose target has this share of its health left or less is not taken off it by a call.
 const COMMITTED_HP := 0.35
+## How much better a target is that is swimming or riding a raft: nothing swimming or riding attacks, so it can't hit back
+## (a swimming bear can still dive out of sight: see _pick_focus).
+const HELPLESS := 4.0
 ## A swarm is already on a caller's spot when its target is this close to it (m).
 const COVER_RADIUS := 45.0
 ## How much each kind of unit is worth going after (1: an average one). Bears, rhinos and elephants are low:
@@ -315,7 +320,7 @@ func _pick_focus() -> Node3D:
 func _score(u: Node, ref: Vector3, anchored: bool) -> float:
 	var w: float = PREY.get(u.type_id, 1.0)
 	if u.is_crossing():
-		w *= 2.2
+		w *= HELPLESS
 	var st: Dictionary = u.stats
 	var hp_frac: float = clampf(float(u.hp) / float(st.hp), 0.0, 1.0)
 	w *= 1.0 + (1.0 - hp_frac) * 0.8

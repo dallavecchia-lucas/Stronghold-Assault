@@ -17,6 +17,9 @@ extends Node3D
 ## It lands on a dock on the roofs (DroneBay), recharges and mends (RECHARGE_TIME from empty), and leaves again
 ## once it is nearly full (LAUNCH_FUEL), so it never takes off just to turn round.
 ##
+## DOCKED it is gone from the field: hidden inside the roof's hangar, out of air_units, nothing for anyone to see,
+## target or count. It reappears when it takes off.
+##
 ## HURT: only anti-air damage hurts it (the elephants' flak and missiles, the rhinos' guns, and the bears' rifles
 ## through Combat.fire_at_air), because it sits in "air_units" for them to find but not in "damageable" (blasts,
 ## strays and everyone else's rounds never reach it; it has no body to hit either). Docked, nothing can.
@@ -116,6 +119,7 @@ func _ready() -> void:
 	# The model's front is +Z; the drone flies along its -Z.
 	_rig.rotation.y = PI
 	add_child(_rig)
+	_refresh_visibility()
 
 
 func _physics_process(delta: float) -> void:
@@ -199,6 +203,7 @@ func launch(to: Vector3, early := false) -> bool:
 	goal = to
 	_home_cd = 0.0
 	_set_airborne(true)
+	_refresh_visibility()
 	return true
 
 
@@ -245,6 +250,7 @@ func _land() -> void:
 	target = null
 	_has_line = false
 	_set_airborne(false)
+	_refresh_visibility()
 	# Facing out from the fortress.
 	rotation.y = atan2(-global_position.x, -global_position.z)
 
@@ -331,15 +337,22 @@ func _charge(delta: float) -> void:
 	hp = minf(hp + max_hp * delta / RECHARGE_TIME, max_hp)
 
 
-## Where the attackers can't see it they don't see it (their fog of war), on their side of the screen.
 func _fog(delta: float) -> void:
 	_fog_cd -= delta
 	if _fog_cd > 0.0:
 		return
 	_fog_cd = 0.2
+	_refresh_visibility()
+
+
+## Docked, it isn't there at all. Flying, it is drawn, except where the attackers can't see it (their fog of war),
+## on their side of the screen.
+func _refresh_visibility() -> void:
+	if state == State.DOCKED:
+		visible = false
+		return
 	var vision := AttackerVision.instance
-	if vision != null and vision.hide_enemies:
-		visible = vision.in_sight(global_position)
+	visible = vision == null or not vision.hide_enemies or vision.in_sight(global_position)
 
 
 # ---------------------------------------------------------------- guns
@@ -364,7 +377,9 @@ func _fire_tick(delta: float) -> void:
 	var aim := Combat.aim_point(target)
 	for side in ["muzzle_L", "muzzle_R"]:
 		var from := _muzzle(side)
-		Combat.fire_hitscan(self, from, aim, SPREAD, DAMAGE, team, 1.0, _exclude)
+		# Whoever is under the water (a diving bear) is undetectable to a drone: its rounds pass through.
+		var skip: Array[RID] = bay.submerged if bay != null else _exclude
+		Combat.fire_hitscan(self, from, aim, SPREAD, DAMAGE, team, 1.0, skip)
 		Combat.spawn_muzzle_flash(self, from, aim - from, 0.4)
 
 
