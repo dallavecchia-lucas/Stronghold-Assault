@@ -13,6 +13,8 @@ var ai_attacker: AIAttacker
 var vision: AttackerVision
 ## The defenders' credits and bought squads (the human defender's; the CPU defender buys none).
 var armory: DefenderArmory
+## The defenders' drone swarms (the CPU defender has them too); null with --drones=off.
+var drones: DroneBay
 var time_left := 600.0
 var started := false
 var finished := false
@@ -50,6 +52,12 @@ func _ready() -> void:
 	ui.match_node = self
 	add_child(ui)
 
+	if GameConfig.drones:
+		drones = DroneBay.new()
+		drones.name = "DroneBay"
+		drones.level = level
+		drones.swarm_launched.connect(func(_s): ui.alert("Defender drones are up: only bears and AA units can touch them", UIKit.WARN))
+
 	if GameConfig.player_side == GameConfig.PlayerSide.DEFENDER:
 		armory = DefenderArmory.new()
 		armory.name = "DefenderArmory"
@@ -57,10 +65,12 @@ func _ready() -> void:
 		var dc := DefenderController.new()
 		dc.level = level
 		dc.armory = armory
+		dc.drones = drones
 		player_controller = dc
 		ai_attacker = AIAttacker.new()
 		ai_attacker.commander = commander
 		ai_attacker.level = level
+		ai_attacker.drones = drones
 		commander.income = AttackerCommander.BASE_INCOME * GameConfig.ai_income_mult()
 	else:
 		var ac := AttackerController.new()
@@ -81,6 +91,8 @@ func _start() -> void:
 	commander.process_mode = Node.PROCESS_MODE_INHERIT
 	if armory:
 		add_child(armory)
+	if drones:
+		add_child(drones)
 	add_child(player_controller)
 	if ai_attacker:
 		add_child(ai_attacker)
@@ -218,6 +230,9 @@ func _autotest_report() -> void:
 				extra = "tagged=%d" % (s as Sniper).tagged().size()
 			print("AUTOTEST %s alive=%d order=%s plan=%s %s stats=%s" % [s.station_name, s.troopers.size(),
 					s.order_name(), s.get("plan"), extra, s.get("stats")])
+	if drones:
+		print("AUTOTEST drones swarms=%d drones=%d aloft=%d ready=%d stats=%s" % [drones.swarms.size(), drones.alive_count(),
+				drones.airborne_count(), drones.ready_count(), drones.stats])
 	for b in level.bases:
 		print("AUTOTEST %s controlled=%s capture=%.1f" % [b.display_name, b.controlled, b.capture])
 	var dogs := commander.units.values().filter(func(u): return u.has_dog_modes())

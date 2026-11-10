@@ -29,7 +29,7 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
 - **Classic Field** (`LevelBuilder`): the 400 m open field described above, with its groves, lanes and the three edge spawns.
 
 **Defender (first person)**
-- `1`–`9`: take over a post (machine guns, mortar, riflemen) · `G`: the Gunner Squad · `Tab`: jump to the post with the most enemies nearby · `B`: buy an AA Squad · `N`: buy a Flame Squad · `M`: buy an Infiltrator Squad · `K`: buy a Sniper · `F1`–`F6`: take command of a bought squad or Sniper
+- `1`–`9`: take over a post (machine guns, mortar, riflemen) · `G`: the Gunner Squad · `Tab`: jump to the post with the most enemies nearby · `B`: buy an AA Squad · `N`: buy a Flame Squad · `M`: buy an Infiltrator Squad · `K`: buy a Sniper · `F1`–`F6`: take command of a bought squad or Sniper · `C`: call a drone swarm to the post you're on (see *Defender drones*)
 - Rifleman: `WASD` move, `Shift` sprint, `Space` jump, `LMB` fire, `RMB` aim, `R` reload
 - Machine gun: mouse aim, `LMB` fire, `RMB` zoom; it overheats if you hold the trigger too long
 - Mortar: `WASD` move the spotter view, `Q`/`E` rotate, wheel zoom, `LMB` fire on the ring
@@ -224,6 +224,42 @@ ffmpeg -i intro.avi -c:v libx264 -crf 18 -pix_fmt yuv420p -c:a aac -b:a 256k int
 Preview from a given moment with `-- --intro-start=80` (seconds).
 
 The score (`game/assets/audio/intro_theme.ogg`) is original and synthesized by `tools/audio/compose_intro.py`; it is a temp track meant to be replaced by a real recording.
+
+### Defender drones
+
+Swarms of the **Defender drone** (the small ducted-fan gunship, `DroneRig`) harass the attackers from the air: low damage, but constant. `game/scripts/defense/defender_drone.gd` is one drone (fuel, flight, guns), `drone_swarm.gd` five of them working as one, `drone_bay.gd` the docks on the roofs, the cap and the calls. `-- --drones=off` plays a match without them.
+
+- **Swarms.** Five drones to a swarm, at most **six swarms alive** at once. A swarm counts as gone only when all five of its drones are dead: drones lost one at a time are never replaced, and a new swarm is built only once a whole swarm has been wiped out (45 s after the loss; the timer only runs while a place is free). A match starts with two swarms and builds up to six, one every 45 s. A swarm down to its last drone still holds its place.
+- **Seeking.** A swarm on its own looks for attackers within about the fortress's size of the map's middle that its fuel can reach, flies out and stops 26 m out from its target and 12 m up (its guns reach 34 m), then shoots. Twin guns, two rounds of 0.9 every 0.65 s: about 2.8 damage a second a drone, 14 a swarm. That is nothing against an elephant (1400 health) and a few seconds for a medic.
+- **One target.** A swarm has ONE focus and every drone of it shoots that one until it is dead, then it picks the next. It only lets go of it early if it can't be got at: it dives under the water, strays out of the drones' reach, or the drones have stood off it for 4 s without a line to it (inside the mountain, behind a hill, in smoke), when it is put aside for 12 s. Each drone still obeys its own fuel rule, so a swarm thins out as drones go home one by one and fills up again as they come back; its target is not forgotten while they recharge.
+- **Whom it picks** (`DroneSwarm._score`) is where the annoyance is. Highest first: the units the army leans on (Wolf Medic 3.0, Giraffe 2.6: its eyes, Mule 2.2, Bison 2.0, Serpent 1.9, Kangaroo 1.7, then chimps, lionesses, rams, hippos), with the **bears, rhinos and elephants last** (0.5, 0.3, 0.25): they are the only things that shoot back. Helpless units (swimming, or on a raft) count 2.2 times; hurt ones up to 1.8 times; a target with a bear or AA unit within 32 m of it is worth less for each; one another swarm is already on, and one far from where it was sent, likewise. The drones hang on the side of the target that keeps them furthest out of the bears' and AA units' reach (checked every 1.2 s), so a target with its bears on one side gets shot from the other.
+
+**Fuel** (a full tank is 1.0; `DefenderDrone` has the three rules as `trip_cost()` and `must_return()`)
+
+| | |
+|---|---|
+| Flying | a third of a tank for every fortress size (172 m, the mountain's footprint) **flown**, in any direction |
+| Standing still (shooting too) | 5% every 10 s. Moving never costs less than that |
+| Turning for home | when the tank is down to **50%**, or when the way home from where it is would cost **half of the fuel it has left**, whichever comes first |
+| Recharging | on a roof dock, empty to full in 18 s (it mends at the same rate); it leaves again only once it is 95% full |
+
+So close to the fortress a drone turns at 50%; out at the end of its leash the second rule pulls it back much sooner (a full tank turns back 258 m out; one hovering 150 m out turns with 58% left); and one that has hovered over a fight until even a short way home is half of what it has left goes home too. It always lands with at least as much fuel as the trip home cost. Drones land on the nearest free dock, not their own: there are five pads on a ring round each AA turret on the roofs. Docked, a drone can't be targeted or hurt.
+
+**Calls.** Any defender can call a swarm to where it stands: you with **`C`** (to the post you're on), and the garrison, the squads and the posts on their own when attackers get within 40 m of them, through the same `DroneBay.call_swarm()`. A swarm can be called only if its drones can get there on the fuel they have, arriving 10% of a tank above their turning-back point (so a full-tanked swarm can be called to about 155 m from its docks, and one that has been out a while to less). Idle swarms are called before busy ones; a swarm that is about to kill (its target at 35% health or less) isn't pulled off it; a spot already covered by a swarm isn't called again, nor one called in the last 20 s. A called swarm takes the best target within 80 m of the spot, and holds the spot for 25 s even with nothing to shoot. The HUD (top right) shows swarms, drones aloft and drones ready; a refused call says why (out of reach, already on it, every drone recharging, every swarm about to make a kill).
+
+**What can touch a drone.** Only anti-air damage and the bears: the **Bear Rifleman** (`hunts_drones` in `unit_types.gd`), the **Combat Rhino** and the **War Elephant** (the elephant's missile salvos too: a locked elephant fires one whenever it is ready and the drone still needs killing; you can also aim one at a drone with `O`). A drone is in `air_units` (what the AA finds) but not in `damageable`, and has no body, so blasts (shells, bombs, cluster bombing, flame), stray rounds and every other unit's guns pass it by. Nothing else can target it or be ordered to.
+
+**Hyper-focus.** A bear or AA unit that has a drone in sight within 80 m (the attackers' fog of war counts: a drone nobody sees doesn't pull anyone) is **locked on**: it goes after the drone and shoots it, taking no orders, a red `DRONE LOCK` over it, until no drone is left in sight for it (it keeps a drone it has as far as 110 m). Its order is not lost: the last one you give it meanwhile is held and carried out the moment it is free, and the one it had before stays as it was. Drones docked on the roofs don't count, so a drone going home to recharge lets the army go back to its business; it is not locked for ever by a drone it can't reach. A unit that can't fight (swimming, on a raft, on a ladder) isn't pulled in. The CPU attacker builds more bears (+1 for every swarm alive) and, from the third swarm on (and the second wave), Combat Rhinos.
+
+**Where the brief left room, and the flaws I closed** (all the numbers are constants at the top of the three scripts)
+- *"1/3 fuel per fortress size away from the fortress"*, taken as distance from the fortress, would let a drone circle at a constant radius for nothing, or drift slowly for free. Fuel is charged by the distance actually flown, with 5%/10 s as the floor.
+- *"50% of available fuel"* read two ways: the fixed 50% mark, or a dynamic one of "the way home costs half of what's left". The table's rule takes both. Either alone leaves a hole: the fixed mark alone lets a drone 250 m out turn with 50% and reach its dock with under 2%; the dynamic one alone never turns a drone hovering at the dock.
+- *"Return to recharge"* needed somewhere to land, and a rule against taking off at 51% and turning straight round: docks on the roofs, 95% to leave.
+- *A swarm called "if any drone can't get there it can't be called"* would let one low-fuel straggler veto four fresh drones. Every drone that can go is sent; a swarm with none that can isn't called.
+- *"Until no drones for them to destroy"*, with a drone sitting on its dock or a swarm anywhere on the map, would freeze every bear and AA unit for ever. Only airborne drones in sight within 80 m count. And orders given to a locked unit are held, not thrown away (the CPU gives each wave one order at launch; lose it and the wave stands at the spawn).
+- *"Only AA damage and bears can attack them"*: as ordinary `damageable` things the bisons' shells, the talons' bombs, the lioness's flame and every stray rifle round would have hurt them. They are not.
+- *A swarm that always focuses one enemy*, kept on a target it can't see or reach, would stand off a wall for ever: hence the line and reach checks above.
+- *Six swarms that can't be topped up one drone at a time* can end as six lone drones. That is as written, and the first thing to watch in play: with docked drones untouchable, a slot can be held for ever by a drone that never dies. If it bites, let two thin swarms merge.
 
 ### Automated smoke test
 
@@ -600,6 +636,15 @@ godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie
 ```sh
 godot --path game --headless --fixed-fps 30 res://scenes/dev/vehicle_showcase.tscn -- --pad --test  # PAD CHECK PASS / FAIL
 godot --path game --rendering-driver opengl3 --resolution 1600x900 --fixed-fps 30 res://scenes/dev/vehicle_showcase.tscn -- --pad --snap=3.5,6,10 --snap-out=/tmp/pad
+```
+
+### Drone showcase
+
+`game/scenes/dev/drone_showcase.tscn` puts the defenders' drones on a plain field with a ring of roof docks and a few attackers. Run plain, two swarms seek and shoot a medic, a kangaroo, a hippo and a giraffe. With `--test` it steps everything by hand at 1/30 s and checks: the fuel rules (a third of a tank per fortress size, 5% per 10 s hovering, the turn at 50%, the earlier turn far out, landing with fuel to spare, recharging inside 18 s), the six-swarm cap (four of five drones down still counts, a whole swarm down is rebuilt 45 s later), one focus per swarm (the medic first, then the kangaroo, never two targets, no drone out of fuel), who can touch a drone (a bear locks on and holds its orders, a kangaroo doesn't; blasts and rifle rounds pass through, a bear's round and an AA unit's guns hurt) and the calls (a near spot, the same spot twice, a spot too far out, every drone recharging).
+
+```sh
+godot --path game --headless --fixed-fps 30 res://scenes/dev/drone_showcase.tscn -- --test   # DRONE SHOWCASE PASS / FAIL
+godot --path game res://scenes/dev/drone_showcase.tscn
 ```
 
 ## Asset pipeline
