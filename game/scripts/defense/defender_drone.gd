@@ -14,8 +14,12 @@ extends Node3D
 ##     first. Close to the fortress that is the 50% mark; out at the end of its leash the second rule pulls it
 ##     back much sooner, and one that has hovered over a fight until even the short way home costs half of
 ##     what is left goes home too. It lands with at least as much fuel as the trip cost, never stranded.
-## It lands on a dock on the roofs (DroneBay), recharges and mends (RECHARGE_TIME from empty), and leaves again
-## once it is nearly full (LAUNCH_FUEL), so it never takes off just to turn round.
+## It lands on a dock on the roofs (DroneBay), refuels and mends, and leaves again once it is nearly full
+## (LAUNCH_FUEL), so it never takes off just to turn round. REFUELLING IS SLOW: REFUEL_RATIO seconds on the dock
+## for every second of fuel it spent, a "second of fuel" being what hovering burns in a second (HOVER_BURN). A tank
+## that spent half takes 175 s to fill, an empty one 350 s: a drone is out for a while and then out of the fight
+## for longer (a drone shot down is rebuilt in a fraction of that: DroneSwarm.REBUILD_TIME). Repairs take
+## REPAIR_TIME, apart from the fuel.
 ##
 ## DOCKED it is gone from the field: hidden inside the roof's hangar, out of air_units, nothing for anyone to see,
 ## target or count. It reappears when it takes off.
@@ -40,8 +44,13 @@ const RETURN_FLOOR := 0.5
 const RETURN_SHARE := 0.5
 ## A trip is only worth starting if it arrives this far above its own turning-back point.
 const ARRIVAL_MARGIN := 0.1
-## Seconds from empty to full (fuel and repairs), and the fuel it needs to leave the dock.
-const RECHARGE_TIME := 18.0
+## Refuelling on the dock: REFUEL_RATIO seconds for every second of fuel spent (one second of fuel is HOVER_BURN of
+## a tank), so REFUEL_RATE of a tank a second: 350 s (REFUEL_TIME) from empty to full. Repairs: seconds from broken
+## to mended. And the fuel it needs to leave the dock.
+const REFUEL_RATIO := 1.75
+const REFUEL_RATE := HOVER_BURN / REFUEL_RATIO
+const REFUEL_TIME := 1.0 / REFUEL_RATE
+const REPAIR_TIME := 18.0
 const LAUNCH_FUEL := 0.95
 ## Below this it can't be sent on any sortie worth the name (it would be due home on arrival): it is recharging.
 const MIN_SORTIE := RETURN_FLOOR + ARRIVAL_MARGIN + 0.05
@@ -333,8 +342,8 @@ func _home_tick(delta: float) -> void:
 # ---------------------------------------------------------------- dock
 
 func _charge(delta: float) -> void:
-	fuel = minf(fuel + delta / RECHARGE_TIME, 1.0)
-	hp = minf(hp + max_hp * delta / RECHARGE_TIME, max_hp)
+	fuel = minf(fuel + REFUEL_RATE * delta, 1.0)
+	hp = minf(hp + max_hp * delta / REPAIR_TIME, max_hp)
 
 
 func _fog(delta: float) -> void:

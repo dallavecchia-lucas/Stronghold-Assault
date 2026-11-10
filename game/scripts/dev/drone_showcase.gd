@@ -245,11 +245,28 @@ func _test_flight_and_fuel() -> void:
 	_check("landed, it is out of air_units again", not d.is_in_group("air_units"))
 	_check("... and gone from the field again", not d.visible)
 	_check("it isn't ready on a half tank", not d.is_ready())
+	# Refuelling is slow: 1.75 s on the dock for every second of fuel spent (a second of fuel = what hovering burns).
+	var landed_with := d.fuel
+	var seconds_of_fuel := (DefenderDrone.LAUNCH_FUEL - landed_with) / DefenderDrone.HOVER_BURN
+	var wait_expected := seconds_of_fuel * DefenderDrone.REFUEL_RATIO
 	guard = 0.0
-	while not d.is_ready() and guard < 60.0:
+	while not d.is_ready() and guard < 600.0:
 		d.step(DT)
 		guard += DT
-	_check("recharged within RECHARGE_TIME", d.is_ready() and guard <= DefenderDrone.RECHARGE_TIME, "(took %.1f s)" % guard)
+	_check("ready again only after 1.75 s per second of fuel it is short", d.is_ready() and absf(guard - wait_expected) < 2.0,
+			"(took %.1f s, expected about %.1f s)" % [guard, wait_expected])
+	_check("... which is a long wait: more than a minute after one sortie", guard > 60.0, "(%.1f s)" % guard)
+	var tank := DefenderDrone.new()
+	tank.bay = bay
+	tank.manual = true
+	add_child(tank)
+	tank.fuel = 1.0 - 20.0 * DefenderDrone.HOVER_BURN
+	_step_drone(tank, 34.0)
+	_check("20 s of fuel spent: still not full after 34 s", tank.fuel < 0.9999, "(fuel %.4f)" % tank.fuel)
+	_step_drone(tank, 2.0)
+	_check("... full after 35 s (20 x 1.75)", tank.fuel >= 0.9999, "(fuel %.4f)" % tank.fuel)
+	_check("an empty tank takes 350 s", is_equal_approx(DefenderDrone.REFUEL_TIME, 350.0))
+	tank.queue_free()
 
 	# Out at the end of its leash the second rule turns it back well before the 50% mark.
 	var far := s.drones[1] as DefenderDrone
@@ -438,7 +455,9 @@ func _test_stand_down() -> void:
 			not s.busy() and s.anchor == Vector3.INF and s.airborne_count() == 0)
 	_check("... and it still counts as one of the swarms (nothing was lost)", bay.swarms.size() == 1 and s.alive_count() == DroneSwarm.SIZE)
 	_check("it didn't return empty-handed on fuel: it used some", s.drones[0].fuel < 1.0 or s.drones[0].burnt > 0.1)
-	_run(25.0)
+	_run(40.0)
+	_check("refuelling is slow: 40 s on the docks and they are not ready", s.ready_count() < DroneSwarm.SIZE, "(%d ready)" % s.ready_count())
+	_run(120.0)
 	_check("recharged", s.ready_count() == DroneSwarm.SIZE, "(%d ready)" % s.ready_count())
 	r = bay.call_swarm(spot)
 	_check("it can be called to the same spot again", r.ok, "(%s)" % r.reason)
