@@ -9,9 +9,10 @@ extends DefenderMachine
 ## It hovers on its air cushion, so it skims over the rivers and the lake as it does the ground, but its hull is broad (trees,
 ## rocks, walls and the mountain stop it, and slopes steeper than it can climb).
 ##   Mouse: the turret and the gun follow the crosshair (as fast as the turret traverses: TRAVERSE in the rig).
-##   LMB: the main gun, once the turret is on the crosshair (CANNON_RELOAD s between rounds): a shell that flies a gentle arc
-##        (TankRound: gravity drags at it, so against a far target the crosshair has to be held above it), with a tracer
-##        that leaves a trail along the arc to adjust by, and a heavy blast. The barrel recoils and the hull rocks on its cushion.
+##   LMB: the main gun, once the turret is on the crosshair (CANNON_RELOAD s between rounds): a shell that flies dead straight for
+##        its first 200 m (a target inside that is hit where the crosshair is), then gravity bends it down (TankRound), so against a
+##        target farther off the crosshair has to be held above it. The shell is drawn with a short tracer trail behind it, to see
+##        where it goes and adjust by, and it ends in a heavy blast. The barrel recoils and the hull rocks on its cushion.
 ##   RMB: hold for the twin machine guns in the sponsons on its sides. They do not follow the crosshair: they fire straight
 ##        ahead along where the hull faces (a mark on the screen shows where), their tracers ending where each round hits.
 ##   Space: the jump, for a sticky situation: the thrusters charge (the hull squats, the jets flare and dust blows out), then throw
@@ -71,8 +72,12 @@ const TREE_DAMAGE_MIN := 45.0
 const TREE_DAMAGE_MAX := 95.0
 const TREE_TOPPLE := 3.8
 const TREE_STUN := 1.4
-## The barrel must be this close (rad) to the line to the crosshair's point before the main gun fires: it is laid properly.
+## The main gun fires only once the barrel is laid on the crosshair's point: it must pass within LAYING_MISS m of it at that distance
+## (so the further off the point, the finer the laying: 0.6 m is 0.57° at 60 m but 0.08° at 420 m), never looser than LAYING (rad) or
+## tighter than LAYING_MIN (rad). Far shots come down at a shallow angle, so a small error in the barrel is a long way on the ground.
 const LAYING := deg_to_rad(0.7)
+const LAYING_MIN := deg_to_rad(0.03)
+const LAYING_MISS := 0.6
 ## How far ahead of the hull the machine guns' mark is drawn (m), and every how many machine gun rounds a tracer.
 const MG_MARK := HoverTankRig.MG_CONVERGE
 const MG_TRACER_EVERY := 2
@@ -411,13 +416,17 @@ func _weapons(delta: float, fire: bool, mgs: bool) -> void:
 	rig.mg_firing = mgs and not _dead
 
 
-## Is the main gun laid on the crosshair's point: the turret on it and the barrel along the line to it to within LAYING.
+## Is the main gun laid on the crosshair's point: the turret on it and the barrel along the line to it to within LAYING_MISS m at its
+## distance (see LAYING).
 func on_aim() -> bool:
 	if not rig.aimed():
 		return false
 	var muzzle := rig.muzzle()
 	var to := aim_point - muzzle.origin
-	return to.length() < 6.0 or muzzle.basis.z.angle_to(to) < LAYING
+	var d := to.length()
+	if d < 6.0:
+		return true
+	return muzzle.basis.z.angle_to(to) < clampf(atan(LAYING_MISS / d), LAYING_MIN, LAYING)
 
 
 ## Fires the main gun: false while it reloads.
@@ -701,9 +710,14 @@ func _idle(delta: float) -> void:
 		rig.mg_firing = false
 		return
 	var at := Combat.aim_point(target)
-	var dist := Vector2(at.x - global_position.x, at.z - global_position.z).length()
-	# Left to itself it holds the barrel above the target by what the shell will drop on the way.
-	at += Vector3.UP * TankRound.drop_at(dist)
+	var muzzle := rig.muzzle().origin
+	var across := Vector2(at.x - muzzle.x, at.z - muzzle.z)
+	var dist := across.length()
+	# Left to itself it lays the barrel at the elevation that sends the shell through the target (level inside 200 m, raised
+	# past it by what the shell will drop), on a point of that line.
+	var elev := TankRound.elevation_for(dist, at.y - muzzle.y)
+	var out := Vector3(across.x, 0.0, across.y).normalized()
+	at = muzzle + out * maxf(dist, 20.0) + Vector3.UP * (maxf(dist, 20.0) * tan(elev))
 	aim_point = at
 	rig.aim(at)
 	if on_aim() and cannon_cd <= 0.0:
@@ -787,4 +801,4 @@ func mg_point() -> Vector3:
 func get_hud_info() -> Dictionary:
 	var cannon := "CANNON READY" if cannon_cd <= 0.0 else "CANNON %.1fs" % cannon_cd
 	return {"weapon": cannon, "status": "%d m/s" % int(absf(speed)), "hp": clampf(hp / max_hp, 0.0, 1.0),
-			"hint": "WASD drive (camera-relative) · mouse aim the turret (aim above far targets) · LMB cannon · hold RMB machine guns (fire along the hull) · Space jump"}
+			"hint": "WASD drive (camera-relative) · mouse aim the turret (shells drop past 200 m: aim above) · LMB cannon · hold RMB machine guns (fire along the hull) · Space jump"}

@@ -567,13 +567,6 @@ func _tank_guns() -> void:
 	_spectate_off()
 
 
-## The elevation (rad) that lands a shell `dist` m out on level ground from a muzzle `h` m up.
-func _elevation_for(dist: float, h: float) -> float:
-	var g := JetBomb.gravity() * TankRound.GRAVITY_SCALE
-	var t := dist / TankRound.SPEED
-	return asin(clampf((0.5 * g * t * t - h) / (TankRound.SPEED * t), -0.5, 0.5))
-
-
 func _flat(a: Vector3, b: Vector3) -> float:
 	return Vector2(a.x - b.x, a.z - b.z).length()
 
@@ -637,37 +630,84 @@ func _tank_mgs() -> void:
 	_retire([ahead, side])
 
 
-## The shell drops: aimed straight at a ground target 420 m off it lands far short; the crosshair held above it, it lands on it.
+## Rides a camera beside the newest main gun shell (for the stills), off to its left and behind it, looking just ahead of it.
+func _ride_latest_shell() -> void:
+	var shell: Node3D = null
+	for n in get_tree().current_scene.get_children():
+		if n is TankRound:
+			shell = n
+	if shell != null:
+		_spec_node = shell
+		_spectate(Vector3.ZERO, Vector3.ZERO, Vector3(-17.0, 3.5, -9.0), Vector3(14.0, -0.5, 0.0))
+		cam.fov = 58.0
+
+
+## The cannon's shell flies dead straight for 200 m, then gravity takes it: a target inside 200 m is hit where the crosshair is; one
+## 420 m off, with the crosshair on it, is fallen far short of; the crosshair raised, it is hit. Its tracer is a short trail.
 func _tank_ballistics() -> void:
 	const RANGE := 420.0
+	const NEAR := 150.0
 	tank.stage(Vector3(-200.0, 0.0, 150.0), PI * 0.5)  # east along the clearing
 	await _wait(1.0)
-	_say("Cannon: the shell arcs, aim above far targets", 6.0)
-	var muzzle_h: float = tank.rig.marker("muzzle").origin.y
+	_say("Cannon: dead straight for 200 m, then gravity: aim above far targets", 6.0)
 	var from := tank.rig.marker("muzzle").origin
-	# A: the crosshair on the ground at the target.
-	_look = Vector3(tank.global_position.x + RANGE, 0.0, tank.global_position.z)
-	await _until(func(): return tank.aim_point.distance_to(_look) < 6.0 and tank.rig.aimed(), 10.0)
+	var h := from.y
+	var shots: Array[Transform3D] = []
+	var record := func(m: Transform3D): shots.append(m)
+	tank.rig.main_gun_fired.connect(record)
+	# S: a target inside 200 m, the crosshair on it: no allowance, it is hit.
+	_look = Vector3(tank.global_position.x + NEAR, 0.0, tank.global_position.z)
+	await _until(func(): return tank.aim_point.distance_to(_look) < 3.0 and tank.on_aim(), 10.0)
 	var n0: int = tank.bursts.size()
-	print("MACHINES t=%.1f cannon shot A fires, the crosshair on the ground at the target" % t)
+	print("MACHINES t=%.1f cannon shot S fires: a target %.0f m off, the crosshair on it" % [t, NEAR])
+	var r0: int = tank.stats.rounds
 	_fire = true
-	await _until(func(): return tank.stats.rounds >= 1 and tank.bursts.size() > n0, 6.0)
+	await _until(func(): return tank.stats.rounds > r0, 3.0)
 	_fire = false
-	var short_by := RANGE - _flat(tank.bursts.back(), from) if tank.bursts.size() > n0 else 0.0
-	_check(short_by > 100.0, "cannon: aimed straight at the ground %.0f m off it falls %.0f m short (it dropped under the barrel's line)" % [RANGE, short_by])
-	# B: the crosshair raised: a point off in the air along the elevation that lands it.
-	var alpha := _elevation_for(RANGE, muzzle_h)
-	_look = from + Vector3(1.0, 0.0, 0.0) * 700.0 + Vector3.UP * 700.0 * tan(alpha)
-	await _until(func(): return tank.cannon_cd <= 0.0 and tank.rig.aimed() and tank.aim_point.distance_to(_look) < 6.0, 14.0)
+	_ride_latest_shell()
+	await _until(func(): return tank.bursts.size() > n0, 4.0)
+	_spectate_off()
+	var off_near: float = tank.bursts.back().distance_to(_look) if tank.bursts.size() > n0 else INF
+	_check(off_near < 3.0, "cannon: inside 200 m the shell flies dead straight: a target %.0f m off, the crosshair on it, is hit %.1f m from it" % [NEAR, off_near])
+	# A: a target 420 m off, the crosshair on it: the shell falls under it.
+	await _until(func(): return tank.cannon_cd <= 0.0, 6.0)
+	_look = Vector3(tank.global_position.x + RANGE, 0.0, tank.global_position.z)
+	await _until(func(): return tank.aim_point.distance_to(_look) < 6.0 and tank.on_aim(), 10.0)
 	var n1: int = tank.bursts.size()
-	print("MACHINES t=%.1f cannon shot B fires, the crosshair raised" % t)
+	print("MACHINES t=%.1f cannon shot A fires: a target %.0f m off, the crosshair on it" % [t, RANGE])
+	var r1: int = tank.stats.rounds
 	_fire = true
-	await _until(func(): return tank.bursts.size() > n1, 6.0)
+	await _until(func(): return tank.stats.rounds > r1, 3.0)
 	_fire = false
-	var landed := _flat(tank.bursts.back(), from) if tank.bursts.size() > n1 else 0.0
-	print("MACHINES t=%.1f cannon aimed %.2f° above level lands %.0f m out" % [t, rad_to_deg(alpha), landed])
-	_check(absf(landed - RANGE) < 60.0, "cannon: the barrel raised %.2f° above level (the crosshair well over the target) it lands %.0f m out (%.0f wanted)" % [rad_to_deg(alpha), landed, RANGE])
-	_check(TankRound.drop_at(RANGE) > 5.0 and TankRound.drop_at(100.0) < 0.5, "cannon: the arc is gentle near (%.1f m drop at 100 m) and plain far off (%.1f m at %.0f m)" % [TankRound.drop_at(100.0), TankRound.drop_at(RANGE), RANGE])
+	await _until(func(): return tank.bursts.size() > n1, 6.0)
+	var elev_straight := atan2(-h, RANGE)
+	var landed_a: float = _flat(tank.bursts.back(), from) if tank.bursts.size() > n1 else 0.0
+	# What the physics gives for the barrel as it actually was at the shot (its elevation and its height).
+	var m: Transform3D = shots.back()
+	var predicted := TankRound.landing(m.origin.y, asin(m.basis.z.y))
+	_check(RANGE - landed_a > 80.0 and absf(landed_a - predicted) < 15.0,
+			"cannon: past 200 m gravity takes it: with the crosshair on a target %.0f m off it comes down %.0f m short (%.0f m out; the physics for the barrel as it was gives %.0f)" % [RANGE, RANGE - landed_a, landed_a, predicted])
+	# B: the crosshair raised: a point off in the air along the elevation that lands it.
+	var alpha := TankRound.elevation_for(RANGE, -h)
+	_look = from + Vector3(1.0, 0.0, 0.0) * 700.0 + Vector3.UP * 700.0 * tan(alpha)
+	await _until(func(): return tank.cannon_cd <= 0.0 and tank.aim_point.distance_to(_look) < 6.0 and tank.on_aim(), 14.0)
+	var n2: int = tank.bursts.size()
+	print("MACHINES t=%.1f cannon shot B fires: the crosshair raised over the target" % t)
+	var r2: int = tank.stats.rounds
+	_fire = true
+	await _until(func(): return tank.stats.rounds > r2, 3.0)
+	_fire = false
+	_ride_latest_shell()
+	await _until(func(): return tank.bursts.size() > n2, 6.0)
+	_spectate_off()
+	var landed: float = _flat(tank.bursts.back(), from) if tank.bursts.size() > n2 else 0.0
+	print("MACHINES t=%.1f cannon aimed %.2f deg above level lands %.0f m out" % [t, rad_to_deg(alpha), landed])
+	tank.rig.main_gun_fired.disconnect(record)
+	_check(absf(landed - RANGE) < 25.0, "cannon: with the crosshair raised (barrel %.2f° above the line to the target) it lands %.0f m out (%.0f wanted)" % [rad_to_deg(alpha - elev_straight), landed, RANGE])
+	_check(TankRound.drop_at(200.0) == 0.0 and TankRound.drop_at(100.0) == 0.0 and absf(TankRound.drop_at(300.0) - 0.85) < 0.1 \
+			and absf(TankRound.drop_at(420.0) - 4.1) < 0.2 and absf(TankRound.drop_at(600.0) - 13.6) < 0.4,
+			"cannon: drop under the barrel's line: 0 to 200 m, then %.1f m at 300, %.1f at 420, %.1f at 600" % [TankRound.drop_at(300.0), TankRound.drop_at(420.0), TankRound.drop_at(600.0)])
+	_check(TankRound.TRAIL_LENGTH <= 16.0, "cannon: the tracer is a short streak behind the shell (%.0f m), not a line along the whole flight" % TankRound.TRAIL_LENGTH)
 	_look = null
 
 
