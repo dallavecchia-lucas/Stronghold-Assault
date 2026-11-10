@@ -72,7 +72,9 @@ func _draw_squad(r: Rect2, i: int, s, font: Font) -> void:
 			var c := UIKit.GOOD if f > 0.6 else (UIKit.WARN if f > 0.3 else UIKit.DANGER)
 			draw_rect(Rect2(pip.position, Vector2(pip.size.x * f, pip.size.y)), c)
 	draw_string(font, r.position + Vector2(7, 44), s.order_name(), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, s.order_color())
-	draw_string(font, r.position + Vector2(52, 44), s.doing(driving), HORIZONTAL_ALIGNMENT_LEFT, int(r.size.x - 56), 10, DIM)
+	# What it is doing, after the order's name (a longer name, like BOMB RUN, pushes it along).
+	var after := maxf(52.0, 7.0 + font.get_string_size(s.order_name(), HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x + 6.0)
+	draw_string(font, r.position + Vector2(after, 44), s.doing(driving), HORIZONTAL_ALIGNMENT_LEFT, int(r.size.x - after - 4.0), 10, DIM)
 
 
 ## A buy slot: [key, label, kind].

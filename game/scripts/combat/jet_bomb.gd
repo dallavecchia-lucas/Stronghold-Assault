@@ -52,6 +52,17 @@ static func step(p: Vector3, v: Vector3, dt: float) -> Array:
 	return [p + vm * dt, v + accel(vm) * dt]
 
 
+## How far ahead (m, flat) a bomb let go in level flight at `speed` (m/s), `height` (m) over flat ground lands.
+static func reach(height: float, speed: float) -> float:
+	var p := Vector3(0.0, height, 0.0)
+	var v := Vector3(0.0, -2.0, speed)
+	while p.y > 0.0:
+		var s := step(p, v, PREDICT_STEP)
+		p = s[0]
+		v = s[1]
+	return p.z
+
+
 ## Where a bomb let go at `from` with velocity `vel` would burst, flown ahead in PREDICT_STEP steps: a Dictionary of
 ## `impact` (the point), `normal` (of the surface), `points` (its path, the release point first), `time` (s until it
 ## lands) and `hit` (false: it never met anything, and the impact is wherever it was when the preview gave up).

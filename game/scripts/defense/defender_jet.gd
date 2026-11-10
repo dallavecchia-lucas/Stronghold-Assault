@@ -21,7 +21,11 @@ extends DefenderMachine
 ##        so they scatter over the area the nose swept (and the more it is turning the wider each strays too). Each hits
 ##        lightly (MISSILE_DAMAGE, a small splash): the strength is in the numbers.
 ##
-## Left alone (the player is on another post) it circles the stronghold at a safe height (LOITER).
+## Left alone (the player is on another post) it flies itself, a gunship's way (see _idle): it circles the spot where it was
+## left (ORBIT: a left-hand pylon turn, IDLE_RADIUS round), and stays passive: it fires on nothing, until it is attacked (hurt, or
+## an enemy has locked on to it). Then it bombs the attacker (SETUP out to the start of a run, RUN, let go the bomb where the
+## forecast crosses it, EGRESS breaking away so it doesn't fly over it; up to MAX_PASSES passes while it lives and bombs last),
+## and once it is destroyed, flies back to the spot where it was left (RETURN) and circles again until it is attacked again.
 
 const RigScript := preload("res://scripts/vehicles/fighter_jet_rig.gd")
 
@@ -91,9 +95,30 @@ const CAM_FOV := 70.0
 const BOOST_FOV := 86.0
 const CAM_LAG := 5.0
 const CAM_LOOK := 70.0
-## Loitering (left alone): the circle round the stronghold (m), the height over the ground (m).
-const LOITER_RADIUS := 300.0
-const LOITER_HEIGHT := 150.0
+## Left alone, orbiting: the circle's radius (m) and the speed (m/s) it flies it at, and the height over the ground it keeps (m,
+## what it was at when it was left, between these).
+const IDLE_RADIUS := 230.0
+const IDLE_SPEED := 100.0
+const IDLE_MIN_HEIGHT := 120.0
+const IDLE_MAX_HEIGHT := 240.0
+## A bomb run: the height it flies at (m), how far out from the attacker it starts (m), how close to that start it counts as
+## lined up (m), how near to the attacker (as a share of how far a bomb carries) a run is abandoned for another try, the lateral
+## error at the moment of release it will accept (m), how hard it breaks away after the drop (rad) and for how long at the
+## least (s), and how many passes it makes.
+const RUN_HEIGHT := 110.0
+const RUN_START := 700.0
+const RUN_CAPTURE := 140.0
+const RUN_TOO_CLOSE := 0.85
+const RUN_LATERAL := 9.0
+const EGRESS_TURN := deg_to_rad(75.0)
+const EGRESS_MIN := 3.0
+const MAX_PASSES := 3
+## Left alone: how often it looks to see if it is being attacked (s), and how far it looks for who is attacking it when it
+## can't tell (m).
+const SCAN_INTERVAL := 0.15
+const ATTACKER_SEARCH := 160.0
+## The stages of what it does left alone.
+enum Idle { ORBIT, SETUP, RUN, EGRESS, RETURN }
 const HP := 700.0
 const IMPACTS_KEPT := 64
 ## How tall the preview's column of light is (m).
@@ -132,6 +157,22 @@ var warning := ""
 var out_left := OUT_TIME
 var crashed_at := Vector3.INF
 
+## Left alone: what it is doing; the spot where it was left (the orbit goes through it) and the circle's centre; the height it
+## keeps (m); the attacker it is bombing (null: it is passive).
+var idle_state := Idle.ORBIT
+var anchor := Vector3.INF
+var orbit_centre := Vector3.INF
+var orbit_height := IDLE_MIN_HEIGHT
+var attacker: Node3D = null
+
+var _hurt_flag := false
+var _scan_cd := 0.0
+var _passes := 0
+var _run_dir := Vector3.ZERO
+var _run_bomb: JetBomb = null
+var _egress_t := 0.0
+var _egress_side := 1.0
+var _settle_t := 0.0
 var _cam_fwd := Vector3.BACK
 var _cam_fov := CAM_FOV
 var _bomb_cd := 0.0
@@ -177,11 +218,17 @@ func roster_label() -> String:
 
 
 func order_name() -> String:
-	return "LOITER" if not possessed and is_alive() else ("FLYING" if is_alive() else "LOST")
+	if not is_alive():
+		return "LOST"
+	if possessed:
+		return "FLYING"
+	return {Idle.ORBIT: "ORBIT", Idle.SETUP: "BOMB RUN", Idle.RUN: "BOMB RUN", Idle.EGRESS: "BOMB RUN", Idle.RETURN: "RETURN"}[idle_state]
 
 
 func order_color() -> Color:
-	return UIKit.ACCENT if possessed else UIKit.WARN
+	if possessed:
+		return UIKit.ACCENT
+	return UIKit.DANGER if idle_state in [Idle.SETUP, Idle.RUN, Idle.EGRESS] else UIKit.WARN
 
 
 func doing(_driving: bool) -> String:
@@ -293,6 +340,7 @@ func _deploy() -> void:
 	_apply_pose()
 	_cam_fwd = global_basis.z
 	_prev_samples = _samples()
+	_begin_idle()
 
 
 ## Puts the jet in the air at `at` (for a showcase): heading (rad, 0 = +Z, left +), pitch (rad), speed.
@@ -309,9 +357,12 @@ func stage(at: Vector3, new_heading: float, new_pitch := 0.0, new_speed := CRUIS
 	_apply_pose()
 	_cam_fwd = forward()
 	_prev_samples = _samples()
+	if not possessed:
+		_begin_idle()
 
 
 func _on_possess() -> void:
+	attacker = null
 	aim_heading = heading
 	aim_pitch = pitch
 	_cam_fwd = global_basis.z
@@ -329,6 +380,9 @@ func unpossess() -> void:
 	_set_preview_visible(false)
 	boosting = false
 	rig.boost = 0.0
+	# Left where it is: that is where it will circle, and come back to.
+	if is_alive():
+		_begin_idle()
 
 
 # ---------------------------------------------------------------- input
@@ -393,21 +447,289 @@ func _control(delta: float) -> void:
 
 
 func _idle(delta: float) -> void:
-	# Round the stronghold: toward a point a little way along the circle, at a safe height.
-	var flat := Vector3(global_position.x - loiter_centre.x, 0.0, global_position.z - loiter_centre.z)
-	var radial := flat.normalized() if flat.length() > 1.0 else Vector3.BACK
-	var tangent := Vector3(-radial.z, 0.0, radial.x)
-	if tangent.dot(forward()) < 0.0:
-		tangent = -tangent
-	var target := Vector3(loiter_centre.x, 0.0, loiter_centre.z) + (radial * LOITER_RADIUS + tangent * 110.0)
-	var ground := maxf(LevelBuilder.ground_height(target), 0.0)
-	target.y = maxf(ground + LOITER_HEIGHT, LOITER_HEIGHT + 20.0)
-	steer_toward(target)
-	_fly(delta, false, false)
+	_scan_cd -= delta
+	if _scan_cd <= 0.0:
+		_scan_cd = SCAN_INTERVAL
+		_look_for_attacker()
+	var brake := false
+	var cruise := IDLE_SPEED
+	match idle_state:
+		Idle.ORBIT:
+			_fly_orbit()
+		Idle.SETUP:
+			cruise = CRUISE
+			_set_up_run()
+		Idle.RUN:
+			brake = true
+			_fly_run(delta)
+		Idle.EGRESS:
+			cruise = CRUISE
+			_break_away(delta)
+		Idle.RETURN:
+			cruise = CRUISE
+			_return_to_orbit()
+	_stay_safe()
+	_fly(delta, false, brake, cruise)
 	_weapons(delta, false, false)
 
 
-func _fly(delta: float, want_boost: bool, brake: bool) -> void:
+## Where it was left becomes where it circles: a left-hand circle through the jet's spot (so it flies straight onto it), kept
+## inside the battlefield, at the height it was left at (within IDLE_MIN_HEIGHT..IDLE_MAX_HEIGHT).
+func _begin_idle() -> void:
+	idle_state = Idle.ORBIT
+	attacker = null
+	_passes = 0
+	_hurt_flag = false
+	_scan_cd = SCAN_INTERVAL
+	anchor = global_position
+	orbit_height = clampf(altitude(), IDLE_MIN_HEIGHT, IDLE_MAX_HEIGHT)
+	var left := Vector3(cos(heading), 0.0, -sin(heading))
+	var c := Vector3(anchor.x, 0.0, anchor.z) + left * IDLE_RADIUS
+	var room := map_half - EDGE_MARGIN - IDLE_RADIUS - 20.0
+	orbit_centre = Vector3(clampf(c.x, -room, room), 0.0, clampf(c.z, -room, room))
+
+
+## The point of its circle nearest the spot where it was left.
+func orbit_point() -> Vector3:
+	var d := Vector3(anchor.x - orbit_centre.x, 0.0, anchor.z - orbit_centre.z)
+	d = d.normalized() if d.length() > 1.0 else Vector3.RIGHT
+	return orbit_centre + d * IDLE_RADIUS
+
+
+## The point `height` over the surface (the ground, over a forest the canopy) under `p`.
+static func _at_height(p: Vector3, height: float) -> Vector3:
+	return Vector3(p.x, p.y - _clearance(p) + height, p.z)
+
+
+## Round the circle: along the circle's tangent, bent in toward it when outside it and out when inside, so it settles on the
+## circle (steering at a point on the circle would spiral in).
+func _fly_orbit() -> void:
+	var flat := Vector3(global_position.x - orbit_centre.x, 0.0, global_position.z - orbit_centre.z)
+	var r := flat.length()
+	var radial := flat / r if r > 1.0 else Vector3.RIGHT
+	var tangent := Vector3(radial.z, 0.0, -radial.x)
+	var bend := clampf((r - IDLE_RADIUS) / 70.0, -1.0, 1.0) * deg_to_rad(55.0)
+	var d := tangent * cos(bend) - radial * sin(bend)
+	var ahead := global_position + d * 400.0
+	steer_toward(_at_height(ahead, orbit_height))
+
+
+## Back to the spot where it was left, level at the orbit's height; once there it circles again.
+func _return_to_orbit() -> void:
+	var at := orbit_point()
+	steer_toward(_at_height(at, orbit_height))
+	if Vector2(global_position.x - at.x, global_position.z - at.z).length() < 110.0:
+		idle_state = Idle.ORBIT
+
+
+# ---------------------------------------------------------------- attacked, and the bomb run
+
+## Is something attacking it? An enemy locked on to it (an anti-aircraft unit's lock, or what it is attacking), or it has been
+## hurt: then the nearest enemy it can bomb that could have done it. Passive otherwise.
+func _look_for_attacker() -> void:
+	if idle_state in [Idle.RUN, Idle.SETUP, Idle.EGRESS]:
+		_hurt_flag = false
+		return
+	if bombs <= 0:
+		return
+	var best: Node3D = null
+	var best_d := INF
+	var fallback: Node3D = null
+	var fallback_d := INF
+	var fallback_aa: Node3D = null
+	var fallback_aa_d := INF
+	for u in get_tree().get_nodes_in_group("attacker_units"):
+		if not _bombable(u):
+			continue
+		var d := Vector2(u.global_position.x - global_position.x, u.global_position.z - global_position.z).length()
+		if u.get("_aa_lock") == self or u.get("target") == self:
+			if d < best_d:
+				best_d = d
+				best = u
+		elif _hurt_flag:
+			if float(u.stats.get("aa_range", 0.0)) > 0.0 and d < ATTACKER_SEARCH and d < fallback_aa_d:
+				fallback_aa_d = d
+				fallback_aa = u
+			elif d < ATTACKER_SEARCH * 0.8 and d < fallback_d:
+				fallback_d = d
+				fallback = u
+	if best == null and _hurt_flag:
+		best = fallback_aa if fallback_aa != null else fallback
+	_hurt_flag = false
+	if best != null:
+		attacker = best
+		_passes = 0
+		_begin_setup()
+
+
+## A ground attacker a bomb can get at: alive, on the ground (not flying or under water), not up inside the mountain.
+func _bombable(u: Node3D) -> bool:
+	if not Combat.is_valid_target(u) or u.is_flying() or u.is_submerged():
+		return false
+	return absf(u.global_position.x) > LevelBuilder.MOUNTAIN_HALF or absf(u.global_position.z) > LevelBuilder.MOUNTAIN_HALF
+
+
+func _flat_to(p: Vector3) -> float:
+	return Vector2(p.x - global_position.x, p.z - global_position.z).length()
+
+
+## How far ahead a bomb let go on the run lands (m).
+func _drop_distance() -> float:
+	return JetBomb.reach(RUN_HEIGHT, MIN_SPEED)
+
+
+## Starts (or starts over) the approach: out to the start of a run, upwind of the attacker, 700 m back from it along the
+## way the jet is coming from (or, if it is too close for that, from over its own side), inside the battlefield.
+func _begin_setup() -> void:
+	idle_state = Idle.SETUP
+	var t := Vector3(attacker.global_position.x, 0.0, attacker.global_position.z)
+	var me := Vector3(global_position.x, 0.0, global_position.z)
+	var dir := me - t
+	if dir.length() < 350.0:
+		dir = Vector3(anchor.x, 0.0, anchor.z) - t
+	if dir.length() < 350.0:
+		dir = -Vector3(sin(heading), 0.0, cos(heading))
+	# From that side if the way in is clear, else the nearest side that is (a wall, a mast or the mountain in the way).
+	_run_dir = dir.normalized()
+	for turn in [0.0, 40.0, -40.0, 80.0, -80.0, 120.0, -120.0, 180.0]:
+		var cand := dir.normalized().rotated(Vector3.UP, deg_to_rad(turn))
+		if _clear_run(t, cand):
+			_run_dir = cand
+			break
+
+
+## Is the way in along `dir` from the start of a run to the attacker at `t` clear of anything tall (checked 40 m under the
+## run's height, for a margin)?
+func _clear_run(t: Vector3, dir: Vector3) -> bool:
+	var start := t + dir * RUN_START
+	var lim := map_half - EDGE_MARGIN - 40.0
+	start.x = clampf(start.x, -lim, lim)
+	start.z = clampf(start.z, -lim, lim)
+	var a := _at_height(start, RUN_HEIGHT - 40.0)
+	var b := _at_height(t, RUN_HEIGHT - 40.0)
+	var q := PhysicsRayQueryParameters3D.create(a, b, GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES)
+	if not get_world_3d().direct_space_state.intersect_ray(q).is_empty():
+		return false
+	# And not over the attackers' bases (broad decks with tall masts).
+	for base in get_tree().get_nodes_in_group("attacker_bases"):
+		var reach: float = base.deck_size.length() * 0.6 + 60.0
+		for k in 8:
+			var p := start.lerp(t, k / 7.0)
+			if Vector2(p.x - base.global_position.x, p.z - base.global_position.z).length() < reach:
+				return false
+	return true
+
+
+func _run_start() -> Vector3:
+	var t := Vector3(attacker.global_position.x, 0.0, attacker.global_position.z)
+	var at := t + _run_dir * RUN_START
+	var lim := map_half - EDGE_MARGIN - 40.0
+	at.x = clampf(at.x, -lim, lim)
+	at.z = clampf(at.z, -lim, lim)
+	return _at_height(at, RUN_HEIGHT)
+
+
+## Out to the start of the run; lined up (there, or already pointed at the attacker from far enough out), the run begins.
+func _set_up_run() -> void:
+	if not Combat.is_valid_target(attacker) or bombs <= 0:
+		_give_up_run()
+		return
+	var start := _run_start()
+	steer_toward(start)
+	var to := Vector3(attacker.global_position.x - global_position.x, 0.0, attacker.global_position.z - global_position.z)
+	var dist := to.length()
+	var lined_up := absf(wrapf(atan2(to.x, to.z) - heading, -PI, PI)) < deg_to_rad(18.0) \
+			and dist > _drop_distance() * 1.1 + 80.0 and dist < RUN_START * 2.0
+	if _flat_to(start) < RUN_CAPTURE or lined_up:
+		idle_state = Idle.RUN
+		_run_bomb = null
+
+
+## The run: at the attacker (led, if it is moving), level, slowed to bomb. Let go the bomb when the forecast of where it would
+## land (the same fall the preview shows) crosses the attacker's spot: nearer than that and it would fall short, farther and
+## beyond.
+func _fly_run(_delta: float) -> void:
+	if not Combat.is_valid_target(attacker):
+		_give_up_run()
+		return
+	bomb_forecast = JetBomb.predict(get_world_3d().direct_space_state, bay_position(), bomb_velocity())
+	var t: Vector3 = attacker.global_position
+	var lead := Vector3(t.x, 0.0, t.z)
+	var v = attacker.get("velocity")
+	if v is Vector3:
+		lead += Vector3(v.x, 0.0, v.z) * float(bomb_forecast.time) * 0.8
+	steer_toward(_at_height(lead, RUN_HEIGHT))
+	var fwd := Vector3(forward().x, 0.0, forward().z).normalized()
+	var impact: Vector3 = bomb_forecast.impact
+	var to := lead - Vector3(global_position.x, 0.0, global_position.z)
+	var aligned := absf(wrapf(atan2(to.x, to.z) - heading, -PI, PI)) < deg_to_rad(25.0)
+	var close := to.length() < _drop_distance() * RUN_TOO_CLOSE
+	if not aligned:
+		# Still coming round onto it (out at the start of the run it is pointing the wrong way): too near already, and it
+		# won't be lined up in time.
+		if close:
+			_begin_egress()
+		return
+	var err := lead - Vector3(impact.x, 0.0, impact.z)
+	var along := err.dot(fwd)
+	var lateral := (err - fwd * along).length()
+	if along <= speed * get_physics_process_delta_time() and along > -30.0:
+		# Over the spot: let it go, if it is lined up; then break away.
+		if lateral <= RUN_LATERAL and bomb_forecast.hit:
+			_run_bomb = drop_bomb()
+		_begin_egress()
+	elif along <= -30.0:
+		# Too close for it to land on the attacker: break away and come round again.
+		_begin_egress()
+
+
+func _begin_egress() -> void:
+	idle_state = Idle.EGRESS
+	_egress_t = 0.0
+	_settle_t = 0.0
+	if Combat.is_valid_target(attacker):
+		var left := Vector3(cos(heading), 0.0, -sin(heading))
+		var to := attacker.global_position - global_position
+		# Away from the attacker's side, so it doesn't fly over it.
+		_egress_side = -1.0 if to.dot(left) > 0.0 else 1.0
+	else:
+		_egress_side = 1.0
+
+
+## Breaking away from the attacker (turned off it, climbing a little) until the bomb has landed; then, if the attacker is still
+## there and there are bombs and passes left, round for another run; else home.
+func _break_away(delta: float) -> void:
+	_egress_t += delta
+	steer(heading + _egress_side * EGRESS_TURN, deg_to_rad(8.0))
+	var landed := _run_bomb == null or not is_instance_valid(_run_bomb)
+	if _egress_t < EGRESS_MIN or not landed:
+		return
+	_settle_t += delta
+	if _settle_t < 0.6:
+		return
+	_passes += 1
+	if Combat.is_valid_target(attacker) and bombs > 0 and _passes < MAX_PASSES:
+		_begin_setup()
+	else:
+		_give_up_run()
+
+
+## Done with the attacker (destroyed, or out of bombs and passes): home.
+func _give_up_run() -> void:
+	attacker = null
+	_run_bomb = null
+	idle_state = Idle.RETURN
+
+
+## Whatever it was doing, it does not fly into the ground, a wall, or out of the battlefield.
+func _stay_safe() -> void:
+	if warning == "PULL UP" or altitude() < 45.0:
+		steer(heading, deg_to_rad(40.0))
+	elif warning == "TURN BACK":
+		steer_toward(_at_height(orbit_centre, orbit_height))
+
+
+func _fly(delta: float, want_boost: bool, brake: bool, cruise := CRUISE) -> void:
 	# The boost: lit while it is held and there is some; it runs down, and comes back once it has been let go.
 	var was := boosting
 	boosting = want_boost and boost > 0.0 and not _boost_spent and not _falling and not _dead
@@ -444,7 +766,7 @@ func _fly(delta: float, want_boost: bool, brake: bool) -> void:
 		pitch = clampf(pitch + pitch_rate * delta, -PITCH_LIMIT, PITCH_LIMIT)
 		bank = move_toward(bank, -clampf(turn_rate / (MAX_TURN * agility), -1.0, 1.0) * MAX_BANK, ROLL_RATE * delta)
 		# Speed: the throttle's, less what the climb costs (or plus what a dive gives).
-		var want := CRUISE
+		var want := cruise
 		if boosting:
 			want = BOOST_SPEED
 		elif brake:
@@ -652,6 +974,14 @@ func _draw_preview() -> void:
 
 
 # ---------------------------------------------------------------- going down
+
+func take_damage(amount: float, from_team: int) -> void:
+	var before := hp
+	super(amount, from_team)
+	if hp < before and from_team != team and not possessed:
+		_hurt_flag = true
+		_scan_cd = 0.0
+
 
 func _on_down(reason: String) -> void:
 	_cam_shake = 1.0

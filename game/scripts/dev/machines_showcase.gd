@@ -12,6 +12,9 @@ extends Node3D
 ##   salvo      the missile barrage twice: flying straight, the whole salvo leaves along one line (a tight cluster);
 ##              through a hard turn each missile leaves along where the nose is then, and they scatter
 ##   crash      the jet flown into the ground: lost for good (the roster loses it); another is shot down
+##   idle       the jet left alone: it circles the spot where it was left, gunship style, and stays passive; an elephant just
+##              out of reach is ignored; when one locks on to it it bombs it (setup, run, the bomb where the forecast says,
+##              breaks away), flies back to where it was left and circles again until the next one attacks
 ##   drive      the tank driven off, turning onto the way it goes, stopped by the mountain's wall
 ##   guns       the main gun on a knot of attackers (the shell, the blast, the recoil), the machine guns after it
 ##   idle       the player leaves the tank (takes the jet): it holds its ground and shoots what comes in reach
@@ -63,7 +66,12 @@ var _spec := false
 var _spec_at := Vector3.ZERO
 var _spec_rel = null
 var _spec_look := Vector3.ZERO
-## --only=jet|tank: just that machine's part of the run.
+var _orbit_ring: MeshInstance3D
+## What the riding spectator follows: this node, else the jet.
+var _spec_node: Node3D = null
+## A tag on the jet in the overview, where it is a few pixels (the showcase's overlay, like the circle).
+var _jet_tag: Label
+## --only=jet|tank|idle: just that machine's part of the run (idle: just the jet left alone).
 var _only := ""
 
 
@@ -154,12 +162,14 @@ func _start() -> void:
 
 func _run() -> void:
 	await _buy()
-	if _only != "tank":
+	if _only in ["", "jet"]:
 		await _jet_cruise()
 		await _jet_bomb()
 		await _jet_salvos()
 		await _jet_down()
-	if _only != "jet":
+	if _only in ["", "jet", "idle"]:
+		await _jet_idle()
+	if _only in ["", "tank"]:
 		await _tank_drive()
 		await _tank_guns()
 		await _tank_idle()
@@ -355,6 +365,118 @@ func _jet_down() -> void:
 	_steer = null
 	jet.take_damage(10000.0, GameConfig.TEAM_ATTACKER)
 	await _wait(8.0)
+	# The field cleared for what comes next.
+	_retire([e])
+	_retire(_targets)
+	_targets = []
+
+
+func _jet_idle() -> void:
+	# A jet of its own, left alone over the clearing: where it was left is the east point of a circle round the Keep.
+	armory.credits += DefenderArmory.JET_COST
+	var j := defender.buy_squad("jet") as DefenderJet
+	jet = j
+	var left_at := Vector3(230.0, 150.0, 0.0)
+	j.stage(left_at, PI, 0.0, DefenderJet.IDLE_SPEED)  # heading north: the circle's centre is to its west
+	# The player is in the tank meanwhile (its panel shows the jet's roster slot).
+	defender.select_squad(armory.squads.find(tank), true)
+	await _wait(0.5)
+	_say("Left alone, the jet circles where it was left, passive, like a gunship", 6.0)
+	_check(not j.possessed and j.idle_state == DefenderJet.Idle.ORBIT and j.order_name() == "ORBIT", "idle: left alone it goes into orbit (roster: %s)" % j.order_name())
+	_check(j.orbit_centre.distance_to(Vector3.ZERO) < 5.0 and absf(j.orbit_point().distance_to(Vector3(left_at.x, 0.0, left_at.z))) < 5.0,
+			"idle: the circle goes through the spot where it was left (centre %s)" % j.orbit_centre)
+	# Round the circle: its radius and height, over a lap.
+	var worst_r := 0.0
+	var low := INF
+	var high := 0.0
+	var turned := 0.0
+	var last_h := j.heading
+	var t_end := t + 14.0
+	var shot := 0
+	_overview(true)  # the whole circle, from over the south field
+	while t < t_end:
+		await get_tree().physics_frame
+		if shot == 0 and t > t_end - 7.0:
+			shot = 1
+			_spectate(Vector3.ZERO, Vector3.ZERO, Vector3(-60.0, 16.0, -40.0), Vector3(8.0, -6.0, 10.0))  # beside it, banked in the turn
+		var r := Vector2(j.global_position.x, j.global_position.z).length()
+		worst_r = maxf(worst_r, absf(r - DefenderJet.IDLE_RADIUS))
+		low = minf(low, j.altitude())
+		high = maxf(high, j.altitude())
+		turned += absf(angle_difference(last_h, j.heading))
+		last_h = j.heading
+	print("MACHINES t=%.1f jet orbiting" % t)
+	_check(j.is_alive() and worst_r < 30.0, "idle: it flies the circle (%.0f m round, at most %.0f m off)" % [DefenderJet.IDLE_RADIUS, worst_r])
+	_check(low > 100.0 and high < 175.0, "idle: at a steady height (%.0f to %.0f m over the ground)" % [low, high])
+	_check(turned > TAU * 0.9, "idle: it goes right round (%.0f° of turn in 14 s)" % rad_to_deg(turned))
+	_check(j.stats.bombs == 0 and j.stats.missiles == 0 and j.hp == DefenderJet.HP, "idle: and fires on nothing")
+	# An enemy that has not attacked it, 60 m outside the path: ignored.
+	var e := _spawn("elephant", Vector3(0.0, 0.0, -300.0))
+	e.hp = 150.0
+	var riflemen := _spawn_group(["rifleman", "rifleman", "rifleman"], Vector3(60.0, 0.0, 100.0), 6.0)
+	_spectate_off()
+	await _wait(12.0)
+	_check(j.idle_state == DefenderJet.Idle.ORBIT and j.attacker == null and j.stats.bombs == 0, "idle: enemies that have not attacked it are left alone (an elephant 70 m off its path, riflemen inside it)")
+	# The elephant moves onto its path: its flak locks on as the jet passes over.
+	var anchor0: Vector3 = j.anchor
+	e.global_position = Vector3(0.0, 0.2, -DefenderJet.IDLE_RADIUS)
+	var provoked := await _until(func(): return j.attacker == e, 14.0)
+	print("MACHINES t=%.1f the elephant locks on: the jet goes for it" % t)
+	_check(provoked and j.idle_state in [DefenderJet.Idle.SETUP, DefenderJet.Idle.RUN], "idle: attacked, it goes for the attacker (%s)" % DefenderJet.Idle.keys()[j.idle_state])
+	_check(j.order_name() == "BOMB RUN", "idle: the roster says BOMB RUN")
+	var ran := await _until(func(): return j.idle_state == DefenderJet.Idle.RUN, 14.0)
+	_check(ran, "idle: it sets up out at the start of a run")
+	print("MACHINES t=%.1f on its bomb run" % t)
+	_spectate(Vector3.ZERO, Vector3.ZERO, Vector3(30.0, 45.0, -140.0), Vector3(0.0, -70.0, 300.0))
+	await _until(func(): return j.stats.bombs >= 1, 14.0)
+	print("MACHINES t=%.1f bomb away" % t)
+	# Riding along beside the bomb as it falls, then (it bursts) from the ground beside the attacker.
+	_spec_node = j._run_bomb
+	_spectate(Vector3.ZERO, Vector3.ZERO, Vector3(16.0, 6.0, -26.0), Vector3(0.0, -8.0, 14.0))
+	_check(j.stats.bombs >= 1 and j.idle_state == DefenderJet.Idle.EGRESS, "idle: the bomb goes where the forecast crosses it, and it breaks away")
+	await _until(func(): return not j.bomb_bursts.is_empty(), 8.0)
+	print("MACHINES t=%.1f bomb burst" % t)
+	_spectate(e.global_position + Vector3(75.0, 24.0, 55.0), e.global_position + Vector3(0.0, 14.0, 0.0))
+	if not j.bomb_bursts.is_empty():
+		_check(j.bomb_bursts.back().distance_to(e.global_position) < 12.0, "idle: and lands on it (%.1f m off)" % j.bomb_bursts.back().distance_to(e.global_position))
+	await _wait(1.5)
+	_check(not e.is_alive(), "idle: the attacker is destroyed")
+	var home := await _until(func(): return j.idle_state == DefenderJet.Idle.RETURN, 8.0)
+	print("MACHINES t=%.1f returning" % t)
+	_overview(true)
+	_check(home and j.attacker == null, "idle: with it destroyed, it heads back to where it was left")
+	var near_spot := await _until(func(): return j.idle_state == DefenderJet.Idle.ORBIT, 30.0)
+	var back := Vector2(j.global_position.x - anchor0.x, j.global_position.z - anchor0.z).length()
+	print("MACHINES t=%.1f back in orbit" % t)
+	_check(near_spot and back < 200.0, "idle: and circles there again (%.0f m from the spot where it was left)" % back)
+	await _wait(8.0)
+	_spectate_off()
+	var r2 := Vector2(j.global_position.x, j.global_position.z).length()
+	_check(j.is_alive() and absf(r2 - DefenderJet.IDLE_RADIUS) < 30.0, "idle: round the same circle (%.0f m from its centre)" % r2)
+	# Attacked again: it goes for the next one. Hurt with nobody locked on: the nearest enemy that could have done it.
+	# The south of the circle, 60 m outside its path (out of flak reach, away from the tank at the gate): it never locks on.
+	var e2 := _spawn("elephant", Vector3(0.0, 0.2, DefenderJet.IDLE_RADIUS + 60.0))
+	e2.hp = 150.0
+	await _until(func(): return Vector2(j.global_position.x - e2.global_position.x, j.global_position.z - e2.global_position.z).length() < 110.0, 15.0)
+	_check(j.attacker == null and j.idle_state == DefenderJet.Idle.ORBIT, "idle: an anti-aircraft enemy that hasn't fired on it is still left alone")
+	j.take_damage(1.0, GameConfig.TEAM_ATTACKER)
+	await _wait(0.5)
+	_check(j.attacker == e2, "idle: hurt, with nothing locked on, it picks the nearest anti-aircraft enemy to go for")
+	var bombs0: int = j.stats.bombs
+	var seen_state: int = j.idle_state
+	var until := t + 40.0
+	while t < until and e2.is_alive():
+		await get_tree().physics_frame
+		if j.idle_state != seen_state:
+			seen_state = j.idle_state
+			print("MACHINES t=%.1f   jet is now %s (passes %d, bombs %d, attacker %s, elephant hp %.0f)" % [t, DefenderJet.Idle.keys()[seen_state], j._passes, j.bombs, j.attacker, e2.hp])
+	_check(j.stats.bombs > bombs0 and not e2.is_alive(), "idle: it bombs that one too (%d bombs in all)" % j.stats.bombs)
+	await _until(func(): return j.idle_state == DefenderJet.Idle.ORBIT, 40.0)
+	_check(j.idle_state == DefenderJet.Idle.ORBIT and j.is_alive(), "idle: and goes back to circling (hull %.0f of %.0f)" % [j.hp, DefenderJet.HP])
+	_retire(riflemen)
+	var bombs1: int = j.stats.bombs
+	await _wait(6.0)
+	_check(j.idle_state == DefenderJet.Idle.ORBIT and j.attacker == null and j.stats.bombs == bombs1, "idle: and passive again, circling, until the next attack")
 
 
 func _tank_drive() -> void:
@@ -500,6 +622,14 @@ func _spawn_group(types: Array, centre: Vector3, spread: float) -> Array:
 	return out
 
 
+## Units off the field once their part is played.
+func _retire(list: Array) -> void:
+	for u in list:
+		if is_instance_valid(u):
+			commander.units.erase(u.unit_id)
+			u.queue_free()
+
+
 func _hp_of(list: Array) -> float:
 	var s := 0.0
 	for u in list:
@@ -546,9 +676,34 @@ func _spectate(from: Vector3, at: Vector3, rel = null, look := Vector3.ZERO) -> 
 			m._hud_layer.visible = false
 
 
+## The spectator high over the south field looking at the whole circle the jet flies when left alone, with the circle drawn in
+## (an overlay of the showcase's: the game draws none).
+func _overview(on: bool) -> void:
+	if on:
+		_spectate(Vector3(0.0, 470.0, 330.0), Vector3(0.0, 140.0, -10.0))
+		cam.fov = 58.0
+		if _orbit_ring == null:
+			var ring := TorusMesh.new()
+			ring.inner_radius = DefenderJet.IDLE_RADIUS - 1.3
+			ring.outer_radius = DefenderJet.IDLE_RADIUS + 1.3
+			ring.rings = 96
+			ring.ring_segments = 6
+			_orbit_ring = MeshInstance3D.new()
+			_orbit_ring.mesh = ring
+			_orbit_ring.position.y = 150.0
+			_orbit_ring.material_override = Mats.unshaded(Color(1.0, 0.85, 0.3, 0.8), false)
+			_orbit_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(_orbit_ring)
+		_orbit_ring.visible = true
+	elif _orbit_ring != null:
+		_orbit_ring.visible = false
+
+
 func _spectate_off() -> void:
 	if not _spec:
 		return
+	_overview(false)
+	_spec_node = null
 	_spec = false
 	defender.visible = true
 	if defender.current != null:
@@ -557,9 +712,16 @@ func _spectate_off() -> void:
 
 
 func _process(_delta: float) -> void:
-	if _spec and _spec_rel != null and is_instance_valid(jet):
-		cam.global_position = jet.global_position + _spec_rel
-		cam.look_at(jet.global_position + _spec_look)
+	if _jet_tag != null:
+		var show := _spec and _orbit_ring != null and _orbit_ring.visible and is_instance_valid(jet) and not cam.is_position_behind(jet.global_position)
+		_jet_tag.visible = show
+		if show:
+			_jet_tag.position = cam.unproject_position(jet.global_position) + Vector2(-72, -14)
+	if _spec and _spec_rel != null:
+		var who: Node3D = _spec_node if is_instance_valid(_spec_node) else jet
+		if is_instance_valid(who):
+			cam.global_position = who.global_position + _spec_rel
+			cam.look_at(who.global_position + _spec_look)
 
 
 func _wait(seconds: float) -> void:
@@ -627,3 +789,9 @@ func _build_overlay() -> void:
 	_caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_caption.visible = false
 	layer.add_child(_caption)
+	_jet_tag = UIKit.label("JET ->", 18, Color(1.0, 0.9, 0.35))
+	_jet_tag.add_theme_color_override("font_outline_color", Color.BLACK)
+	_jet_tag.add_theme_constant_override("outline_size", 6)
+	_jet_tag.visible = false
+	_jet_tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(_jet_tag)
