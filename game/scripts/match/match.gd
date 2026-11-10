@@ -137,16 +137,18 @@ func _autotest_step(delta: float) -> void:
 		_autotest_events = step
 		if player_controller is DefenderController:
 			var dc: DefenderController = player_controller
-			# Buy two AA Squads, a Flame Squad, an Infiltrator Squad and a Sniper early, drive them now and
-			# then and swap their orders (the infiltrators' next order sends them on a sabotage operation).
+			# Buy an AA Squad, a Flame Squad, an Infiltrator Squad, a Sniper, the Fighter Jet and the Hover Tank early
+			# (the roster's six slots), drive them now and then and swap their orders (the infiltrators' next order
+			# sends them on a sabotage operation). Nobody flies the jet when it is taken over: it holds its course.
 			if step == 2:
 				armory.credits += DefenderArmory.AA_COST + DefenderArmory.FLAME_COST + DefenderArmory.INFILTRATOR_COST \
-						+ DefenderArmory.SNIPER_COST
-				dc.buy_squad()
+						+ DefenderArmory.SNIPER_COST + DefenderArmory.JET_COST + DefenderArmory.TANK_COST
 				dc.buy_squad()
 				dc.buy_squad("flame")
 				dc.buy_squad("infiltrator")
 				dc.buy_squad("sniper")
+				dc.buy_squad("jet")
+				dc.buy_squad("tank")
 			if step % 7 == 5:
 				for s in armory.squads:
 					s.cycle_order()
@@ -204,6 +206,9 @@ func _autotest_report() -> void:
 			_autotest_t, commander.units.size(), commander.supply, level.keep.hp, ", ".join(gates)])
 	if armory:
 		for s in armory.squads:
+			if s is DefenderMachine:
+				print("AUTOTEST %s alive=%s hp=%d order=%s stats=%s" % [s.station_name, s.is_alive(), int(s.hp), s.order_name(), s.stats])
+				continue
 			var extra := ""
 			if s is AASquad:
 				extra = "mines_down=%d" % (s as AASquad).mines.size()
