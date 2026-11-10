@@ -1,12 +1,19 @@
 class_name TankRound
 extends Node3D
-## A round from the Hover Tank's main gun (DefenderTank): a fast shell that flies nearly flat (a little drop at range) and
-## bursts on the first thing it meets (the ground, a structure, an attacker) for `damage` within `radius`.
+## A round from the Hover Tank's main gun (DefenderTank): a shell that flies a gentle arc and bursts on the first thing it meets
+## (the ground, a structure, an attacker) for `damage` within `radius`. Gravity pulls at it all the way (GRAVITY_SCALE of
+## real weight): near it hardly matters, but far off it drops well under the line of the barrel (a metre and a half at 200 m,
+## 3 m at 300, 12 m at 600), so against a distant target the barrel has to be aimed above it, and a tracer, which glows all
+## the way and leaves a trail that lingers along the arc, shows the player where the shot is going to adjust.
 
-## How fast it flies (m/s), how much of gravity it feels (a flat-shooting gun), and how long it flies at the most (s).
-const SPEED := 320.0
-const GRAVITY_SCALE := 0.18
-const LIFETIME := 3.5
+## How fast it flies (m/s), how much of gravity it feels, and how long it flies at the most (s).
+const SPEED := 240.0
+const GRAVITY_SCALE := 0.4
+const LIFETIME := 4.5
+## Its tracer's trail: a glowing dot every TRAIL_STEP metres along the flight, lingering TRAIL_LIFE seconds, cooling red.
+const TRAIL_STEP := 1.2
+const TRAIL_LIFE := 1.5
+const TRAIL_COLOR := Color(4.0, 1.9, 0.5)
 const MASK := GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES | GameConfig.LAYER_ATTACKERS
 
 ## Went off at `at`.
@@ -20,6 +27,13 @@ var structure_mult := 0.8
 var velocity := Vector3.ZERO
 var _age := 0.0
 var _body: Node3D
+
+
+## How far (m) a shell flying level at the muzzle velocity has dropped after covering `dist` m (what a target `dist` m off has
+## to be aimed above).
+static func drop_at(dist: float) -> float:
+	var t := dist / SPEED
+	return 0.5 * JetBomb.gravity() * GRAVITY_SCALE * t * t
 
 
 ## Leaves the muzzle at `from` along `dir`.
@@ -51,8 +65,14 @@ func _physics_process(delta: float) -> void:
 		queue_free()
 		return
 	var fx := FX.of(self)
-	# A hot streak along the flight, smeared back like a tracer.
-	fx.spark(q, velocity, 0.05, 0.2, 1.4, Color(5.0, 2.4, 0.8), 0.0, 0.0, FX.NO_FLOOR, 0.02, 0.0, 2)
+	# The tracer: a bright streak at the head, and a trail of glowing dots left along the arc, which cool and fade.
+	fx.spark(q, velocity, 0.05, 0.6, 4.0, Color(7.0, 3.6, 1.2), 0.0, 0.0, FX.NO_FLOOR, 0.02, 0.0, 2)
+	fx.flare(q, Color(5.0, 2.6, 0.9), 0.55, 1.0, 0.07, 0, 2.0)
+	var seg := q - global_position
+	var dots := maxi(int(seg.length() / TRAIL_STEP), 1)
+	for k in dots:
+		fx.spark(global_position + seg * (float(k) / dots), seg.normalized() * 0.4, TRAIL_LIFE, 0.42, 1.3, TRAIL_COLOR, 0.0, 0.0,
+				FX.NO_FLOOR, 0.0, 1.0, 0)
 	global_position = q
 	_face()
 	if _age > LIFETIME:

@@ -110,6 +110,17 @@ func take_damage(amount: float, from_team: int) -> void:
 		_go_down("shot")
 
 
+## It hurts itself (a crash): `amount` off its health, and it is lost if that is the last of it.
+func hurt_self(amount: float) -> void:
+	if not is_alive():
+		return
+	hp -= amount
+	_hurt = HURT_TIME
+	if hp <= 0.0:
+		hp = 0.0
+		_go_down("crashed")
+
+
 ## What the player is told when it goes down.
 func down_message() -> String:
 	return "%s is lost" % station_name

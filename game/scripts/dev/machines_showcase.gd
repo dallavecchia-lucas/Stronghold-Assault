@@ -12,6 +12,12 @@ extends Node3D
 ##   salvo      the missile barrage twice: flying straight, the whole salvo leaves along one line (a tight cluster);
 ##              through a hard turn each missile leaves along where the nose is then, and they scatter
 ##   crash      the jet flown into the ground: lost for good (the roster loses it); another is shot down
+##   machine guns   the tank's machine guns fire straight along the hull (the turret is on a target 60 m to the side), tracers
+##   ballistics     the cannon's shell drops: aimed straight at a target 420 m off it lands short, raised above it, on it
+##   tank jump      Space: the thrusters charge, throw the tank up and along where it faces (height, distance, time), retro burn and
+##                  soft landing, cooldown; stopped by the stronghold's wall
+##   trees          the tank runs into a tree and stops, hurt; the tree goes over, blocking until it is down; then the way is clear;
+##                  crossing woodland takes many times as long as open ground
 ##   idle       the jet left alone: it circles the spot where it was left, gunship style, and stays passive; an elephant just
 ##              out of reach is ignored; when one locks on to it it bombs it (setup, run, the bomb where the forecast says,
 ##              breaks away), flies back to where it was left and circles again until the next one attacks
@@ -58,6 +64,7 @@ var _drop_on = null  # Vector3: let a bomb go when the preview is on it
 var _move := Vector2.ZERO
 var _fire := false
 var _mgs := false
+var _jump := false
 var _look = null
 var _caption: Label
 var _targets: Array = []
@@ -162,6 +169,13 @@ func _start() -> void:
 
 func _run() -> void:
 	await _buy()
+	if _only == "guns":
+		defender.select_squad(armory.squads.find(tank), true)
+		await _wait(1.0)
+		await _tank_guns()
+		await _tank_mgs()
+		_finish()
+		return
 	if _only in ["", "jet"]:
 		await _jet_cruise()
 		await _jet_bomb()
@@ -172,6 +186,7 @@ func _run() -> void:
 	if _only in ["", "tank"]:
 		await _tank_drive()
 		await _tank_guns()
+		await _tank_skills()
 		await _tank_idle()
 	_finish()
 
@@ -504,6 +519,10 @@ func _tank_drive() -> void:
 	_move = Vector2.ZERO
 	# Over the river: it skims the water.
 	tank.stage(Vector3(0.0, 0.0, 428.0), 0.0)
+	# (Trees on the bank would stop it: the way is cleared of them for this.)
+	for c in ForestTree.near(Vector3(0.0, 0.0, 470.0), 60.0):
+		if absf(c.global_position.x) < 9.0 and c.global_position.z > 420.0:
+			c.flatten()
 	await _wait(0.5)
 	_move = Vector2(0.0, -1.0)
 	await _wait(3.5)
@@ -525,7 +544,10 @@ func _tank_guns() -> void:
 	await _until(func(): return tank.aim_point.distance_to(_look) < 2.5 and tank.rig.aimed(), 8.0)
 	_check(tank.rig.aimed() and tank.aim_point.distance_to(_look) < 2.5, "gun: the crosshair is on the target and the turret swings onto it")
 	_fire = true
-	await _until(func(): return tank.stats.rounds >= 1, 3.0)
+	for k in 6:
+		await _wait(0.5)
+		if tank.stats.rounds >= 1:
+			break
 	_fire = false
 	print("MACHINES t=%.1f main gun fires" % t)
 	await _wait(1.2)
@@ -535,16 +557,312 @@ func _tank_guns() -> void:
 	await _wait(2.5)
 	# The machine guns.
 	_say("Machine guns: hold RMB", 3.0)
-	var hp1 := _hp_of(_targets)
 	_mgs = true
 	await _wait(2.5)
 	print("MACHINES t=%.1f machine guns" % t)
 	await _wait(1.0)
 	_mgs = false
 	_check(tank.stats.mg_rounds > 30, "guns: RMB works the twin machine guns in the sponsons (%d rounds)" % tank.stats.mg_rounds)
-	_check(_hp_of(_targets) < hp1, "guns: and they hit what is on the crosshair")
 	_look = null
 	_spectate_off()
+
+
+## The elevation (rad) that lands a shell `dist` m out on level ground from a muzzle `h` m up.
+func _elevation_for(dist: float, h: float) -> float:
+	var g := JetBomb.gravity() * TankRound.GRAVITY_SCALE
+	var t := dist / TankRound.SPEED
+	return asin(clampf((0.5 * g * t * t - h) / (TankRound.SPEED * t), -0.5, 0.5))
+
+
+func _flat(a: Vector3, b: Vector3) -> float:
+	return Vector2(a.x - b.x, a.z - b.z).length()
+
+
+func _tank_skills() -> void:
+	await _tank_mgs()
+	await _tank_ballistics()
+	await _tank_jump()
+	await _tank_trees()
+	tank.hp = tank.max_hp
+	tank.stage(TANK_AT, 0.0)
+	_look = null
+	_move = Vector2.ZERO
+
+
+## The machine guns fire straight ahead along the hull while the turret is on a target 60 m off to the side.
+func _tank_mgs() -> void:
+	tank.stage(TANK_AT, 0.0)  # facing south
+	var ahead := _spawn("breacher", Vector3(0.0, 0.0, TANK_AT.z + DefenderTank.MG_MARK + 5.0))  # where their lines cross, from the muzzles
+	var ahead_hp0: float = ahead.hp
+	var side := _spawn("rifleman", Vector3(-60.0, 0.0, TANK_AT.z))
+	var side_hp0: float = side.hp
+	await _wait(1.0)
+	_say("Machine guns fire along the hull, wherever the turret points", 6.0)
+	_look = Combat.aim_point(side)
+	await _until(func(): return tank.aim_point.distance_to(_look) < 3.0 and tank.rig.aimed(), 8.0)
+	var dirs: Array[Vector3] = []
+	var misses: Array[float] = []
+	var aim_at: Vector3 = Combat.aim_point(ahead)
+	var on_round := func(from: Vector3, to: Vector3):
+		dirs.append((to - from).normalized())
+		misses.append(Geometry3D.get_closest_point_to_segment_uncapped(aim_at, from, to).distance_to(aim_at))
+	tank.rig.mg_round.connect(on_round)
+	var tracers0: int = tank.stats.tracers
+	print("MACHINES t=%.1f machine guns open fire" % t)
+	_mgs = true
+	await _wait(3.0)
+	_mgs = false
+	tank.rig.mg_round.disconnect(on_round)
+	var worst := 0.0
+	for d in dirs:
+		worst = maxf(worst, d.angle_to(tank.global_basis.z))
+	_check(absf(tank.rig.turret_yaw()) > deg_to_rad(60.0) and tank.aim_point.distance_to(_look) < 6.0,
+			"mg: the turret is on the target off to the side (%.0f° round)" % rad_to_deg(absf(tank.rig.turret_yaw())))
+	_check(dirs.size() > 30 and worst < deg_to_rad(4.0), "mg: yet every round leaves along the hull (%d rounds, %.1f° off the front at the most)" % [dirs.size(), rad_to_deg(worst)])
+	_check(absf(tank.rig.mg_aim(0).x) < 0.06 and absf(tank.rig.mg_aim(1).x) < 0.06 and tank.rig.mg_aim(0).x * tank.rig.mg_aim(1).x < 0.0,
+			"mg: the sponson guns stay square to the front, toed in to cross (%.1f° and %.1f°)" % [rad_to_deg(tank.rig.mg_aim(0).x), rad_to_deg(tank.rig.mg_aim(1).x)])
+	_check(ahead.hp < ahead_hp0 - 40.0 and side.hp >= side_hp0 - 0.1, "mg: what is ahead of the hull is shot (%.0f damage), what the crosshair is on is not" % (ahead_hp0 - ahead.hp))
+	_check(tank.stats.tracers - tracers0 >= dirs.size() / 2 - 1, "mg: every other round is a tracer (%d tracers for %d rounds)" % [tank.stats.tracers - tracers0, dirs.size()])
+	_check(tank.mg_point().distance_to(tank.global_position + tank.global_basis.z * DefenderTank.MG_MARK + Vector3.UP * HoverTankRig.MG_ZERO_HEIGHT) < 6.0, "mg: the screen mark is out along the hull where their lines cross (%.0f m)" % DefenderTank.MG_MARK)
+	# And again with the crosshair only 25° off the hull: the tracers go straight ahead, the crosshair is elsewhere.
+	var fwd := Vector3(sin(tank.heading), 0.0, cos(tank.heading))
+	var off := fwd.rotated(Vector3.UP, deg_to_rad(-25.0))
+	_look = tank.global_position + off * 70.0 + Vector3.UP * 1.0
+	await _until(func(): return tank.aim_point.distance_to(_look) < 6.0, 6.0)
+	print("MACHINES t=%.1f machine guns again, the crosshair 25 degrees off the hull" % t)
+	_mgs = true
+	await _wait(2.0)
+	_mgs = false
+	_look = null
+	_retire([ahead, side])
+
+
+## The shell drops: aimed straight at a ground target 420 m off it lands far short; the crosshair held above it, it lands on it.
+func _tank_ballistics() -> void:
+	const RANGE := 420.0
+	tank.stage(Vector3(-200.0, 0.0, 150.0), PI * 0.5)  # east along the clearing
+	await _wait(1.0)
+	_say("Cannon: the shell arcs, aim above far targets", 6.0)
+	var muzzle_h: float = tank.rig.marker("muzzle").origin.y
+	var from := tank.rig.marker("muzzle").origin
+	# A: the crosshair on the ground at the target.
+	_look = Vector3(tank.global_position.x + RANGE, 0.0, tank.global_position.z)
+	await _until(func(): return tank.aim_point.distance_to(_look) < 6.0 and tank.rig.aimed(), 10.0)
+	var n0: int = tank.bursts.size()
+	print("MACHINES t=%.1f cannon shot A fires, the crosshair on the ground at the target" % t)
+	_fire = true
+	await _until(func(): return tank.stats.rounds >= 1 and tank.bursts.size() > n0, 6.0)
+	_fire = false
+	var short_by := RANGE - _flat(tank.bursts.back(), from) if tank.bursts.size() > n0 else 0.0
+	_check(short_by > 100.0, "cannon: aimed straight at the ground %.0f m off it falls %.0f m short (it dropped under the barrel's line)" % [RANGE, short_by])
+	# B: the crosshair raised: a point off in the air along the elevation that lands it.
+	var alpha := _elevation_for(RANGE, muzzle_h)
+	_look = from + Vector3(1.0, 0.0, 0.0) * 700.0 + Vector3.UP * 700.0 * tan(alpha)
+	await _until(func(): return tank.cannon_cd <= 0.0 and tank.rig.aimed() and tank.aim_point.distance_to(_look) < 6.0, 14.0)
+	var n1: int = tank.bursts.size()
+	print("MACHINES t=%.1f cannon shot B fires, the crosshair raised" % t)
+	_fire = true
+	await _until(func(): return tank.bursts.size() > n1, 6.0)
+	_fire = false
+	var landed := _flat(tank.bursts.back(), from) if tank.bursts.size() > n1 else 0.0
+	print("MACHINES t=%.1f cannon aimed %.2f° above level lands %.0f m out" % [t, rad_to_deg(alpha), landed])
+	_check(absf(landed - RANGE) < 60.0, "cannon: the barrel raised %.2f° above level (the crosshair well over the target) it lands %.0f m out (%.0f wanted)" % [rad_to_deg(alpha), landed, RANGE])
+	_check(TankRound.drop_at(RANGE) > 5.0 and TankRound.drop_at(100.0) < 0.5, "cannon: the arc is gentle near (%.1f m drop at 100 m) and plain far off (%.1f m at %.0f m)" % [TankRound.drop_at(100.0), TankRound.drop_at(RANGE), RANGE])
+	_look = null
+
+
+## The jump: charge, thrust, arc, retro burn, soft landing, cooldown; stopped by a wall.
+func _tank_jump() -> void:
+	tank.stage(Vector3(-150.0, 0.0, 140.0), PI * 0.5)  # east
+	await _wait(1.0)
+	_say("Jump (Space): thrusters throw the tank up and along where it faces", 6.0)
+	var start := tank.global_position
+	var apex := 0.0
+	var charge_crouch := 0.0
+	var charge_boost := 0.0
+	var launch_boost := 0.0
+	var land_vy := 0.0
+	var touch_boost := 0.0
+	var touch_crouch := 0.0
+	var air_t := 0.0
+	var landed_at := Vector3.ZERO
+	var last := DefenderTank.Jump.NONE
+	var heading0 := tank.heading
+	_jump = true
+	var t_end := t + 9.0
+	while t < t_end:
+		await get_tree().physics_frame
+		var st: int = tank.jump_state
+		match st:
+			DefenderTank.Jump.CHARGE:
+				charge_crouch = maxf(charge_crouch, tank.rig.crouch)
+				charge_boost = maxf(charge_boost, tank.rig.thrust_boost)
+			DefenderTank.Jump.AIR:
+				if last != DefenderTank.Jump.AIR:
+					launch_boost = tank.rig.thrust_boost
+					print("MACHINES t=%.1f the tank is thrown up" % t)
+					# For the stills: from the side while it is in the air.
+					_spectate(start + Vector3(28.0, 9.0, -44.0), start + Vector3(28.0, 6.0, 0.0))
+					cam.fov = 66.0
+				apex = maxf(apex, tank.global_position.y - start.y)
+				air_t += get_physics_process_delta_time()
+				land_vy = tank.air_velocity.y
+				if apex > 8.0 and tank.air_velocity.y < 0.0 and tank.global_position.y - start.y > apex - 0.6:
+					print("MACHINES t=%.1f the tank at the top of its arc" % t)
+			DefenderTank.Jump.LAND:
+				if last == DefenderTank.Jump.AIR:
+					touch_boost = tank.rig.thrust_boost
+					touch_crouch = tank.rig.crouch
+					landed_at = tank.global_position
+					print("MACHINES t=%.1f the tank touches down" % t)
+					_spectate_off()
+		if st == DefenderTank.Jump.NONE and last == DefenderTank.Jump.LAND:
+			break
+		last = st
+	var dist := _flat(landed_at, start)
+	var along := (landed_at - start).dot(Vector3(sin(heading0), 0.0, cos(heading0)))
+	_check(charge_crouch > 0.9 and charge_boost > 0.6, "jump: it charges first: the hull squats (%.0f%%), the jets flare (%.0f%%)" % [charge_crouch * 100.0, charge_boost * 100.0])
+	_check(launch_boost > 0.95, "jump: and the burst throws it up (jets at %.0f%%)" % [launch_boost * 100.0])
+	_check(apex > 9.0 and apex < 16.0, "jump: %.1f m up at the top of the arc" % apex)
+	_check(dist > 42.0 and dist < 66.0 and along > dist * 0.97, "jump: %.0f m along the way the hull faced (%.0f m of it dead ahead)" % [dist, along])
+	_check(air_t > 2.3 and air_t < 3.6, "jump: %.1f s in the air" % air_t)
+	_check(land_vy > -5.0, "jump: the retro burn takes the fall down to %.1f m/s at touchdown (it would be %.0f m/s without)" % [-land_vy, sqrt(2.0 * DefenderTank.JUMP_GRAVITY * apex)])
+	_check(touch_boost > 0.85 and touch_crouch > 0.9, "jump: the jets fire as it lands (%.0f%%) and the hull squats to take the shock (%.0f%%)" % [touch_boost * 100.0, touch_crouch * 100.0])
+	_check(tank.rig.thrust_boost < 0.1 and tank.rig.crouch < 0.1 and absf(angle_difference(heading0, tank.heading)) < 0.01, "jump: then it settles (jets out, hull up, still facing the same way)")
+	_check(not tank.try_jump() and tank.jump_cd > 5.0, "jump: a second one has to wait (%.1f s of its %.0f s cooldown left)" % [tank.jump_cd, DefenderTank.JUMP_COOLDOWN])
+	await _wait(tank.jump_cd + 0.3)
+	_check(tank.jump_cd <= 0.0 and tank.try_jump(), "jump: and can go again after the cooldown")
+	await _until(func(): return tank.jump_state == DefenderTank.Jump.NONE and tank.jump_cd > 0.0 and tank.jump_cd < DefenderTank.JUMP_COOLDOWN - 4.0, 12.0)
+	# Into the stronghold's wall: stopped short of it.
+	await _wait(tank.jump_cd + 0.3)
+	tank.stage(Vector3(0.0, 0.0, 120.0), PI)  # north, at the south face
+	await _wait(0.8)
+	_jump = true
+	await _until(func(): return tank.jump_state == DefenderTank.Jump.NONE and tank.stats.jumps >= 3, 10.0)
+	await _wait(0.6)
+	_check(tank.global_position.z > 76.0 and tank.is_alive(), "jump: flown at the stronghold's wall it stops against it (z %.0f, 55 m would have been z 65)" % tank.global_position.z)
+
+
+## Trees: run into one and stop, hurt, the tree going over; blocked until it is down; then on. And crossing woodland.
+func _tank_trees() -> void:
+	# The tree: a standing one in the forest west of the clearing, the corridor to it cleared of the others.
+	var tree: ForestTree = null
+	var best := INF
+	for c in ForestTree.standing:
+		var p := c.global_position
+		var r := Vector2(p.x, p.z).length()
+		if r > 310.0 and r < 380.0 and p.x < -260.0 and absf(p.z - 60.0) < best:
+			best = absf(p.z - 60.0)
+			tree = c
+	if tree == null:
+		_check(false, "trees: found a tree to run into")
+		return
+	var out := Vector3(tree.global_position.x, 0.0, tree.global_position.z).normalized()
+	var start := Vector3(tree.global_position.x, 0.0, tree.global_position.z) - out * 40.0
+	var h := atan2(out.x, out.z)
+	for c in ForestTree.near(start + out * 60.0, 70.0):
+		if c == tree:
+			continue
+		var rel := Vector3(c.global_position.x - start.x, 0.0, c.global_position.z - start.z)
+		var along := rel.dot(out)
+		if along > -5.0 and along < 120.0 and (rel - out * along).length() < 9.0:
+			c.flatten()
+	tank.hp = tank.max_hp
+	tank.stage(start, h)
+	await _wait(1.0)
+	_say("Trees stop the tank: it crashes, the tree goes over, then the way is clear", 7.0)
+	var hp0 := tank.hp
+	var trees_before: int = tank.stats.trees
+	_move = Vector2(0.0, -1.0)
+	await _until(func(): return tank.stats.trees > trees_before, 8.0)
+	var t_hit := t
+	print("MACHINES t=%.1f the tank hits a tree" % t)
+	# For the stills: from the side, watching the tree go over.
+	var tp := tree.global_position
+	var cam_pos := tp + out.cross(Vector3.UP) * 24.0 + Vector3.UP * 5.0 - out * 10.0
+	# (Other trees cleared from round the camera and the line of sight to the tree, or it would be inside their leaves.)
+	for c in ForestTree.near(cam_pos, 40.0):
+		if c == tree:
+			continue
+		var on_line := Geometry3D.get_closest_point_to_segment(Vector3(c.global_position.x, cam_pos.y, c.global_position.z), cam_pos, tp + Vector3.UP * 5.0)
+		if Vector2(c.global_position.x - cam_pos.x, c.global_position.z - cam_pos.z).length() < 16.0 \
+				or Vector2(c.global_position.x - on_line.x, c.global_position.z - on_line.z).length() < 6.0:
+			c.flatten()
+	_spectate(cam_pos, tp + Vector3.UP * 6.0)
+	cam.fov = 58.0
+	await _wait(0.35)
+	var dir_to := Vector3(out.x, 0.0, out.z)
+	_check(tank.stats.trees == trees_before + 1 and absf(tank.speed) < 4.0, "trees: it hits the tree and stops dead (speed %.1f m/s, was 15)" % tank.speed)
+	_check(hp0 - tank.hp >= DefenderTank.TREE_DAMAGE_MIN - 1.0, "trees: a small crash: it loses %.0f health" % (hp0 - tank.hp))
+	_check(tree.is_toppling() and tree.is_in_group("trees"), "trees: the tree is going over, and its trunk is still there")
+	# Pushing on, it is held: it doesn't get through while the tree is going over.
+	var blocked := true
+	var t_fall := -1.0
+	while t < t_hit + 6.0:
+		await get_tree().physics_frame
+		var rel := Vector3(tank.global_position.x - tree.global_position.x, 0.0, tank.global_position.z - tree.global_position.z)
+		if tree.is_standing() and rel.dot(dir_to) > 0.0:
+			blocked = false
+		if t_fall < 0.0 and not tree.is_standing():
+			t_fall = t
+			print("MACHINES t=%.1f the tree is down" % t)
+			break
+	_check(blocked, "trees: held up against it the whole time it takes to go over")
+	_check(t_fall > 0.0 and absf((t_fall - t_hit) - DefenderTank.TREE_TOPPLE) < 0.8, "trees: it is down %.1f s after the crash" % (t_fall - t_hit))
+	_check(not tree.is_in_group("trees") and not tree.is_standing(), "trees: and its trunk is gone from the world")
+	await _wait(3.5)
+	var past := Vector3(tank.global_position.x - tree.global_position.x, 0.0, tank.global_position.z - tree.global_position.z).dot(dir_to)
+	_check(past > 2.0, "trees: now it goes on over where the tree stood (%.0f m past it)" % past)
+	_spectate_off()
+	_move = Vector2.ZERO
+	# Woodland: 200 m straight on into the forest, against what open ground gives.
+	var line := _median_forest_line()
+	var wstart: Vector3 = line[1]
+	var wdir: Vector3 = line[2]
+	tank.hp = tank.max_hp
+	tank.stage(wstart, atan2(wdir.x, wdir.z))
+	var trees0: int = tank.stats.trees
+	await _wait(1.0)
+	_say("Woodland: doable, not viable", 6.0)
+	var t0 := t
+	_move = Vector2(0.0, -1.0)
+	# For the stills: a camera riding beside the tank, a little way off, from a few seconds in.
+	get_tree().create_timer(7.0).timeout.connect(func():
+		_spec_node = tank
+		_spectate(Vector3.ZERO, Vector3.ZERO, Vector3(15.0, 6.0, -12.0), Vector3(0.0, 1.5, 5.0))
+		print("MACHINES t=%.1f woodland, a camera riding beside the tank" % t))
+	await _until(func(): return _flat(tank.global_position, wstart) >= 200.0 or not tank.is_alive(), 120.0)
+	_spectate_off()
+	var took := t - t0
+	var felled: int = tank.stats.trees - trees0
+	var lost: float = tank.max_hp - tank.hp
+	_move = Vector2.ZERO
+	var open := 200.0 / DefenderTank.MAX_SPEED + 1.5
+	print("MACHINES t=%.1f woodland: 200 m in %.0f s (%.0f s on open ground), %d trees, %.0f health lost" % [t, took, open, felled, lost])
+	_check(felled >= 3 and tank.is_alive() and _flat(tank.global_position, wstart) >= 199.0, "trees: it can be done: %d trees felled on the way through 200 m of forest, and the tank is still alive" % felled)
+	_check(took > open * 2.2, "trees: but not worth it: it took %.0f s where open ground takes %.0f" % [took, open])
+	_check(lost > 120.0, "trees: and it costs health: %.0f of %.0f gone" % [lost, tank.max_hp])
+
+
+## The way into the forest the tank is driven along: from the clearing's edge, 200 m, the line (of twelve across the south-west)
+## with the median number of trees close enough to be hit (3.6 m either side): the forest as dense as it generally is, not a lucky
+## stretch or an unlucky one. [trees, start, direction].
+func _median_forest_line() -> Array:
+	var lines := []
+	for k in 12:
+		var phi := deg_to_rad(40.0 + 3.0 * k)
+		var d := Vector3(-cos(phi), 0.0, sin(phi))
+		var start := d * 290.0
+		var n := 0
+		for c in ForestTree.standing:
+			var rel := Vector3(c.global_position.x - start.x, 0.0, c.global_position.z - start.z)
+			var along := rel.dot(d)
+			if along > 0.0 and along < 200.0 and (rel - d * along).length() < 3.6:
+				n += 1
+		lines.append([n, start, d])
+	lines.sort_custom(func(x, y): return x[0] < y[0])
+	print("MACHINES forest lines: trees in the way over 200 m: %s" % [lines.map(func(l): return l[0])])
+	return lines[lines.size() / 2]
 
 
 func _tank_idle() -> void:
@@ -594,6 +912,8 @@ func pilot_input(m: DefenderMachine, delta: float) -> void:
 		k.input.move = _move
 		k.input.fire = _fire
 		k.input.aim = _mgs
+		k.input.jump = _jump
+		_jump = false
 		if _look != null:
 			k.look_toward(_look, 1.6, delta)
 
