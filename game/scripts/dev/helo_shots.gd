@@ -54,6 +54,7 @@ func _frames(n: int) -> void:
 
 
 func _snap(file: String) -> void:
+	print("HELO SHOTS taking %s" % file)
 	await RenderingServer.frame_post_draw
 	var path := "%s/%s.png" % [out_dir, file]
 	get_viewport().get_texture().get_image().save_png(path)
@@ -91,6 +92,7 @@ func _shots() -> void:
 	_look(a.global_position + Vector3(-60, 22, -45), a.global_position + Vector3(0, 8, 0))
 	await _frames(10)
 	await _snap("02_base_close")
+	print("HELO SHOTS staging the Outpost")
 	# 2. On the Outpost's pad, its units put down beside the camp.
 	var outpost: AttackerBase = level.bases[1]
 	a.global_position = outpost.landing_point()
