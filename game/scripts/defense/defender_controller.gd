@@ -7,7 +7,8 @@ extends CanvasLayer
 ##
 ## The roster of bought squads (DefenderArmory) sits in a hotbar at the bottom (SquadHotbar):
 ## F1-F6 takes command of a squad, Ctrl+F1-F6 changes its auto order without leaving the post
-## the player is on, B buys another AA Squad, N a Flame Squad, M an Infiltrator Squad and K a Sniper.
+## the player is on, B buys another AA Squad, N a Flame Squad, M an Infiltrator Squad, K a Sniper, J the Fighter
+## Jet (DefenderJet) and H the Hover Tank (DefenderTank): machines (DefenderMachine) ride on the same roster.
 ##
 ## A kangaroo's flash grenade going off where the post the player is on sees it (FlashGrenade) turns
 ## the screen full white for as long as it blinds, then it clears.
@@ -24,6 +25,8 @@ const BUY_INFILTRATOR_KEY := KEY_M
 const BUY_SNIPER_KEY := KEY_K
 ## C calls a drone swarm to the post the player is on (DroneBay.call_swarm).
 const CALL_DRONES_KEY := KEY_C
+const BUY_JET_KEY := KEY_J
+const BUY_TANK_KEY := KEY_H
 
 var level: LevelBuilder
 ## The defenders' credits and bought squads; null: no roster.
@@ -101,6 +104,12 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.physical_keycode == BUY_SNIPER_KEY:
 			buy_squad("sniper")
 			return
+		if event.physical_keycode == BUY_JET_KEY:
+			buy_squad("jet")
+			return
+		if event.physical_keycode == BUY_TANK_KEY:
+			buy_squad("tank")
+			return
 	for i in mini(stations.size(), 10):
 		if event.is_action_pressed("slot_%d" % (i + 1)):
 			select_station(i)
@@ -132,14 +141,14 @@ func select_squad(k: int, instant := false) -> void:
 func cycle_squad_order(k: int) -> void:
 	if armory == null or k < 0 or k >= armory.squads.size():
 		return
-	var s: DefenderSquad = armory.squads[k]
+	var s = armory.squads[k]
 	s.cycle_order()
 	_flash_prompt("%s: %s" % [s.station_name, s.order_name()])
 
 
 ## B: buys an AA Squad (N: a Flame Squad, `kind` "flame"; M: an Infiltrator Squad, "infiltrator"; K: a
-## Sniper, "sniper") if there are the credits and room on the roster.
-func buy_squad(kind := "aa") -> DefenderSquad:
+## Sniper, "sniper"; J: the Fighter Jet, "jet"; H: the Hover Tank, "tank") if there are the credits and room on the roster.
+func buy_squad(kind := "aa"):
 	if armory == null:
 		return null
 	if armory.squads.size() >= DefenderArmory.MAX_SQUADS:
@@ -148,12 +157,12 @@ func buy_squad(kind := "aa") -> DefenderSquad:
 	if not armory.can_buy(kind):
 		_flash_prompt("Not enough credits (%d of %d)" % [int(armory.credits), DefenderArmory.COSTS[kind]])
 		return null
-	var s := armory.buy(kind)
+	var s = armory.buy(kind)
 	_flash_prompt("%s deployed · F%d to take command" % [s.station_name, armory.squads.find(s) + 1])
 	return s
 
 
-func _on_squad_bought(s: DefenderSquad) -> void:
+func _on_squad_bought(s) -> void:
 	s.became_unavailable.connect(_on_station_unavailable)
 
 
@@ -238,7 +247,8 @@ func _on_station_unavailable(s) -> void:
 	_overview_cam.current = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_crosshair.visible = false
-	_prompt.text = "%s is down!  Pick another post (1-%d) or press Tab" % [s.station_name, mini(stations.size(), 10)]
+	var what: String = s.down_message() if s.has_method("down_message") else "%s is down!" % s.station_name
+	_prompt.text = "%s.  Pick another post (1-%d) or press Tab" % [what, mini(stations.size(), 10)]
 	_prompt.visible = true
 
 
@@ -427,5 +437,5 @@ func _process(delta: float) -> void:
 	else:
 		_weapon_label.text = "No post"
 		_status_label.text = "—"
-		_hint_label.text = "Number keys or Tab to take over a post" + (" · F1-F6 a squad · B buy an AA Squad · N a Flame Squad · M Infiltrators · K a Sniper" if armory else "")
+		_hint_label.text = "Number keys or Tab to take over a post" + (" · F1-F6 a squad · B buy an AA Squad · N a Flame Squad · M Infiltrators · K a Sniper · J a Jet · H a Tank" if armory else "")
 		_heat_bar.visible = false

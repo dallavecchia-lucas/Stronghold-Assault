@@ -8,6 +8,10 @@ extends StaticBody3D
 ## charred trunk smouldering; about FALL_TIME after the tree caught fire the trunk falls to the
 ## ground. A burnt tree never grows back: once it lies on the ground it no longer blocks anyone and
 ## the navmesh is rebaked without it (LevelBuilder.clear_obstacle).
+##
+## A vehicle that runs into it (the Hover Tank) knocks it over (knock_down()): the whole tree topples away from it over
+## TOPPLE_TIME, and its trunk goes on blocking until it is down; then it lies where it fell, the way is clear and the
+## navmesh is rebaked without it, just like a burnt one.
 
 signal ignited(tree: ForestTree)
 signal fell(tree: ForestTree)
@@ -72,6 +76,8 @@ var _mats: Array = []
 var _since_flame := INF
 var _scorched_frame := -1
 var _scorch_at := Vector3.ZERO
+## Going over, knocked down by a vehicle (knock_down()).
+var _toppling := false
 var _fall_at := FALL_TIME
 var _fall_axis := Vector3.RIGHT
 var _fallen := false
@@ -181,6 +187,59 @@ func _materialize() -> void:
 	_proxies.clear()
 
 
+## Knocked over by a vehicle that ran into it: it goes over away from `away` (a direction, flat: the way the vehicle was
+## going), taking `topple_time` s (TOPPLE_TIME), its trunk still blocking the way until it is down. False if it can't be knocked (it is going over
+## already, burning or burnt, or a snake is up it or round it).
+func knock_down(away: Vector3, topple_time := TOPPLE_TIME) -> bool:
+	if state != State.STANDING or _toppling or nest_by != null or claimed_by != null:
+		return false
+	var dir := Vector3(away.x, 0.0, away.z)
+	if dir.length() < 0.01:
+		dir = Vector3.RIGHT
+	_toppling = true
+	_materialize()
+	# The whole model goes over about the foot of the trunk.
+	var pivot := Node3D.new()
+	add_child(pivot)
+	pivot.position = trunk_offset
+	if _model:
+		var at := _model.position
+		remove_child(_model)
+		pivot.add_child(_model)
+		_model.position = at - trunk_offset
+	var axis := Vector3.UP.cross(dir.normalized()).normalized()
+	var tw := create_tween()
+	tw.tween_property(pivot, "quaternion", Quaternion(axis, TOPPLE_ANGLE), topple_time).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.tween_callback(_knocked_down)
+	return true
+
+
+## Going over, knocked down by a vehicle: not down yet, so its trunk still blocks.
+func is_toppling() -> bool:
+	return _toppling and state == State.STANDING
+
+
+## Down: the trunk is gone from the world, the way is clear and the navmesh rebaked without it.
+func _knocked_down() -> void:
+	if state != State.STANDING:
+		return
+	state = State.FALLEN
+	_shape.disabled = true
+	collision_layer = 0
+	remove_from_group("trees")
+	standing.erase(self)
+	_grid_remove()
+	var fx := FX.of(self)
+	for k in 10:
+		var p := global_position + Vector3(randf_range(-1.0, 1.0), 0.3, randf_range(-1.0, 1.0)) * height * 0.25
+		fx.smoke(p, Vector3(randf_range(-2.5, 2.5), randf_range(0.8, 2.2), randf_range(-2.5, 2.5)), randf_range(1.2, 2.2), 0.6,
+				randf_range(2.2, 3.8), Color(0.45, 0.4, 0.3, 0.5), 0.3, 1.4, 0.0, 0.6)
+	fell.emit(self)
+	var level := _level()
+	if level and level.nav_region.is_ancestor_of(self):
+		level.clear_obstacle(global_position)
+
+
 ## Crushed flat by something that came down on it (a bridge): gone at once, its instances in the batches hidden.
 ## A tree a snake is up, or one burning, is left alone (false).
 func flatten() -> bool:
@@ -236,7 +295,7 @@ func aim_point() -> Vector3:
 ## flames are on it: it takes IGNITE_TIME of flame all the same). True when that set the canopy on
 ## fire.
 func scorch(delta: float, at: Vector3) -> bool:
-	if state != State.STANDING:
+	if state != State.STANDING or _toppling:
 		return false
 	var frame := Engine.get_physics_frames()
 	if frame == _scorched_frame:
