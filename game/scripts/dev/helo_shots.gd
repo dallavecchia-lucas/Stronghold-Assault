@@ -87,7 +87,7 @@ func _shots() -> void:
 	var main: Vector3 = level.spawn_points[0]
 	# 1. Both standing by the citadel, rotors still.
 	_look(main + Vector3(0, 70, -170), main + Vector3(0, 0, 10))
-	await _frames(20)
+	await _frames(4)
 	await _snap("01_base_both")
 	_look(a.global_position + Vector3(-60, 22, -45), a.global_position + Vector3(0, 8, 0))
 	await _frames(10)
@@ -105,7 +105,7 @@ func _shots() -> void:
 	var pad := outpost.landing_point()
 	var out := outpost.lane_dir()
 	_look(pad + out * 230.0 + Vector3(0, 110, 120), pad + out * 60.0)
-	await _frames(30)
+	await _frames(4)
 	await _snap("03_outpost_pad")
 	_look(outpost.spawn_point + out * 45.0 + Vector3(25, 14, 40), pad + Vector3(0, -6, 0))
 	await _frames(10)
@@ -116,7 +116,7 @@ func _shots() -> void:
 	b.rotation.y = quarry.landing_yaw()
 	_spin(b)
 	_look(quarry.landing_point() + Vector3(90, 55, 80), quarry.landing_point())
-	await _frames(30)
+	await _frames(4)
 	await _snap("05_quarry_pad")
 	# 4. Cruising over the jungle, then flying at each step of its hurt.
 	b.global_position = Vector3(-200, 90, 420)
@@ -124,13 +124,13 @@ func _shots() -> void:
 	_fly_dir = Vector3(1, 0, 0)
 	_flyer = b
 	_spin(b)
-	await _frames(45)
+	await _frames(12)
 	await _snap("06_cruising")
 	for step in [[1.0, "07_flying_100pct"], [0.6, "08_flying_60pct_grey_smoke"], [0.4, "09_flying_40pct_black_smoke"],
 			[0.1, "10_flying_10pct_fire"]]:
 		b.hp = TransportHelo.MAX_HP * float(step[0])
 		b.global_position = Vector3(-200, 90, 420)
-		await _frames(90)
+		await _frames(24)
 		await _snap(step[1])
 	_flyer = null
 	# 5. The same steps parked at the base (it smokes while it mends).
@@ -139,5 +139,5 @@ func _shots() -> void:
 	a.rig.stop()
 	a.hp = TransportHelo.MAX_HP * 0.08
 	_look(a.global_position + Vector3(-70, 30, -60), a.global_position + Vector3(0, 10, 0))
-	await _frames(90)
+	await _frames(24)
 	await _snap("11_base_10pct_fire")
