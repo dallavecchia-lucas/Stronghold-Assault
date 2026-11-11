@@ -4,7 +4,7 @@ extends Node
 ## (DroneSwarm, DefenderDrone). It takes the calls for the swarms and keeps the books.
 ##
 ## SIX SWARMS, no more, no fewer: they are the bay's slots from the first second and are never added or lost. A
-## drone that is shot down is rebuilt in the hangar (DroneSwarm: one at a time per swarm, every swarm at once), and
+## drone that is shot down is rebuilt in the hangar (DroneSwarm: every missing drone at once, each on its own timer), and
 ## rebuilding takes DefenderDrone.REBUILD_TIME, as long as filling an empty tank: always longer than refuelling a drone
 ## that came home. So refilling beats rebuilding, a lost drone is lost for most of a match, and a swarm that was shot
 ## to pieces is a damaged swarm, the last to be called, not a dead one and not a slot held for ever. All six start
@@ -121,8 +121,8 @@ func _add_swarm(full: bool) -> DroneSwarm:
 
 ## The hangar builds a drone for `sw` (the lowest free place in the ring) on the free dock nearest it, full of fuel
 ## and mended. False if there is no free place or no free dock (it tries again next frame).
-func make_drone(sw: DroneSwarm) -> bool:
-	var index := sw.free_index()
+func make_drone(sw: DroneSwarm, place := -1) -> bool:
+	var index := place if place >= 0 else sw.free_index()
 	if index < 0 or _docks.is_empty():
 		return false
 	var d := DefenderDrone.new()

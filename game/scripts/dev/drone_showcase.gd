@@ -260,7 +260,7 @@ func _test_flight_and_fuel() -> void:
 			"(refuel %.0f s, rebuild %.0f s)" % [guard, DefenderDrone.REBUILD_TIME])
 	_check("... even a drone that landed with next to nothing (25%) is refilled faster than a rebuild",
 			(1.0 - 0.25) * DefenderDrone.REFUEL_TIME < DefenderDrone.REBUILD_TIME)
-	_check("... and a rebuild is never faster than filling an empty tank", DefenderDrone.REBUILD_TIME >= DefenderDrone.REFUEL_TIME)
+	_check("... and a rebuild is slower than refuelling the lowest landing (25%) to full", DefenderDrone.REBUILD_TIME > 0.75 * DefenderDrone.REFUEL_TIME)
 	var tank := DefenderDrone.new()
 	tank.bay = bay
 	tank.manual = true
@@ -309,22 +309,20 @@ func _test_rebuild() -> void:
 	_run(rb - 1.0, Callable(), 1.0)
 	_check("nothing is rebuilt before REBUILD_TIME", first.alive_count() == 2 and other.alive_count() == 4)
 	_run(2.0, Callable(), 1.0)
-	_check("REBUILD_TIME on, each swarm has one drone back (every swarm builds at once)", first.alive_count() == 3 and other.alive_count() == 5,
+	_check("REBUILD_TIME on, every missing drone is back at once (concurrent rebuilds)", first.alive_count() == DroneSwarm.SIZE and other.alive_count() == DroneSwarm.SIZE,
 			"(%d and %d)" % [first.alive_count(), other.alive_count()])
 	var newest: DefenderDrone = first.drones[first.drones.size() - 1]
 	_check("a rebuilt drone stands on a dock, hidden, full of fuel and mended",
 			newest.state == DefenderDrone.State.DOCKED and not newest.visible and is_equal_approx(newest.fuel, 1.0) and is_equal_approx(newest.hp, newest.max_hp))
-	_run(2.0 * rb + 10.0, Callable(), 1.0)
-	_check("one at a time: the swarm is whole again after 3 rebuilds", first.alive_count() == DroneSwarm.SIZE, "(%d)" % first.alive_count())
 	for k in DroneSwarm.SIZE:
 		_kill(first.drones[0])
 	_check("a swarm shot to pieces is not removed: still six, none in it", first.alive_count() == 0 and bay.swarms.size() == DroneBay.MAX_SWARMS)
 	_check("... and it can't be called meanwhile", first.call_quality(Vector3(60.0, 0.0, 0.0)) == 0)
-	_run(rb + 2.0, Callable(), 1.0)
-	_check("a rebuild later it has its first drone back, one at a time, not five", first.alive_count() == 1, "(%d)" % first.alive_count())
-	_run(4.0 * rb + 10.0, Callable(), 1.0)
-	_check("five rebuilds from empty it is whole", first.alive_count() == DroneSwarm.SIZE, "(%d)" % first.alive_count())
-	_check("the rebuild is slower than a refuel of an empty tank would be", rb >= DefenderDrone.REFUEL_TIME)
+	_run(rb - 5.0, Callable(), 1.0)
+	_check("not before REBUILD_TIME", first.alive_count() == 0)
+	_run(15.0, Callable(), 1.0)
+	_check("a whole swarm is back after ONE rebuild time, not five", first.alive_count() == DroneSwarm.SIZE, "(%d)" % first.alive_count())
+	_check("a rebuild is slower than refuelling the lowest landing there is (25%, to full)", rb > 0.75 * DefenderDrone.REFUEL_TIME)
 
 
 func _test_freshest() -> void:

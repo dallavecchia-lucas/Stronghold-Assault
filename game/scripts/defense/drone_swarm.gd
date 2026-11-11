@@ -82,7 +82,7 @@ var manual := false
 var picks := 0
 
 var _clock := 0.0
-var _rebuild := 0.0
+var _timers: Array = [0.0, 0.0, 0.0, 0.0, 0.0]
 var _think_cd := 0.0
 var _angle := 0.0
 var _angle_cd := 0.0
@@ -131,23 +131,35 @@ func step(delta: float) -> void:
 
 # ---------------------------------------------------------------- the hangar
 
-## The hangar rebuilds the swarm's missing drones, one at a time, every swarm at once: DefenderDrone.REBUILD_TIME
-## (as long as a refuel from empty, so longer than refuelling any drone that comes home) after the first went
-## missing, or after the last was finished, a new one stands full and mended on a dock. The swarm may be out on a
-## target, on its docks or empty: it makes no difference. Until then it is a damaged swarm, and a call takes a
-## fresher one first (freshness()).
+## The hangar rebuilds every missing drone at once: each empty place in the ring has a timer of its own, started
+## when its drone was lost, and DefenderDrone.REBUILD_TIME later a new one stands full and mended on a dock. So a
+## swarm that was shot to pieces is whole again after one REBUILD_TIME, not five, but every single rebuild is still
+## slower than refuelling a drone that comes home (refuels run side by side too, each drone on its own dock).
 func _rebuild_tick(delta: float) -> void:
-	if bay == null or drones.size() >= SIZE:
-		_rebuild = 0.0
-		return
-	_rebuild = minf(_rebuild + delta, DefenderDrone.REBUILD_TIME)
-	if _rebuild >= DefenderDrone.REBUILD_TIME and bay.make_drone(self):
-		_rebuild = 0.0
+	for i in SIZE:
+		if bay == null or _place_taken(i):
+			_timers[i] = 0.0
+			continue
+		_timers[i] = minf(_timers[i] + delta, DefenderDrone.REBUILD_TIME)
+		if _timers[i] >= DefenderDrone.REBUILD_TIME and bay.make_drone(self, i):
+			_timers[i] = 0.0
+
+
+func _place_taken(i: int) -> bool:
+	for d in drones:
+		if d.index == i:
+			return true
+	return false
 
 
 ## Seconds until the next drone is finished (0: nothing is missing).
 func rebuild_left() -> float:
-	return 0.0 if drones.size() >= SIZE else DefenderDrone.REBUILD_TIME - _rebuild
+	var left := 0.0
+	for i in SIZE:
+		if not _place_taken(i):
+			var t: float = DefenderDrone.REBUILD_TIME - _timers[i]
+			left = t if left == 0.0 else minf(left, t)
+	return left
 
 
 ## The lowest place in the ring no living drone has (-1: all five are filled).
