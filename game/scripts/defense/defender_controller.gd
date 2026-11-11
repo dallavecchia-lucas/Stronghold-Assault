@@ -23,12 +23,16 @@ const BUY_KEY := KEY_B
 const BUY_FLAME_KEY := KEY_N
 const BUY_INFILTRATOR_KEY := KEY_M
 const BUY_SNIPER_KEY := KEY_K
+## C calls a drone swarm to the post the player is on (DroneBay.call_swarm).
+const CALL_DRONES_KEY := KEY_C
 const BUY_JET_KEY := KEY_J
 const BUY_TANK_KEY := KEY_H
 
 var level: LevelBuilder
 ## The defenders' credits and bought squads; null: no roster.
 var armory: DefenderArmory
+## The defenders' drone swarms; null: none in this match.
+var drones: DroneBay
 var stations := []
 var current = null
 
@@ -40,6 +44,7 @@ var _rows := []
 var _weapon_label: Label
 var _status_label: Label
 var _hint_label: Label
+var _drone_label: Label
 var _hp_bar: ProgressBar
 var _heat_bar: ProgressBar
 var _prompt: Label
@@ -75,6 +80,9 @@ func _ready() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if get_tree().paused:
+		return
+	if drones and event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == CALL_DRONES_KEY:
+		call_drones()
 		return
 	if armory and event is InputEventKey and event.pressed and not event.echo:
 		var k := ROSTER_KEYS.find(event.physical_keycode)
@@ -156,6 +164,19 @@ func buy_squad(kind := "aa"):
 
 func _on_squad_bought(s) -> void:
 	s.became_unavailable.connect(_on_station_unavailable)
+
+
+## C: calls a drone swarm to where the player's post stands. Refused if no swarm can get there on the fuel it has
+## (too far out), if one is already on the spot or on its way, or every swarm is recharging or about to make a kill.
+func call_drones() -> Dictionary:
+	if drones == null or current == null:
+		return {"ok": false, "reason": "no post"}
+	var r := drones.call_swarm(current.get_station_position(), current)
+	if r.ok:
+		_flash_prompt("Drone swarm %d on its way" % (r.swarm as DroneSwarm).number)
+	else:
+		_flash_prompt("No drones: %s" % r.reason)
+	return r
 
 
 func _switch_to(s, instant := false) -> void:
@@ -337,6 +358,13 @@ func _build_hud() -> void:
 	_hint_label.position.y -= 14
 	root.add_child(_hint_label)
 
+	if drones:
+		_drone_label = UIKit.label("", 14, Color(0.6, 0.9, 1.0))
+		_drone_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+		_drone_label.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+		_drone_label.position += Vector2(-16, 90)
+		root.add_child(_drone_label)
+
 	_prompt = UIKit.label("", 26, UIKit.WARN)
 	_prompt.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
 	_prompt.grow_horizontal = Control.GROW_DIRECTION_BOTH
@@ -382,6 +410,8 @@ func _process(delta: float) -> void:
 	if _threat_cd <= 0.0:
 		_threat_cd = 0.25
 		_refresh_threat()
+		if _drone_label:
+			_drone_label.text = drones.status_text() + "  ·  C call a swarm here"
 	for i in stations.size():
 		var s = stations[i]
 		var row: Dictionary = _rows[i]

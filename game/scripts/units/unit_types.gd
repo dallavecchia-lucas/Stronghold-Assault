@@ -14,6 +14,11 @@ extends RefCounted
 ##               chips at it (aa_dps) until it dies or leaves. Active: cluster bombing (rhino)
 ##               or a missile salvo (elephant).
 ##   "siege"     no basic attack and no passive. Active: bombardment (bison, mule).
+## hunts_drones: the defenders' drones (DefenderDrone) can only be hurt by anti-air damage and by the bears, so
+##   these are the only units that can touch them: the anti_air units (anything with aa_dps) and the Bear Rifleman.
+##   While a drone is in sight within AttackerUnit.DRONE_NOTICE they are hyper-focused on it: they go after it
+##   and shoot it, ignoring their orders (an order given meanwhile is held and carried out once no drone is left
+##   for them), until none is in sight in reach any more. Nothing else can target, hit or splash a drone.
 ## flak: the anti-air passive comes from the model's two flak cannons (ElephantTurrets): they
 ##   swing up at the flyer and take turns firing shells that burst around it, each only once
 ##   it is on target.
@@ -163,6 +168,8 @@ const DATA := {
 		"range": 30.0, "damage": 8.0, "fire_interval": 0.55, "spread": 0.035,
 		"structure_mult": 0.5, "radius": 0.5, "height": 1.9,
 		"role": "infantry", "anim": "rigged", "hotkey": KEY_Z,
+		# One of the only units that can shoot the defenders' drones down (the others: the AA units).
+		"hunts_drones": true,
 		# Swims like a bear (a dog paddle, its head up, its gun slung on its back: tools/gltf/swim_bear.py) and
 		# can dive under the water for a while (F): out of the defenders' sight, though rounds that go in where
 		# it is still hit it.

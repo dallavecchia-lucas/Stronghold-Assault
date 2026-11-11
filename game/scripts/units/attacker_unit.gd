@@ -75,6 +75,11 @@ signal shelled(shell: Shell, spot: Vector3)
 
 const HEAL_COLOR := Color(0.35, 1.0, 0.45)
 const AA_COLOR := Color(1.0, 0.9, 0.4)
+## The defenders' drones (DefenderDrone). A unit that can hurt them (hunts_drones) is pulled in by one in sight
+## within DRONE_NOTICE (flat, m) and follows it as far as DRONE_LEASH, hyper-focused: see _update_drone_prey().
+const DRONE_NOTICE := 80.0
+const DRONE_LEASH := 110.0
+const DRONE_MARK := Color(1.0, 0.35, 0.3)
 ## How close to a broken gate an order has to land to send infiltrators in.
 const BREACH_REACH := 12.0
 ## Collision radius of infiltrators (the navmesh is baked for 0.5 m).
@@ -262,6 +267,11 @@ var _anim: AnimationPlayer  # set when the model is rigged and carries clips
 var _ring: MeshInstance3D
 var _aa_ring: MeshInstance3D
 var _aa_lock: Node3D = null
+## The drone it is locked onto (null: none); while there is one it takes no orders, they are held in _held_order.
+var drone_prey: Node3D = null
+var _held_order = null
+var _prey_los := false
+var _drone_mark: Label3D
 var _turrets: ElephantTurrets  # set when the model carries flak cannons (stats.flak)
 var _flight: TalonFlight  # flyers: how they glide, beat their wings and circle
 ## Where a flyer with nowhere to go circles: where it was last sent, or the fight it was in.
@@ -556,6 +566,16 @@ func is_controllable() -> bool:
 ## Medics, rhinos, elephants, bisons and talons never shoot at what they are ordered to attack.
 func has_basic_attack() -> bool:
 	return role != "healer" and role != "anti_air" and role != "siege" and stats.damage > 0.0
+
+
+## Can hurt the defenders' drones: the anti-air units and the bears (UnitTypes hunts_drones).
+func hunts_drones() -> bool:
+	return stats.get("hunts_drones", false) or stats.has("aa_dps")
+
+
+## Locked onto a drone: hyper-focused, it takes no orders until none is left for it.
+func is_drone_locked() -> bool:
+	return Combat.is_valid_target(drone_prey)
 
 
 func has_cluster_bomb() -> bool:
@@ -1062,6 +1082,13 @@ func _ready() -> void:
 func set_order(o: Dictionary) -> void:
 	if raiding:
 		return
+	if is_drone_locked():
+		if o.type != "idle":
+			# Hyper-focused on a drone: it takes no orders. The last one is held and carried out once it is free.
+			_held_order = o
+			return
+	else:
+		_held_order = null  # an order given now is newer than any held from before
 	if carrier != null:
 		# Riding: on dry land it gets off and goes; out on the water it carries on with it once it is off.
 		if carrier.in_water() or carrier.is_swimming():
@@ -1237,6 +1264,10 @@ func _die() -> void:
 	remove_from_group("damageable")
 	remove_from_group("attacker_units")
 	remove_from_group("air_units")
+	drone_prey = null
+	_held_order = null
+	if _drone_mark:
+		_drone_mark.visible = false
 	_cluster_left = 0.0
 	_bombard_left = 0.0
 	_flash_t = -1.0
@@ -1354,6 +1385,11 @@ func _update_target() -> void:
 	if raiding:
 		target = _raid_target()
 		return
+	# Locked onto a drone: it shoots that and nothing else, once it has it in range and in sight (the rest of the
+	# time it is on its way: _physics_process).
+	if is_drone_locked():
+		target = drone_prey if _prey_los and _in_range(drone_prey) else null
+		return
 	if order.type == "attack":
 		# An infiltrator gone under adaptive camo is lost: the order lapses.
 		if Combat.targetable(order.target):
@@ -1443,6 +1479,13 @@ func _start_raid() -> void:
 func _fire_at(t: Node3D) -> void:
 	_fire_cd = stats.fire_interval * randf_range(0.9, 1.15)
 	_recoil = 1.0
+	if t.is_in_group("air_units"):
+		# A drone: no body to hit, so the round is worked out against its hit radius (Combat.fire_at_air).
+		var gun_at = _gun_muzzle.global_position if _gun_muzzle else null
+		Combat.fire_at_air(self, _eye(), t, stats.spread, stats.damage, team, gun_at)
+		if _gun_muzzle:
+			Combat.spawn_muzzle_flash(self, _gun_muzzle.global_position, Combat.aim_point(t) - _gun_muzzle.global_position)
+		return
 	match role:
 		"melee":
 			if stats.has("anim_strike"):
@@ -1944,6 +1987,11 @@ func _aa_tick() -> void:
 		_turrets.radar_speed = 4.0 if _aa_lock else 0.9
 		if _aa_lock:
 			_fire_flak()
+			# Hyper-focused on a drone, the elephant also lets fly a missile salvo whenever one is ready and the
+			# drone still needs killing (against any other flyer the salvo stays the player's to fire).
+			if is_drone_locked() and missiles_ready() and _salvo.is_empty() and in_missile_range(_aa_lock) \
+					and ElephantMissiles.still_needed(_aa_lock) > 0.0:
+				start_missiles(_aa_lock)
 	elif _aa_lock:
 		_aa_lock.take_damage(stats.aa_dps * stats.fire_interval, team)
 		Combat.spawn_tracer(self, _eye(), Combat.aim_point(_aa_lock), AA_COLOR)
@@ -1962,6 +2010,81 @@ func _fire_flak() -> void:
 func _in_aa_range(a: Node3D) -> bool:
 	var d := a.global_position - global_position
 	return Vector2(d.x, d.z).length() <= stats.aa_range
+
+
+## Bears and AA units: locks onto the nearest drone (enemy aircraft that is a DefenderDrone) in the attackers' sight
+## within DRONE_NOTICE, and keeps it as far as DRONE_LEASH; none left, it is free again and carries out the last
+## order it was given meanwhile. A unit that can't fight (swimming, riding a raft, on a ladder) isn't pulled in.
+## Drones docked on the fortress roofs aren't in "air_units" and don't count: they are out of reach.
+func _update_drone_prey() -> void:
+	if not hunts_drones():
+		return
+	if carrier != null or is_swimming() or raiding or not _route.is_empty() or not is_packed():
+		_set_prey(null)
+		return
+	if not (is_drone_locked() and _prey_valid(drone_prey, DRONE_LEASH)):
+		var best: Node3D = null
+		var best_d := DRONE_NOTICE
+		for a in get_tree().get_nodes_in_group("air_units"):
+			if a.team == team or not a.is_alive() or not a.is_in_group("drones"):
+				continue
+			var d := _flat_to(a.global_position)
+			if d < best_d and _prey_valid(a, DRONE_NOTICE):
+				best_d = d
+				best = a
+		_set_prey(best)
+	if is_drone_locked():
+		_prey_los = Combat.has_line_of_sight(self, _eye(), Combat.aim_point(drone_prey), drone_prey)
+
+
+func _prey_valid(a: Node3D, leash: float) -> bool:
+	return Combat.is_valid_target(a) and _flat_to(a.global_position) <= leash and AttackerVision.sees(a.global_position)
+
+
+func _set_prey(p: Node3D) -> void:
+	if p == drone_prey and (p == null or is_drone_locked()):
+		return
+	drone_prey = p
+	_prey_los = false
+	if p != null:
+		_mark_drone()
+		return
+	target = null
+	if _drone_mark:
+		_drone_mark.visible = false
+	if _held_order != null:
+		var held = _held_order
+		_held_order = null
+		set_order(held)
+
+
+## Where a locked unit makes for: under the drone, unless it is already close enough to shoot it (a bear in range
+## and sight; an AA unit within its aa_range). Null: it stands.
+func _prey_point():
+	if not is_drone_locked():
+		return null
+	var d := drone_prey.global_position - global_position
+	var want: float = float(stats.get("aa_range", stats.get("range", 20.0))) * 0.85
+	if Vector2(d.x, d.z).length() <= want and (not has_basic_attack() or _prey_los):
+		return null
+	return Vector3(drone_prey.global_position.x, global_position.y, drone_prey.global_position.z)
+
+
+## A red tag over a locked unit, for the attacking player (and anyone watching).
+func _mark_drone() -> void:
+	if _drone_mark == null:
+		_drone_mark = Label3D.new()
+		_drone_mark.text = "DRONE LOCK"
+		_drone_mark.modulate = DRONE_MARK
+		_drone_mark.outline_modulate = Color(0.0, 0.0, 0.0, 0.9)
+		_drone_mark.font_size = 36
+		_drone_mark.pixel_size = 0.012
+		_drone_mark.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		_drone_mark.no_depth_test = true
+		_drone_mark.shaded = false
+		_drone_mark.position = Vector3.UP * (stats.height + 1.1)
+		add_child(_drone_mark)
+	_drone_mark.visible = true
 
 
 ## Rhino active: bomb a ground point for cluster_duration seconds. False while on cooldown.
@@ -2909,6 +3032,7 @@ func _physics_process(delta: float) -> void:
 	_retarget_cd -= delta
 	if _retarget_cd <= 0.0:
 		_retarget_cd = 0.3
+		_update_drone_prey()
 		_update_target()
 		# Inside, a raider's quarry is often round a corner or a floor up: it goes after it rather than
 		# shooting the wall in between.
@@ -3006,6 +3130,7 @@ func _physics_process(delta: float) -> void:
 	# into the soldier it hunts. A kangaroo throwing a grenade holds its fire.
 	var running_over := raiding and is_ramming() and _is_soldier(target)
 	var lined := false
+	var hunt_move := false
 	var engaged := charge_gate == null and not running_over and not is_throwing() and not is_pinging() \
 			and Combat.targetable(target) and _in_range(target) and _sees_target
 	_engaged = engaged
@@ -3021,6 +3146,10 @@ func _physics_process(delta: float) -> void:
 		_face(target.global_position, delta)
 		if _fire_cd <= 0.0 and not is_overheated():
 			_fire_at(target)
+	elif is_drone_locked():
+		# Hyper-focused on a drone: no order is followed, it goes after the drone (the order it had stays as it was).
+		hunt_move = true
+		move_to = _prey_point()
 	elif charge_gate:
 		move_to = _charge_pos
 	elif order.has("line"):
@@ -3051,7 +3180,9 @@ func _physics_process(delta: float) -> void:
 		if _agent.target_position.distance_to(move_to) > 1.5:
 			_agent.target_position = move_to
 		if _agent.is_navigation_finished():
-			if order.type not in ["attack", "raid", "nest", "trap", "board"]:
+			if hunt_move:
+				pass  # as close to the drone as the ground goes: it stands there, its order untouched
+			elif order.type not in ["attack", "raid", "nest", "trap", "board"]:
 				order = {"type": "idle"}
 			elif role == "melee" or charge_gate or running_over:
 				# Close the last stretch to the target straight on.

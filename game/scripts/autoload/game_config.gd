@@ -42,6 +42,8 @@ var mouse_sensitivity := 0.0025
 #   --duration=seconds             autotest length (game time)
 #   --map=jungle|classic           the map to play
 #   --lighting=raytraced|standard  how the light is rendered
+#   --drones=off                   no defender drones (DroneBay) in the match
+var drones := true
 var autotest := ""
 var screenshot_path := ""
 var autotest_duration := 90.0
@@ -60,6 +62,8 @@ func _ready() -> void:
 			map = arg.get_slice("=", 1)
 		elif arg.begins_with("--lighting="):
 			lighting = arg.get_slice("=", 1)
+		elif arg.begins_with("--drones="):
+			drones = arg.get_slice("=", 1) != "off"
 
 
 ## CPU attacker income multiplier for the chosen difficulty.

@@ -99,6 +99,40 @@ static func fire_hitscan(shooter: Node3D, from: Vector3, aim_at: Vector3, spread
 	return {"position": end, "hit": hurt}
 
 
+## A shot at an aircraft that has no body to collide with (the defenders' drones: only AA damage and the bears
+## can hurt them, so nothing else's rounds or blasts reach them). The round flies off `spread` wide of the aim
+## and hits if it passes within the target's hit_radius of its aim point with no wall or hill in the way.
+## Returns whether it hit.
+static func fire_at_air(shooter: Node3D, from: Vector3, target: Node3D, spread: float, damage: float,
+		team: int, visual_from = null, tracer_width := 0.035) -> bool:
+	var aim := aim_point(target)
+	var dir := (aim - from).normalized()
+	if spread > 0.0:
+		dir = apply_spread(dir, spread)
+	var reach := from.distance_to(aim)
+	# Where the round passes the target: the closest point of its line to the aim point.
+	var along := clampf((aim - from).dot(dir), 0.0, reach + 2.0)
+	var closest := from + dir * along
+	var radius := 1.0
+	var r = target.get("hit_radius")
+	if r != null:
+		radius = float(r)
+	var hit := closest.distance_to(aim) <= radius
+	var end := closest if hit else from + dir * (reach + 30.0)
+	var q := PhysicsRayQueryParameters3D.create(from, end, GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES)
+	var wall := shooter.get_world_3d().direct_space_state.intersect_ray(q)
+	if not wall.is_empty():
+		hit = false
+		end = wall.position
+		spawn_impact(shooter, end, false, wall.normal)
+	elif hit:
+		target.take_damage(damage, team)
+		spawn_impact(shooter, end, true)
+	var start: Vector3 = visual_from if visual_from != null else from
+	spawn_tracer(shooter, start, end, ATTACKER_TRACER if team == GameConfig.TEAM_ATTACKER else DEFENDER_TRACER, tracer_width)
+	return hit
+
+
 static func apply_spread(dir: Vector3, spread: float) -> Vector3:
 	var up := Vector3.UP if absf(dir.y) < 0.99 else Vector3.FORWARD
 	var basis := Basis.looking_at(dir, up)
