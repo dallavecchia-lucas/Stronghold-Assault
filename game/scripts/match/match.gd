@@ -17,11 +17,20 @@ var armory: DefenderArmory
 var drones: DroneBay
 ## The attackers' transport helicopters, standing by the main base.
 var fleet: HeloFleet
+## A match nobody plays (GameConfig.bot_match()): the scripted attacker, if it is one of the probes rather than the CPU's.
+var probe: Node
+## The match's record for balance work (bot matches, and any match given --telemetry): a MatchTelemetry.
+var telemetry: Node
 var time_left := 600.0
 var started := false
 var finished := false
 
 var _autotest_t := 0.0
+
+# Loaded by path rather than by class name, so a headless run needs no editor scan to know the new classes.
+const BotSpectatorScript := preload("res://scripts/match/bot_spectator.gd")
+const AttackerProbeScript := preload("res://scripts/attacker/attacker_probe.gd")
+const MatchTelemetryScript := preload("res://scripts/match/match_telemetry.gd")
 
 
 func _ready() -> void:
@@ -68,7 +77,24 @@ func _ready() -> void:
 		drones.level = level
 		drones.swarm_launched.connect(func(_s): ui.alert("Defender drones are up: only bears and AA units can touch them", UIKit.WARN))
 
-	if GameConfig.player_side == GameConfig.PlayerSide.DEFENDER:
+	if GameConfig.bot_match():
+		# Nobody at the keys: every post fights on its own (the CPU defender, which buys nothing), against the CPU
+		# attacker ("bots") or a scripted one that plays a known shortcut (AttackerProbe: "rush", "battery").
+		var spectator := BotSpectatorScript.new()
+		spectator.level = level
+		player_controller = spectator
+		if GameConfig.autotest == "bots":
+			ai_attacker = AIAttacker.new()
+			ai_attacker.commander = commander
+			ai_attacker.level = level
+			ai_attacker.drones = drones
+			commander.income = AttackerCommander.BASE_INCOME * GameConfig.ai_income_mult()
+		else:
+			probe = AttackerProbeScript.new()
+			probe.commander = commander
+			probe.level = level
+			probe.plan = GameConfig.autotest
+	elif GameConfig.player_side == GameConfig.PlayerSide.DEFENDER:
 		armory = DefenderArmory.new()
 		armory.name = "DefenderArmory"
 		armory.level = level
@@ -107,6 +133,16 @@ func _start() -> void:
 	add_child(player_controller)
 	if ai_attacker:
 		add_child(ai_attacker)
+	if probe:
+		add_child(probe)
+	if GameConfig.bot_match() or GameConfig.telemetry_path != "":
+		telemetry = MatchTelemetryScript.new()
+		telemetry.name = "MatchTelemetry"
+		telemetry.level = level
+		telemetry.commander = commander
+		telemetry.armory = armory
+		telemetry.drones = drones
+		add_child(telemetry)
 	var side_text := "Hold the stronghold!" if GameConfig.player_side == GameConfig.PlayerSide.DEFENDER else "Break through and destroy the Keep!"
 	ui.alert(side_text, UIKit.ACCENT)
 	if GameConfig.autotest != "":
@@ -168,6 +204,8 @@ func _end(winner: int) -> void:
 	var title := "VICTORY" if won else "DEFEAT"
 	var sub := "The Keep has fallen." if winner == GameConfig.TEAM_ATTACKER else "The stronghold held!"
 	print("MATCH OVER: winner=%s time_left=%.0f" % ["attacker" if winner == GameConfig.TEAM_ATTACKER else "defender", time_left])
+	if telemetry:
+		telemetry.finish("attacker" if winner == GameConfig.TEAM_ATTACKER else "defender")
 	if GameConfig.autotest != "":
 		_autotest_report()
 		get_tree().quit()
@@ -183,8 +221,8 @@ var _autotest_shot := false
 
 
 func _autotest_setup() -> void:
-	Engine.time_scale = 1.0 if GameConfig.screenshot_path != "" else 4.0
-	print("AUTOTEST start side=%s" % GameConfig.autotest)
+	Engine.time_scale = 1.0 if GameConfig.screenshot_path != "" else GameConfig.time_scale
+	print("AUTOTEST start side=%s seed=%d" % [GameConfig.autotest, GameConfig.seed_value])
 	if player_controller is AttackerController:
 		commander.supply = 2000.0
 
@@ -257,7 +295,10 @@ func _autotest_step(delta: float) -> void:
 		await RenderingServer.frame_post_draw
 		get_viewport().get_texture().get_image().save_png(GameConfig.screenshot_path)
 		print("AUTOTEST screenshot saved")
-	if _autotest_t > GameConfig.autotest_duration:
+	# A bot match runs to its own end (the Keep falls, or the clock runs out) unless --duration cuts it short.
+	if _autotest_t > GameConfig.autotest_duration and (not GameConfig.bot_match() or GameConfig.autotest_duration_set):
+		if telemetry:
+			telemetry.finish("none")
 		_autotest_report()
 		get_tree().quit()
 		set_process(false)

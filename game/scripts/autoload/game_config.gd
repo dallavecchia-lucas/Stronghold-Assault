@@ -43,10 +43,25 @@ var mouse_sensitivity := 0.0025
 #   --map=jungle|classic           the map to play
 #   --lighting=raytraced|standard  how the light is rendered
 #   --drones=off                   no defender drones (DroneBay) in the match
+# Balance measurement (docs/balance/BALANCE_PLAN.md, Phase 0), also after `--`:
+#   --autotest=bots                the CPU attacker against the CPU garrison, nobody at the keys, to the end of the match
+#   --autotest=rush|battery        a scripted attacker (AttackerProbe) against the CPU garrison, to the end of the match
+#   --seed=n                       seeds the game's random numbers, so two rule sets can be compared on the same draws
+#   --difficulty=0|1|2             the CPU attacker's difficulty (Easy, Normal, Hard)
+#   --match-time=seconds           how long the defenders have to hold
+#   --timescale=x                  game speed of an autotest (default 4)
+#   --telemetry=path.json          writes the match's timeline and result there (MatchTelemetry)
 var drones := true
 var autotest := ""
 var screenshot_path := ""
 var autotest_duration := 90.0
+## --duration was given: a bot match stops there instead of running to its end.
+var autotest_duration_set := false
+var seed_value := -1
+var time_scale := 4.0
+var telemetry_path := ""
+## The autotests in which nobody plays: both sides are the CPU's, or the attacker is a script (AttackerProbe).
+const BOT_MODES := ["bots", "rush", "battery"]
 
 
 func _ready() -> void:
@@ -58,12 +73,30 @@ func _ready() -> void:
 			screenshot_path = arg.get_slice("=", 1)
 		elif arg.begins_with("--duration="):
 			autotest_duration = arg.get_slice("=", 1).to_float()
+			autotest_duration_set = true
+		elif arg.begins_with("--seed="):
+			seed_value = arg.get_slice("=", 1).to_int()
+		elif arg.begins_with("--difficulty="):
+			difficulty = clampi(arg.get_slice("=", 1).to_int(), 0, DIFFICULTY_NAMES.size() - 1)
+		elif arg.begins_with("--match-time="):
+			match_duration = arg.get_slice("=", 1).to_float()
+		elif arg.begins_with("--timescale="):
+			time_scale = maxf(arg.get_slice("=", 1).to_float(), 0.1)
+		elif arg.begins_with("--telemetry="):
+			telemetry_path = arg.get_slice("=", 1)
 		elif arg.begins_with("--map="):
 			map = arg.get_slice("=", 1)
 		elif arg.begins_with("--lighting="):
 			lighting = arg.get_slice("=", 1)
 		elif arg.begins_with("--drones="):
 			drones = arg.get_slice("=", 1) != "off"
+	if seed_value >= 0:
+		seed(seed_value)
+
+
+## True in an autotest nobody plays (BOT_MODES): the match runs to its own end on the map's own clock.
+func bot_match() -> bool:
+	return autotest in BOT_MODES
 
 
 ## CPU attacker income multiplier for the chosen difficulty.

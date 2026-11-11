@@ -166,7 +166,7 @@ const JUNGLE_TIME := 900.0
 
 
 func match_time() -> float:
-	return maxf(GameConfig.match_duration, JUNGLE_TIME) if GameConfig.autotest == "" else GameConfig.match_duration
+	return maxf(GameConfig.match_duration, JUNGLE_TIME) if GameConfig.autotest == "" or GameConfig.bot_match() else GameConfig.match_duration
 
 
 func camera_home() -> Vector3:

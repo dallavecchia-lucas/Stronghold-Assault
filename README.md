@@ -302,6 +302,20 @@ godot --path game --headless -- --autotest=attacker --duration=120
 godot --path game --headless -- --autotest=attacker --duration=120 --map=classic   # the classic field (default: the Jungle Keep)
 ```
 
+### Balance matches
+
+Matches nobody plays, run to their end, for balance work (`docs/balance/BALANCE_PLAN.md`): the CPU attacker against the CPU garrison (`bots`), or a scripted attacker that plays a known shortcut (`game/scripts/attacker/attacker_probe.gd`: `rush`, nothing but Breaching Rams; `battery`, three Mule Artillery shelling the gate from as far as they reach, then rams). `--seed` seeds the game's random numbers; each match prints a `BOTMATCH {...}` summary line (winner, length, when the first gate fell, supply spent and lost) and `--telemetry=file.json` keeps its whole timeline (`game/scripts/match/match_telemetry.gd`: a sample every 5 s and every spawn, death, post knocked out and gate down).
+
+```sh
+godot --path game --headless -- --autotest=bots --map=classic --seed=1                       # one match, on the map's own clock
+godot --path game --headless -- --autotest=rush --map=jungle --seed=1 --telemetry=/tmp/rush.json
+godot --path game --headless -- --autotest=bots --difficulty=2 --match-time=1560 --timescale=4
+python3 tools/balance/run_matches.py --mode bots --map classic --n 40                        # 40 seeds: win rate, length, gate time
+python3 tools/balance/siege_model.py --quick                                                 # the plan's model of a match (no engine)
+```
+
+These were written without an engine at hand (syntax-checked only): the first run on a machine with Godot is their test.
+
 ### Sniper showcase
 
 `game/scenes/dev/sniper_showcase.tscn` runs the Sniper through her kit on the real map, in the south field, the way the defending player uses her (her own camera and panels), with her rounds and their tags as the attacking player sees them in the RTS view (`media/sniper_showcase.mp4`). She stands (her idle, the rifle shouldered). Bought (`K`) and taken (`F1`), she is walked up, third person over her shoulder. `RMB`: the scope comes up to her eye, 8x, the wheel to 12x and back; `LMB` on a Bear Rifleman 74 m out and he drops; `R` reloads. Five rounds into five sturdy attackers (a lioness among them): each is tagged and the panel's slots fill; a sixth hit (a bison gun) tags nothing while all five are out; the giraffe she tagged first takes a second round and dies, its slot is free again and the bison gun's next hit tags it, for 20% more damage. The RTS view: an aim icon over each tagged unit; two lionesses are selected and `F`: the tagged one can't sneak, the other does. Back in the scope, on the forest west of the lane: chimps in among the trees, hard to make out; `T`: the land goes dark, the trees see-through, the chimps white-hot, and she tags two; after 15 s it goes off and `T` is refused while it recharges. The RTS view from the side of her line of fire: each round's long tracer and the white trail it leaves, hanging 1 s, then fading (one in slow motion). Last, the player takes a rifleman's post and leaves her: she holds her ground, passes over two chimps in the forest east of the lane (closer, but in among the trees), picks a ram out in the open and stays on it, a kangaroo coming up closer, until it falls, tagging only it; then the kangaroo. The garrison's posts and the AA turrets hold fire; the attackers in the field don't fight back.

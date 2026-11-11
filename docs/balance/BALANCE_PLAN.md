@@ -290,6 +290,8 @@ For a win rate within $\pm\varepsilon$ at 95%: $n=0.96/\varepsilon^2$ at $p=0.5$
 
 ### Phase 0. Measure (before changing a single number)
 
+*Status: items 1, 2, 4 and 5 are written (`GameConfig`, `match.gd`, `match_telemetry.gd`, `attacker_probe.gd`, `bot_spectator.gd`, `tools/balance/run_matches.py`; commands in the README under "Balance matches") but have only been syntax-checked, never run: no engine was available. Item 3, the skill-dialled defender bot, is not started; until it exists a bot match's defender is the garrison's own crews, which is what the CPU defender is today. The telemetry does not yet say what killed a unit.*
+
 1. **Seed the game.** One `--seed`, fed to a `RandomNumberGenerator` used by everything that calls `randf`/`randi` today (wave lanes, spread, scatter, spawn offsets).
 2. **Bot against bot, headless.** `--autotest=bots`: `AIAttacker` against a new `AIDefender`, to the end of the match, at 4× or faster. Today's autotest presses keys on a timer and stops after a fixed time; it cannot answer who wins.
 3. **`AIDefender` with a skill dial.** It plays as a person must: one post at a time, with a reaction delay, an aim error and a switch time, and it buys and orders the roster. The dial (reaction, aim, switches a minute) gives a ladder of defenders. The attacker gets the same: wave size, lane choice, use of skills.
@@ -385,7 +387,7 @@ With the core fixed, each CPU is a one-dimensional root-find against a mid-ladde
 
 ### 5.2 What the session could not do
 
-Run the game. Godot 4.5 was not installed and downloading it was blocked. Phase 0 starts by running the three existing autotest commands and the new bot match on a machine with the engine.
+Run the game. Godot 4.5 was not installed and downloading it was blocked. Phase 0 starts on a machine with the engine: the three existing autotest commands (to check nothing broke), then `python3 tools/balance/run_matches.py --mode bots` and the two probes on both maps. Those results replace section 2.7 and calibrate the model.
 
 ### 5.3 Decisions for the owner
 
