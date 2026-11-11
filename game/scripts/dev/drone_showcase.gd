@@ -260,7 +260,7 @@ func _test_flight_and_fuel() -> void:
 			"(refuel %.0f s, rebuild %.0f s)" % [guard, DefenderDrone.REBUILD_TIME])
 	_check("... even a drone that landed with next to nothing (25%) is refilled faster than a rebuild",
 			(1.0 - 0.25) * DefenderDrone.REFUEL_TIME < DefenderDrone.REBUILD_TIME)
-	_check("... and a rebuild is slower than refuelling the lowest landing (25%) to full", DefenderDrone.REBUILD_TIME > 0.75 * DefenderDrone.REFUEL_TIME)
+	_check("... and a single rebuild takes longer than an empty tank to full", DefenderDrone.REBUILD_TIME > DefenderDrone.REFUEL_TIME)
 	var tank := DefenderDrone.new()
 	tank.bay = bay
 	tank.manual = true
@@ -322,7 +322,7 @@ func _test_rebuild() -> void:
 	_check("not before REBUILD_TIME", first.alive_count() == 0)
 	_run(15.0, Callable(), 1.0)
 	_check("a whole swarm is back after ONE rebuild time, not five", first.alive_count() == DroneSwarm.SIZE, "(%d)" % first.alive_count())
-	_check("a rebuild is slower than refuelling the lowest landing there is (25%, to full)", rb > 0.75 * DefenderDrone.REFUEL_TIME)
+	_check("a single rebuild takes longer than refuelling an empty tank to full", rb > DefenderDrone.REFUEL_TIME)
 
 
 func _test_freshest() -> void:

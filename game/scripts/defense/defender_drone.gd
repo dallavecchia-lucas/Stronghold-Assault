@@ -52,10 +52,10 @@ const REFUEL_RATIO := 1.75
 const REFUEL_RATE := HOVER_BURN / REFUEL_RATIO
 const REFUEL_TIME := 1.0 / REFUEL_RATE
 const REPAIR_TIME := 18.0
-## Rebuilding a shot-down drone in the hangar takes REBUILD_RATIO times a refuel from empty (REFUEL_TIME): 280 s at
-## 0.8, longer than refuelling any drone that comes home (the lowest a drone lands is about 25%, 262 s to full). So
-## losing a drone costs more than refuelling one. Rebuilds run side by side, so a whole swarm takes one REBUILD_TIME.
-const REBUILD_RATIO := 0.8
+## Rebuilding a shot-down drone in the hangar takes REBUILD_RATIO times a refuel from empty (REFUEL_TIME): 385 s at
+## 1.1, always longer than filling an empty tank (350 s), so losing a drone costs more than refuelling any drone that
+## comes home, whatever it has left. Rebuilds run side by side, so a whole swarm takes one REBUILD_TIME.
+const REBUILD_RATIO := 1.1
 const REBUILD_TIME := REFUEL_TIME * REBUILD_RATIO
 const LAUNCH_FUEL := 0.95
 ## Below this it can't be sent on any sortie worth the name (it would be due home on arrival): it is recharging.
