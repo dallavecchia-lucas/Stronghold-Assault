@@ -28,9 +28,6 @@ extends Node
 
 
 const SIZE := 5
-## Seconds the hangar takes to rebuild one drone of the swarm. A swarm builds one at a time, so a swarm shot to
-## pieces is whole again after SIZE x REBUILD_TIME at most; every swarm builds at once.
-const REBUILD_TIME := 20.0
 ## How far out from the target the drones hang (m) and how high above its feet, and the angle between
 ## neighbours on that ring (rad).
 const STANDOFF := 26.0
@@ -134,21 +131,23 @@ func step(delta: float) -> void:
 
 # ---------------------------------------------------------------- the hangar
 
-## The hangar rebuilds the swarm's missing drones, one at a time: REBUILD_TIME after the first went missing (or
-## after the last was finished) a new one stands full and mended on a dock. The swarm may be out on a target, on
-## its docks or empty: it makes no difference.
+## The hangar rebuilds the swarm's missing drones, one at a time, every swarm at once: DefenderDrone.REBUILD_TIME
+## (as long as a refuel from empty, so longer than refuelling any drone that comes home) after the first went
+## missing, or after the last was finished, a new one stands full and mended on a dock. The swarm may be out on a
+## target, on its docks or empty: it makes no difference. Until then it is a damaged swarm, and a call takes a
+## fresher one first (freshness()).
 func _rebuild_tick(delta: float) -> void:
 	if bay == null or drones.size() >= SIZE:
 		_rebuild = 0.0
 		return
-	_rebuild = minf(_rebuild + delta, REBUILD_TIME)
-	if _rebuild >= REBUILD_TIME and bay.make_drone(self):
+	_rebuild = minf(_rebuild + delta, DefenderDrone.REBUILD_TIME)
+	if _rebuild >= DefenderDrone.REBUILD_TIME and bay.make_drone(self):
 		_rebuild = 0.0
 
 
 ## Seconds until the next drone is finished (0: nothing is missing).
 func rebuild_left() -> float:
-	return 0.0 if drones.size() >= SIZE else REBUILD_TIME - _rebuild
+	return 0.0 if drones.size() >= SIZE else DefenderDrone.REBUILD_TIME - _rebuild
 
 
 ## The lowest place in the ring no living drone has (-1: all five are filled).

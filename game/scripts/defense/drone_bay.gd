@@ -4,10 +4,11 @@ extends Node
 ## (DroneSwarm, DefenderDrone). It takes the calls for the swarms and keeps the books.
 ##
 ## SIX SWARMS, no more, no fewer: they are the bay's slots from the first second and are never added or lost. A
-## drone that is shot down is rebuilt in the hangar, REBUILD_TIME seconds each (DroneSwarm: one at a time per
-## swarm, every swarm at once), so a swarm that was shot to pieces is whole again after at most 5 x 20 s and a
-## swarm with only a few drones left is a damaged swarm for a while, not a dead one and not a slot held for ever.
-## The match starts with INITIAL_SWARMS built; the others fill from empty at the same pace.
+## drone that is shot down is rebuilt in the hangar (DroneSwarm: one at a time per swarm, every swarm at once), and
+## rebuilding takes DefenderDrone.REBUILD_TIME, as long as filling an empty tank: always longer than refuelling a drone
+## that came home. So refilling beats rebuilding, a lost drone is lost for most of a match, and a swarm that was shot
+## to pieces is a damaged swarm, the last to be called, not a dead one and not a slot held for ever. All six start
+## whole (INITIAL_SWARMS); a bay set up with fewer fills the rest from empty at the rebuild pace.
 ##
 ## DOCKS: SLOTS_PER_MOUNT pads on a ring round each AA turret mount on the roofs. A drone claims the free dock
 ## nearest to it when it turns for home, so it lands on the face it is working near rather than flying through
@@ -28,7 +29,7 @@ extends Node
 signal swarm_launched(swarm: DroneSwarm)
 
 const MAX_SWARMS := 6
-const INITIAL_SWARMS := 2
+const INITIAL_SWARMS := 6
 const SLOTS_PER_MOUNT := 5
 const DOCK_RING := 3.2
 const DOCK_RISE := 2.2
@@ -50,7 +51,7 @@ var hunters: Array = []
 ## their rounds pass through.
 var submerged: Array[RID] = []
 ## How many swarms the bay has (MAX_SWARMS), how many of them start with all five drones (the others start empty
-## and fill up, one drone every DroneSwarm.REBUILD_TIME), and whether defenders call for drones on their own.
+## and fill up, one drone every DefenderDrone.REBUILD_TIME), and whether defenders call for drones on their own.
 var slots := MAX_SWARMS
 var initial_swarms := INITIAL_SWARMS
 var auto_calls := true
