@@ -532,8 +532,7 @@ func _test_outpost_rules() -> void:
 	_check("home, it sets down where it stood and lets them out", h.state == TransportHelo.State.UNLOAD and not h.out_leg
 			and h.global_position.distance_to(home) < 0.5)
 	_run(10.0, _state(h, TransportHelo.State.PARKED))
-	_check("all 6 out by the main spawn point", h.cargo.is_empty() and crew.all(func(u): return u.is_alive()
-			and Vector2(u.global_position.x - MAIN.x, u.global_position.z - MAIN.z).length() < 15.0))
+	_check("all 6 out by the main spawn point", h.cargo.is_empty() and crew.all(func(u): return u.is_alive() and Vector2(u.global_position.x - MAIN.x, u.global_position.z - MAIN.z).length() < 15.0))
 	_check("none of them were put down at the outpost", h.unloaded_count == 0 and h.stats.units_returned == 6)
 	_check("it stands at the base, open for the next load", h.state == TransportHelo.State.PARKED and h.can_board())
 	# Lost while it is still spinning up at the base: it never leaves.
@@ -593,10 +592,8 @@ func _test_caught_on_pad() -> void:
 	_run(300.0, _state(h, TransportHelo.State.PARKED))
 	_check("it brings them home and lets them out there", h.state == TransportHelo.State.PARKED and h.cargo.is_empty()
 			and h.stats.units_returned == 8 and h.global_position.distance_to(home) < 0.5)
-	_check("the 4 put down at the outpost are still there", crew.slice(0, 4).all(func(u): return u.is_alive()
-			and Vector2(u.global_position.x - OUTPOST_DROP.x, u.global_position.z - OUTPOST_DROP.z).length() < 15.0))
-	_check("the 8 brought back are by the main spawn point", crew.slice(4).all(func(u): return u.is_alive()
-			and Vector2(u.global_position.x - MAIN.x, u.global_position.z - MAIN.z).length() < 15.0))
+	_check("the 4 put down at the outpost are still there", crew.slice(0, 4).all(func(u): return u.is_alive() and Vector2(u.global_position.x - OUTPOST_DROP.x, u.global_position.z - OUTPOST_DROP.z).length() < 15.0))
+	_check("the 8 brought back are by the main spawn point", crew.slice(4).all(func(u): return u.is_alive() and Vector2(u.global_position.x - MAIN.x, u.global_position.z - MAIN.z).length() < 15.0))
 	_check("hurt, it mends at the base", h.hp > TransportHelo.MAX_HP * 0.8 and not h.can_dispatch(base))
 	# Too hurt to take the hit: it is destroyed on the pad with what is still aboard.
 	_run(200.0, func(): return h.hp >= TransportHelo.MAX_HP - 0.01)
@@ -718,7 +715,7 @@ func _test_destroyed() -> void:
 		_board(h2, _unit("rifleman"))
 	h2.dispatch(base)
 	_run(80.0, _state(h2, TransportHelo.State.CRUISE))
-	var before := died[0]
+	var before: int = died[0]
 	h2.take_damage(1.0e9, GameConfig.TEAM_DEFENDER)
 	_check("in the air the same: 4 more lost", died[0] == before + 4 and not h2.is_alive())
 	_check("both slots are empty and counting down", fleet.alive_count() == 0 and fleet.replace_in[1] > 499.0)
