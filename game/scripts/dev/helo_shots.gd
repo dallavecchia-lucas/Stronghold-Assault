@@ -21,6 +21,10 @@ func _ready() -> void:
 		if arg.begins_with("--out="):
 			out_dir = arg.get_slice("=", 1)
 	DirAccess.make_dir_recursive_absolute(out_dir)
+	if OS.get_cmdline_user_args().has("--field"):
+		await _field_shots()
+		get_tree().quit()
+		return
 	level = JungleLevel.new()
 	level.name = "Level"
 	add_child(level)
@@ -107,7 +111,7 @@ func _shots() -> void:
 	_look(pad + out * 230.0 + Vector3(0, 110, 120), pad + out * 60.0)
 	await _frames(4)
 	await _snap("03_outpost_pad")
-	_look(outpost.spawn_point + out * 45.0 + Vector3(25, 14, 40), pad + Vector3(0, -6, 0))
+	_look(outpost.spawn_point + out * 70.0 + Vector3(0, 45, 60), outpost.spawn_point + out * 8.0)
 	await _frames(10)
 	await _snap("04_outpost_units")
 	# 3. On the Quarry's standard pad: it overhangs the deck.
@@ -141,3 +145,51 @@ func _shots() -> void:
 	_look(a.global_position + Vector3(-70, 30, -60), a.global_position + Vector3(0, 10, 0))
 	await _frames(24)
 	await _snap("11_base_10pct_fire")
+
+
+## The hurt steps flown over a plain field (no map to build: quick), --field.
+func _field_shots() -> void:
+	var ground := MeshInstance3D.new()
+	var plane := PlaneMesh.new()
+	plane.size = Vector2(4000, 4000)
+	ground.mesh = plane
+	ground.material_override = Mats.flat(Color(0.32, 0.42, 0.24))
+	add_child(ground)
+	var sun := DirectionalLight3D.new()
+	sun.rotation_degrees = Vector3(-50, 30, 0)
+	sun.shadow_enabled = true
+	add_child(sun)
+	var env := WorldEnvironment.new()
+	env.environment = Environment.new()
+	env.environment.background_mode = Environment.BG_COLOR
+	env.environment.background_color = Color(0.55, 0.68, 0.85)
+	env.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.environment.ambient_light_color = Color(0.6, 0.62, 0.66)
+	add_child(env)
+	FX.of(self)
+	cam = Camera3D.new()
+	cam.far = 4000.0
+	add_child(cam)
+	cam.current = true
+	var h := TransportHelo.new()
+	h.manual = true
+	h.setup(0, Vector3.ZERO, PI * 0.5)
+	add_child(h)
+	await _frames(5)
+	_flyer = h
+	_fly_dir = Vector3(1, 0, 0)
+	_spin(h)
+	for step in [[1.0, "07_flying_100pct"], [0.6, "08_flying_60pct_grey_smoke"], [0.4, "09_flying_40pct_black_smoke"],
+			[0.1, "10_flying_10pct_fire"]]:
+		h.hp = TransportHelo.MAX_HP * float(step[0])
+		h.global_position = Vector3(-300, 60, 0)
+		await _frames(75)
+		await _snap(step[1])
+	_flyer = null
+	h.global_position = Vector3.ZERO
+	h.rotation.y = PI * 0.5
+	h.hp = TransportHelo.MAX_HP * 0.08
+	h.rig.stop()
+	_look(Vector3(-60, 25, -55), Vector3(0, 9, 0))
+	await _frames(75)
+	await _snap("11_landed_10pct_fire")
