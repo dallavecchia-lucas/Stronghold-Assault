@@ -35,6 +35,9 @@ extends CanvasLayer
 ##    or a giraffe alone); sent across the water the riders get onto the rafts of the carriers moved with them by themselves. Space with no ram selected: the selected
 ##    carriers let their riders off.
 ## A defender on a bridge sets off its alarm: the banner at the top (click it to look) for as long as one is on it.
+## The transport helicopters (HeloPanel, top right): RMB a helicopter with units selected sends the ones that can board to its
+## ramp (as many as fit: HeloCargo); LMB a helicopter selects it, then RMB a helipad you hold sends it there with what it carries
+## (its panel's buttons do the same). Units aboard can't be selected or ordered until it unloads them.
 ## The fog of war (AttackerVision) dims the land the army doesn't see (FogOverlay); defenders in it
 ## can't be ordered at.
 
@@ -107,6 +110,9 @@ var _bridge_button: Button
 var _alarm_banner: Button
 var _alarms: Array = []
 var _alarm_beep: AudioStreamPlayer
+## The transport helicopter selected in the world (null: none) and the panel of them.
+var selected_helo: TransportHelo = null
+var helo_panel: HeloPanel
 
 
 func _ready() -> void:
@@ -122,6 +128,8 @@ func _ready() -> void:
 	camera_rig.focus(level.camera_home())
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	commander.unit_died.connect(func(u): selected.erase(u))
+	if commander.fleet != null:
+		commander.fleet.helo_lost.connect(_on_helo_lost)
 	_build_marker()
 	_build_aim_preview()
 	_build_smoke_preview()
@@ -303,9 +311,11 @@ func _click_select(pos: Vector2, add: bool) -> void:
 		else:
 			list.append(u)
 	_set_selection(list)
+	_select_helo(u if u is TransportHelo and u.is_alive() else null)
 
 
 func _box_select(rect: Rect2, add: bool) -> void:
+	_select_helo(null)
 	var cam := camera_rig.camera
 	var list := selected.duplicate() if add else []
 	for u in commander.units.values():
@@ -331,8 +341,71 @@ func _alive_selection() -> void:
 	selected = selected.filter(func(u): return is_instance_valid(u) and u.is_controllable())
 
 
+# ---------------------------------------------------------------- transport helicopters
+
+## Selects a transport helicopter (null: none): its ring and health bar show, its block in the panel is lit.
+func _select_helo(h: TransportHelo) -> void:
+	if is_instance_valid(selected_helo):
+		selected_helo.selected = false
+	selected_helo = h
+	if h != null:
+		h.selected = true
+	if helo_panel:
+		helo_panel.selected_slot = h.slot if h != null else -1
+
+
+## A helicopter was shot down: no longer selected.
+func _on_helo_lost(h: TransportHelo) -> void:
+	if h == selected_helo:
+		_select_helo(null)
+
+
+## The panel's Board button: the selected units that can go aboard walk to helicopter `i`'s ramp.
+func _on_helo_board(i: int) -> void:
+	_alive_selection()
+	var boarders := selected.filter(func(u): return u.can_board_helo())
+	if boarders.is_empty():
+		return
+	if commander.submit({"type": "helo_board", "units": boarders.map(func(u): return u.unit_id), "helo": i}) > 0:
+		var h := commander.fleet.helo_at(i)
+		if h:
+			_ping(h.ramp_point(), UIKit.GOOD)
+
+
+## The panel's Fly button: helicopter `i` takes what it has aboard to the helipad at spawn point `k`.
+func _on_helo_fly(i: int, k: int) -> void:
+	commander.submit({"type": "helo_fly", "helo": i, "spawn": k})
+
+
+## The panel's Look button: the camera goes to helicopter `i`.
+func _on_helo_look(i: int) -> void:
+	var h := commander.fleet.helo_at(i)
+	if h:
+		camera_rig.focus(h.global_position)
+
+
+## RMB with a transport helicopter selected: on a helipad the attackers hold, it flies there with what it has aboard. True
+## if the click was on a helipad (the order was given, or refused).
+func _order_helo(screen_pos: Vector2) -> bool:
+	if not is_instance_valid(selected_helo) or not selected_helo.is_alive():
+		return false
+	var hit := _ray(screen_pos, GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES)
+	if hit.is_empty():
+		return false
+	var n := hit.collider as Node
+	while n != null and not (n is AttackerBase):
+		n = n.get_parent()
+	if n == null:
+		return false
+	var sent := commander.submit({"type": "helo_fly", "helo": selected_helo.slot, "spawn": commander.spawn_bases.find(n)}) > 0
+	_ping(n.global_position, UIKit.GOOD if sent else UIKit.DANGER)
+	return true
+
+
 func _issue_order(pos: Vector2, force_move: bool) -> void:
 	_alive_selection()
+	if selected_helo != null and _order_helo(pos):
+		return
 	if selected.is_empty():
 		return
 	var ids := selected.map(func(u): return u.unit_id)
@@ -344,6 +417,14 @@ func _issue_order(pos: Vector2, force_move: bool) -> void:
 		# A friendly unit (on its own layer): a carrier the riders in the selection board.
 		var own := _ray(pos, GameConfig.LAYER_ATTACKERS)
 		target = Combat.find_damageable(own.collider) if not own.is_empty() else null
+		# A transport helicopter: the units that can go aboard walk to its ramp (as many as it has room for).
+		if target is TransportHelo:
+			var boarders := selected.filter(func(u): return u.can_board_helo())
+			if not boarders.is_empty() and target.can_board():
+				commander.submit({"type": "helo_board", "units": boarders.map(func(u): return u.unit_id), "helo": target.slot})
+				_ping(target.ramp_point(), UIKit.GOOD)
+				return
+			target = null
 		if target is AttackerUnit and target.can_carry() and selected.any(func(u): return u != target and u.can_ride()):
 			var riders := selected.filter(func(u): return u != target and u.can_ride())
 			commander.submit({"type": "board", "units": riders.map(func(u): return u.unit_id), "carrier": target.get_path()})
@@ -1044,12 +1125,31 @@ func _build_hud() -> void:
 	row.add_child(sp)
 	set_spawn_point(0)
 
-	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nBisons: G bombardment (LMB fire, RMB cancel), onto the gun decks and roofs too\nMule Artillery: T sets the gun up / disarms it (it can't move unless disarmed) · armed, G bombardment (LMB fire): further, harder and wider than the bisons'\nTalons: F strafe run (press LMB on the target, drag the way to fly, let go) · G bomb strike (LMB fire) · RMB cancels\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nGiraffes: see furthest through the fog · P ping: marks every defender it reaches, even under camo, and reveals infiltrators out of camo\nKangaroos: R flash grenade (LMB fire, RMB cancel) when no hippo's smoke is ready · they resupply units nearby\nLionesses: F sneak (then RMB a defender: they pounce) · G fire blast · T firing lines on/off when moved together\nSerpent Snipers: F sniper nest (LMB a tree: up it they see and shoot further; any move order climbs them down) · G bush trap (LMB a bush: coiled, they strike and crush a defender who comes close)\nWolf Medics: T healing (2 units each) / minesweeping (they find the hidden mines and dig them out; RMB sweeps on the way, Ctrl+RMB doesn't)\nChimps / Rams / Kangaroos: RMB next to a broken gate to send them in\nRivers: Shift+B drop a bridge (LMB, RMB cancel; 30 a match) · bears, snakes, hippos, elephants swim · the rest but mules and bisons ride the rafts hippos/elephants tow, 2 each or a rhino or giraffe alone (RMB one, or send them across with it; Space lets them off)\nBears: swimming, F dives under the water for 10 s, out of the defenders' sight (rounds that go in where it is still hit it)\nHelipads (S/E/W Pad): spawn there and +%.1f supply/s each while you hold them · sabotaged, stand ground units by one to retake it" % AttackerBase.INCOME,
+	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nBisons: G bombardment (LMB fire, RMB cancel), onto the gun decks and roofs too\nMule Artillery: T sets the gun up / disarms it (it can't move unless disarmed) · armed, G bombardment (LMB fire): further, harder and wider than the bisons'\nTalons: F strafe run (press LMB on the target, drag the way to fly, let go) · G bomb strike (LMB fire) · RMB cancels\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nGiraffes: see furthest through the fog · P ping: marks every defender it reaches, even under camo, and reveals infiltrators out of camo\nKangaroos: R flash grenade (LMB fire, RMB cancel) when no hippo's smoke is ready · they resupply units nearby\nLionesses: F sneak (then RMB a defender: they pounce) · G fire blast · T firing lines on/off when moved together\nSerpent Snipers: F sniper nest (LMB a tree: up it they see and shoot further; any move order climbs them down) · G bush trap (LMB a bush: coiled, they strike and crush a defender who comes close)\nWolf Medics: T healing (2 units each) / minesweeping (they find the hidden mines and dig them out; RMB sweeps on the way, Ctrl+RMB doesn't)\nChimps / Rams / Kangaroos: RMB next to a broken gate to send them in\nRivers: Shift+B drop a bridge (LMB, RMB cancel; 30 a match) · bears, snakes, hippos, elephants swim · the rest but mules and bisons ride the rafts hippos/elephants tow, 2 each or a rhino or giraffe alone (RMB one, or send them across with it; Space lets them off)\nBears: swimming, F dives under the water for 10 s, out of the defenders' sight (rounds that go in where it is still hit it)\nHelipads (S/E/W Pad): spawn there and +%.1f supply/s each while you hold them · sabotaged, stand ground units by one to retake it\nTransport helos (top right): RMB one with units selected to board them (50 spaces; elephant/giraffe 5, rhino/hippo 2, bison 10, mule 15, rest 1) · LMB one, then RMB a helipad you hold to fly there · they land on the pad, put a unit down beside it every 0.25 s and fly home (helipad lost on the way: they bring them back)" % AttackerBase.INCOME,
 			13, Color(0.85, 0.85, 0.85, 0.75))
 	help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
 	help.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	help.position = Vector2(14, help.position.y - 256)
 	root.add_child(help)
+
+	# The transport helicopters, top right: spaces, status, health, and Board / Fly / Look.
+	if commander.fleet != null:
+		helo_panel = HeloPanel.new()
+		helo_panel.commander = commander
+		helo_panel.level = level
+		helo_panel.boardable_count = func(): return selected.filter(func(u): return is_instance_valid(u) and u.can_board_helo()).size()
+		helo_panel.board_pressed.connect(_on_helo_board)
+		helo_panel.fly_pressed.connect(_on_helo_fly)
+		helo_panel.look_pressed.connect(_on_helo_look)
+		# Pinned 12 px in from the top right corner; it grows down and to the left with what it holds.
+		helo_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+		helo_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+		helo_panel.grow_vertical = Control.GROW_DIRECTION_END
+		helo_panel.offset_right = -12.0
+		helo_panel.offset_left = -12.0
+		helo_panel.offset_top = 12.0
+		helo_panel.offset_bottom = 12.0
+		root.add_child(helo_panel)
 
 	_aim_label = UIKit.label("", 15, MISSILE_LINE)
 	_aim_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1090,6 +1190,11 @@ func _process(_delta: float) -> void:
 	_supply_label.text = "Supply %d" % int(commander.supply)
 	_count_label.text = "Army %d / %d   (+%.0f/s)" % [commander.units.size(), AttackerCommander.UNIT_CAP, commander.income_rate()]
 	_selection_label.text = "Selected %d" % selected.size()
+	if is_instance_valid(selected_helo) and selected_helo.is_alive():
+		_selection_label.text = "%s · %d/%d spaces\n%s" % [selected_helo.display_name, selected_helo.spaces_used(), HeloCargo.CAPACITY,
+				selected_helo.status_text()]
+		if selected_helo.can_board():
+			_selection_label.text += "\nRMB a helipad you hold: fly there with what is aboard"
 	var rhinos := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_cluster_bomb())
 	if not rhinos.is_empty():
 		var ready := rhinos.filter(func(u): return u.cluster_ready()).size()
