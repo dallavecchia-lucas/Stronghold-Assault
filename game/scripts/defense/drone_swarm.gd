@@ -338,9 +338,18 @@ func _focus_ok() -> bool:
 		return false
 	if focus.has_method("is_submerged") and focus.is_submerged():
 		return false
+	if concealed(focus):
+		return false
 	if _banned.get(focus.get_instance_id(), 0.0) > _clock:
 		return false
 	return _within_reach(focus.global_position)
+
+
+## Out of the drones' sight: a sneaking (invisible) lioness, an anaconda coiled in a bush, or anyone in woodland.
+static func concealed(u: Node3D) -> bool:
+	return (u.has_method("is_sneaking") and u.is_sneaking()) or (u.has_method("is_coiled") and u.is_coiled()) \
+			or (u.has_method("is_perched") and u.is_perched()) \
+			or LevelBuilder.in_forest(u.global_position)
 
 
 ## Could a full-tanked drone off the nearest dock stand off `p` and still be worth sending?
@@ -362,7 +371,7 @@ func _pick_focus() -> Node3D:
 	var best: Node3D = null
 	var best_score := 0.0
 	for u in get_tree().get_nodes_in_group("attacker_units"):
-		if not u.is_alive() or u.raiding or u.is_submerged():
+		if not u.is_alive() or u.raiding or u.is_submerged() or concealed(u):
 			continue
 		if _banned.get(u.get_instance_id(), 0.0) > _clock:
 			continue
