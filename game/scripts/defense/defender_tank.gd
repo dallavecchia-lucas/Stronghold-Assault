@@ -730,7 +730,8 @@ func _idle(delta: float) -> void:
 
 ## Left to itself it can't pick out a sneaking (invisible) lioness, an anaconda coiled in a bush, or anyone in woodland.
 func _unseen(u: Node3D) -> bool:
-	return (u.has_method("is_sneaking") and u.is_sneaking()) or (u.has_method("is_coiled") and u.is_coiled()) or LevelBuilder.in_forest(u.global_position)
+	return (u.has_method("is_sneaking") and u.is_sneaking()) or (u.has_method("is_coiled") and u.is_coiled()) \
+			or (u.has_method("is_perched") and u.is_perched()) or LevelBuilder.in_forest(u.global_position)
 
 
 ## The nearest attacker on the ground in reach that it can see.
