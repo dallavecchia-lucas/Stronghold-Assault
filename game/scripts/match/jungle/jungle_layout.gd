@@ -76,6 +76,10 @@ const QUARRY_CUT := [Vector2(-505, -40), Vector2(62, 78)]
 const QUARRY_BENCH := 4.25
 const FLATTEN := [
 	[MAIN_SPAWN, 165.0],
+	# The transport helicopters' stands by the citadel (HeloFleet.park_spot: PARK_SIDE either side of the main spawn point,
+	# PARK_FORWARD toward the Keep), cleared of trees with room for the rotors.
+	[Vector2(-88, 588), 75.0],
+	[Vector2(88, 588), 75.0],
 	[QUARRY, 75.0],
 	[OUTPOST, 195.0],
 ]

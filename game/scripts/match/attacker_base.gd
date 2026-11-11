@@ -124,6 +124,45 @@ func pad_centre() -> Vector3:
 	return global_transform * Vector3(PAD_CENTRE.x * scale_factor, deck_height, PAD_CENTRE.y * scale_factor)
 
 
+## A transport helicopter (TransportHelo) sets down on the pad: the middle of its touchdown square, on the deck (pad_centre),
+## its nose along the pad's length (the base's x), as the Jungle Keep's Outpost's pad was made for (the vehicle showcase's
+## --pad check: rotors and all inside the square). On a standard-size pad it overhangs the deck. The units it brings are put
+## down on the ground next to the camp, not on the deck (it is solid: nobody could walk off it): in rows from the spawn
+## point outward, DROP_SPACING apart (drop_spot).
+const DROP_SPACING := 3.4
+
+
+## Where the helicopter's middle touches down: the pad's middle, on the deck.
+func landing_point() -> Vector3:
+	return pad_centre()
+
+
+## The way its nose points once down, as a yaw (a helicopter's front is +Z): along the pad's length.
+func landing_yaw() -> float:
+	var along := global_basis.x
+	return atan2(along.x, along.z)
+
+
+## The way out from the deck's middle toward its spawn point (flat, unit length): the lane's side.
+func lane_dir() -> Vector3:
+	var out := spawn_point - global_position
+	out.y = 0.0
+	return out.normalized() if out.length() > 0.1 else Vector3.RIGHT
+
+
+## The `index`-th of `count` spots on the ground next to the camp where a helicopter's units are put down: rows across the
+## lane's side, the first through the spawn point (SPAWN_OUT off the deck), the rest further out.
+func drop_spot(index: int, count: int) -> Vector3:
+	var out := lane_dir()
+	var across := Vector3(-out.z, 0.0, out.x)
+	var cols := maxi(ceili(sqrt(float(maxi(count, 1)))), 1)
+	var row := floori(float(index) / float(cols))
+	var col := index - row * cols
+	var p := spawn_point + across * ((float(col) - float(cols - 1) * 0.5) * DROP_SPACING) + out * (float(row) * DROP_SPACING)
+	p.y = LevelBuilder.ground_height(p)
+	return p
+
+
 ## Flat distance from `p` to the deck's footprint (0 under it).
 func edge_distance(p: Vector3) -> float:
 	var l := global_transform.affine_inverse() * p

@@ -48,6 +48,14 @@ extends Node
 ##               the raft that hippo or elephant tows, as many as fit (two, or a rhino or a giraffe alone:
 ##               TowPlatform.fits)
 ##   {"type": "unload", "units": [ids]}   the carriers among them let their riders off (on dry land)
+##   {"type": "helo_board", "units": [ids], "helo": 0}   the units among them that can (AttackerUnit.can_board_helo) walk to the
+##               ramp of transport helicopter 0 (HeloFleet, TransportHelo) and go aboard, the nearest first, as many as it has
+##               spaces for (HeloCargo: an elephant or a giraffe takes 5, a rhino or a hippo 2, a bison 10, a mule 15, the rest 1);
+##               the ones that don't fit wait by it. Returns how many got a place.
+##   {"type": "helo_fly", "helo": 0, "spawn": 2}   sends transport helicopter 0, with what it has aboard, to the forward helipad
+##               at spawn point 2 (spawn_bases): one of the ones the attackers hold, its only stop; it lands on the pad, puts its units
+##               down beside the camp and comes home (the helipad lost on the way, it brings them back: TransportHelo). Returns 1 if
+##               it took off, 0 if it can't (hurt, not at the base, empty, or the helipad isn't held).
 ##
 ## Across the Jungle Keep's water (RiverCrossing), a move order ferries: the riders in it that can't walk there
 ## (no bridge on the way) climb onto the rafts the hippos and elephants moved with them tow, two to a raft or a rhino
@@ -101,6 +109,8 @@ var spawn_bases: Array = []
 var units_root: Node3D
 ## The level (bridges go into it); without one no bridges.
 var level: LevelBuilder
+## The transport helicopters standing by the main base; without them no helo commands.
+var fleet: HeloFleet
 var bridges_left := BRIDGE_STOCK
 ## The bridges dropped and not yet brought down.
 var bridges: Array[FoldingBridge] = []
@@ -217,6 +227,10 @@ func submit(cmd: Dictionary) -> int:
 			for u in _resolve(cmd.units):
 				if u.can_carry():
 					u.unload()
+		"helo_board":
+			return _helo_board(cmd.units, cmd.get("helo", 0))
+		"helo_fly":
+			return 1 if _helo_fly(cmd.get("helo", 0), cmd.get("spawn", 0)) else 0
 		"dive":
 			return _resolve(cmd.units).filter(func(u): return u.start_dive()).size()
 	return 0
@@ -351,6 +365,52 @@ func _board(ids: Array, carrier_path: NodePath) -> void:
 			boarding.append(u)
 		else:
 			u.set_order({"type": "move", "pos": raft + c.global_basis.x * (TowPlatform.HALF_WIDTH + 3.0) + offsets[i]})
+
+
+# ---------------------------------------------------------------- transport helicopters
+
+## The units that can board walk to helicopter `helo_idx`'s ramp, the nearest first, each with a place kept for it (TransportHelo.
+## reserve) while there is room; the others gather by the ramp. Returns how many got a place.
+func _helo_board(ids: Array, helo_idx: int) -> int:
+	var h: TransportHelo = fleet.helo_at(helo_idx) if fleet else null
+	if h == null or not h.can_board():
+		return 0
+	var ramp := h.ramp_point()
+	var list := _resolve(ids).filter(func(u): return u.can_board_helo())
+	list.sort_custom(func(a, b): return a.global_position.distance_to(ramp) < b.global_position.distance_to(ramp))
+	var placed := 0
+	var waiting := []
+	for u in list:
+		# Reserved first, then ordered at once: a reservation is only kept while the unit's order is to board this one.
+		if h.reserve(u):
+			u.formation_id = 0
+			u.set_order({"type": "helo", "helo": h, "pos": ramp})
+			placed += 1
+		else:
+			waiting.append(u)
+	var out := ramp - h.global_position
+	out.y = 0.0
+	var by := ramp + (out.normalized() if out.length() > 0.1 else Vector3.BACK) * 10.0
+	var offsets := formation_offsets(waiting.size(), 2.2)
+	for i in waiting.size():
+		waiting[i].set_order({"type": "move", "pos": by + offsets[i]})
+	return placed
+
+
+## Sends helicopter `helo_idx` to the forward helipad at spawn point `spawn_idx`. False if it can't go (TransportHelo.can_dispatch).
+func _helo_fly(helo_idx: int, spawn_idx: int) -> bool:
+	var h: TransportHelo = fleet.helo_at(helo_idx) if fleet else null
+	if h == null or spawn_idx < 0 or spawn_idx >= spawn_bases.size():
+		return false
+	return h.dispatch(spawn_bases[spawn_idx])
+
+
+## True if helicopter `helo_idx` can be sent to the helipad at spawn point `spawn_idx` right now (for the HUD's buttons).
+func helo_can_fly(helo_idx: int, spawn_idx: int) -> bool:
+	var h: TransportHelo = fleet.helo_at(helo_idx) if fleet else null
+	if h == null or spawn_idx < 0 or spawn_idx >= spawn_bases.size():
+		return false
+	return h.can_dispatch(spawn_bases[spawn_idx])
 
 
 # ---------------------------------------------------------------- bridges
@@ -559,8 +619,9 @@ func _without_scouts(ids: Array) -> Array:
 ## Spreads each scouting group's rhinos evenly on a ring just outside its mass of escorts.
 func _update_scouts() -> void:
 	for g in scout_groups:
-		g.rhinos = g.rhinos.filter(func(id): return units.has(id))
-		g.escorts = g.escorts.filter(func(id): return units.has(id))
+		# (A unit aboard a transport helicopter is out of play: it leaves the formation.)
+		g.rhinos = g.rhinos.filter(func(id): return units.has(id) and units[id].is_alive())
+		g.escorts = g.escorts.filter(func(id): return units.has(id) and units[id].is_alive())
 	scout_groups = scout_groups.filter(func(g): return not g.rhinos.is_empty() and not g.escorts.is_empty())
 	for g in scout_groups:
 		var centre := Vector3.ZERO

@@ -361,11 +361,12 @@ func _drop_lock() -> void:
 
 
 ## Enemy aircraft within LOCK_RANGE and LOCK_CONE of the look direction, in sight; the one nearest
-## the crosshair.
+## the crosshair. The player's lock-on takes the attackers' transport helicopters too (Combat.aircraft_for_player); the
+## squad's own (_ai_air) never does.
 func _aircraft_near_aim(eye: Vector3, look: Vector3) -> Node3D:
 	var best: Node3D = null
 	var best_off := LOCK_CONE
-	for a in get_tree().get_nodes_in_group("air_units"):
+	for a in Combat.aircraft_for_player(self):
 		if a.team == team or not a.is_alive() or _flat(eye, a.global_position) > LOCK_RANGE:
 			continue
 		var off := _off_aim(eye, look, a)
