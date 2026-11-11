@@ -704,6 +704,9 @@ func _idle(delta: float) -> void:
 		_look_cd = AI_LOOK
 		target = _pick_target()
 	cannon_cd = maxf(cannon_cd - delta, 0.0)
+	# A locked target that turns invisible or slips into woodland is let go.
+	if target != null and Combat.is_valid_target(target) and _unseen(target):
+		target = null
 	if target == null or not Combat.is_valid_target(target):
 		target = null
 		rig.stow()
@@ -725,6 +728,11 @@ func _idle(delta: float) -> void:
 	rig.mg_firing = dist < AI_MG_RANGE
 
 
+## Left to itself it can't pick out a sneaking (invisible) lioness, an anaconda coiled in a bush, or anyone in woodland.
+func _unseen(u: Node3D) -> bool:
+	return (u.has_method("is_sneaking") and u.is_sneaking()) or (u.has_method("is_coiled") and u.is_coiled()) or LevelBuilder.in_forest(u.global_position)
+
+
 ## The nearest attacker on the ground in reach that it can see.
 func _pick_target() -> Node3D:
 	var best: Node3D = null
@@ -733,8 +741,7 @@ func _pick_target() -> Node3D:
 	for u in get_tree().get_nodes_in_group("attacker_units"):
 		if not u.is_alive() or u.is_flying() or u.is_submerged():
 			continue
-		# Left to itself it can't pick out a sneaking (invisible) lioness, an anaconda coiled in a bush, or anyone in woodland.
-		if u.is_sneaking() or u.is_coiled() or LevelBuilder.in_forest(u.global_position):
+		if _unseen(u):
 			continue
 		var d := Vector2(u.global_position.x - global_position.x, u.global_position.z - global_position.z).length()
 		if d < best_d and Combat.has_line_of_sight(self, from, Combat.aim_point(u), u):
