@@ -349,7 +349,7 @@ func _auto_call() -> void:
 		var p: Vector3 = d.global_position
 		var n := 0
 		for a in attackers:
-			if a.is_alive() and _flat(a.global_position, p) <= PRESSURE_RADIUS:
+			if a.is_alive() and not a.is_submerged() and not DroneSwarm.concealed(a) and _flat(a.global_position, p) <= PRESSURE_RADIUS:
 				n += 1
 		if n > best_n:
 			best_n = n
