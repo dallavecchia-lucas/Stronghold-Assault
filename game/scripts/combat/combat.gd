@@ -47,6 +47,16 @@ static func low_profile(t) -> bool:
 	return v is bool and v
 
 
+## The aircraft a defender the PLAYER is driving may lock onto: every flyer in "air_units" (all the garrison's own anti-air ever
+## looks up) and the attackers' transport helicopters (TransportHelo), which nothing on its own ever targets: idle posts,
+## squads, machines and drones, and the AA turrets, never go after one. Going after a helicopter is the player's choice.
+static func aircraft_for_player(ctx: Node) -> Array:
+	var out: Array = []
+	out.append_array(ctx.get_tree().get_nodes_in_group("air_units"))
+	out.append_array(ctx.get_tree().get_nodes_in_group("transport_helos"))
+	return out
+
+
 ## Point to aim at on a target (center mass for characters, center for buildings).
 static func aim_point(t: Node3D) -> Vector3:
 	if t.has_method("get_aim_point"):

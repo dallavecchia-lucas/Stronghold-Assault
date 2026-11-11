@@ -50,6 +50,13 @@ extends CharacterBody3D
 ## The Mule Artillery (UnitTypes setup_*) sets its gun up to fire and packs it up to move (set_gun): setup_time
 ## seconds each way (its Setup clip, played backward to pack up), and it can't move unless the gun is packed.
 ## Set up, it bombards like the bison, but stays put: its gun's turret swings round onto the aim (MuleGun).
+##
+## The attackers' transport helicopters (TransportHelo, HeloCargo) take units from the main base to a helipad they hold:
+##   {"type": "helo", "helo": TransportHelo, "pos": Vector3}   it walks to the helicopter's ramp (pos) and goes aboard once
+##            it is there, if the helicopter has kept it a place (TransportHelo.reserve; AttackerCommander hands them out).
+## Aboard (stow) a unit is out of the world: invisible, out of every group the defenders look in, not thinking, not alive as
+## far as anyone is concerned (is_alive), but still counted in the army. unstow() lets it out on the ground at the other end;
+## perish() is what happens to it if the helicopter is shot down with it aboard.
 
 signal died(unit: AttackerUnit)
 ## A Sky Talon's strafe round landed / it dropped its bomb (for showcases and the HUD).
@@ -151,6 +158,8 @@ const SETUP_DRIFT := 0.1
 ## Riders: how close to its carrier one hops on (m, past the two radii), how long the hop takes (s) and how high it
 ## goes (m); a carrier waits FERRY_WAIT s at most for the riders on their way to it.
 const BOARD_REACH := 1.4
+## How close to a transport helicopter's ramp it has to get to go aboard (m, flat); a flyer, this much more than its ring.
+const HELO_BOARD_REACH := 8.0
 const HOP_TIME := 0.55
 const HOP_HIGH := 1.4
 const FERRY_WAIT := 40.0
@@ -424,6 +433,9 @@ var carrier: AttackerUnit = null
 var _then = null
 var _hop_t := 1.0
 var _hop_from := Vector3.ZERO
+## The transport helicopter whose hold it is in (TransportHelo; null: out in the world). Not typed, so this script
+## doesn't depend on the helicopter's.
+var aboard_helo = null
 ## Carrying: the riders on its raft, the ones on their way to it (it waits for them), how long it has waited, and
 ## whether it has swum since they got on.
 var riders: Array[AttackerUnit] = []
@@ -561,6 +573,105 @@ func in_water() -> bool:
 ## Raiders inside the stronghold are on their own.
 func is_controllable() -> bool:
 	return is_alive() and not raiding
+
+
+# ---------------------------------------------------------------- the transport helicopter
+
+## In a transport helicopter's hold.
+func is_stowed() -> bool:
+	return aboard_helo != null
+
+
+## May be sent to board a transport helicopter: under orders, on the ground or in the air, not crossing the water or riding
+## a raft, not up a tree or round a bush, a Mule Artillery with its gun packed, a carrier with no riders and its raft folded.
+func can_board_helo() -> bool:
+	if not is_controllable() or is_crossing() or carrier != null or aboard_helo != null:
+		return false
+	if in_tree() or in_bush() or is_constricting():
+		return false
+	if has_setup() and not is_packed():
+		return false
+	if not riders.is_empty() or not _ferry_wait.is_empty():
+		return false
+	if _platform != null and not _platform.is_packed():
+		return false
+	return true
+
+
+## Into the helicopter's hold: out of the world until unstow() lets it out. Whatever it was doing is dropped.
+func stow(helo: Node3D) -> void:
+	if aboard_helo != null or hp <= 0.0:
+		return
+	if is_sneaking():
+		end_sneak()
+	end_ram()
+	_drop_mine()
+	aboard_helo = helo
+	order = {"type": "idle"}
+	_held_order = null
+	target = null
+	drone_prey = null
+	charge_gate = null
+	velocity = Vector3.ZERO
+	_route.clear()
+	_route_swim = false
+	selected = false
+	if _drone_mark:
+		_drone_mark.visible = false
+	remove_from_group("damageable")
+	remove_from_group("attacker_units")
+	remove_from_group("air_units")
+	collision_layer = 0
+	_agent.avoidance_enabled = false
+	visible = false
+	process_mode = Node.PROCESS_MODE_DISABLED
+
+
+## Out of the hold onto the ground at `at`, facing `yaw`: back in the world, standing about with no orders.
+func unstow(at: Vector3, yaw := 0.0) -> void:
+	if aboard_helo == null:
+		return
+	aboard_helo = null
+	process_mode = Node.PROCESS_MODE_INHERIT
+	visible = true
+	collision_layer = GameConfig.LAYER_ATTACKERS
+	add_to_group("damageable")
+	add_to_group("attacker_units")
+	if is_flying():
+		add_to_group("air_units")
+	_agent.avoidance_enabled = not is_flying()
+	velocity = Vector3.ZERO
+	global_position = at
+	rotation.y = yaw
+	order = {"type": "idle"}
+	_update_hp_bar()
+
+
+## Lost with the helicopter it was in: dead without a trace.
+func perish() -> void:
+	if hp <= 0.0:
+		return
+	aboard_helo = null
+	process_mode = Node.PROCESS_MODE_INHERIT
+	visible = false
+	take_damage(hp + 1.0, GameConfig.TEAM_DEFENDER)
+	queue_free()
+
+
+## A helo order: up to the transport helicopter's ramp and into its hold. Where to walk meanwhile, or null once it is in
+## (or given up: the helicopter has left, is gone, or kept no place for it).
+func _helo_step():
+	var helo = order.get("helo")
+	if not is_instance_valid(helo) or not helo.accepts(self):
+		order = {"type": "idle"}
+		return null
+	var ramp: Vector3 = helo.ramp_point()
+	var gap := Vector2(ramp.x - global_position.x, ramp.z - global_position.z).length()
+	var reach := HELO_BOARD_REACH + (_flight.ring if _flight != null else 0.0)
+	if gap <= reach:
+		helo.take_aboard(self)
+		return null
+	return ramp
 
 
 ## Medics, rhinos, elephants, bisons and talons never shoot at what they are ordered to attack.
@@ -1137,7 +1248,7 @@ func set_order(o: Dictionary) -> void:
 			_agent.max_speed = _speed()
 	if o.type == "attack":
 		target = o.target
-	elif o.type in ["move", "board"]:
+	elif o.type in ["move", "board", "helo"]:
 		target = null
 	if o.has("pos") and not is_flying():
 		_agent.target_position = o.pos
@@ -1224,8 +1335,9 @@ func _keep() -> Structure:
 
 # ---------------------------------------------------------------- combat
 
+## Alive and out in the world: a unit in a helicopter's hold isn't (nothing can target it, order it or see through it).
 func is_alive() -> bool:
-	return hp > 0.0
+	return hp > 0.0 and aboard_helo == null
 
 
 func get_aim_point() -> Vector3:
@@ -1405,7 +1517,7 @@ func _update_target() -> void:
 		target = _focus
 		return
 	# A sneaking lioness picks no fights on her own: only an attack order sends her (to pounce).
-	if order.type in ["move", "board"] or is_sneaking():
+	if order.type in ["move", "board", "helo"] or is_sneaking():
 		target = null
 		return
 	if Combat.targetable(target) and _in_range(target) and _can_see(target) and not Combat.low_profile(target) \
@@ -3156,6 +3268,8 @@ func _physics_process(delta: float) -> void:
 		lined = true  # marching in a line: _line_step
 	elif order.type == "board":
 		move_to = _board_step()
+	elif order.type == "helo":
+		move_to = _helo_step()
 	elif order.type in ["move", "attack_move", "nest", "trap"]:
 		move_to = order.pos
 	elif running_over:
@@ -3182,7 +3296,7 @@ func _physics_process(delta: float) -> void:
 		if _agent.is_navigation_finished():
 			if hunt_move:
 				pass  # as close to the drone as the ground goes: it stands there, its order untouched
-			elif order.type not in ["attack", "raid", "nest", "trap", "board"]:
+			elif order.type not in ["attack", "raid", "nest", "trap", "board", "helo"]:
 				order = {"type": "idle"}
 			elif role == "melee" or charge_gate or running_over:
 				# Close the last stretch to the target straight on.
@@ -3373,7 +3487,7 @@ func _fly(move_to, delta: float) -> void:
 
 
 func _on_velocity_computed(safe: Vector3) -> void:
-	if hp <= 0.0 or is_flying() or not _route.is_empty() or carrier != null:
+	if hp <= 0.0 or is_flying() or not _route.is_empty() or carrier != null or aboard_helo != null:
 		return
 	if not is_packed() or is_pinging() or is_throwing() or is_bombarding():
 		# A Mule Artillery's gun set up, or a skill used on the spot: it stands (the avoidance pass for the step it

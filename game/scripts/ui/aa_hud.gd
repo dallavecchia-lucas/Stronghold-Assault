@@ -38,7 +38,7 @@ func _draw() -> void:
 	var view := get_viewport_rect().size
 	var centre := view * 0.5
 	var eye := cam.global_position
-	for a in get_tree().get_nodes_in_group("air_units"):
+	for a in Combat.aircraft_for_player(self):
 		if a.team == squad.team or not a.is_alive() or a == squad.lock_target:
 			continue
 		var at := Combat.aim_point(a)

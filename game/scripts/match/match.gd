@@ -15,6 +15,8 @@ var vision: AttackerVision
 var armory: DefenderArmory
 ## The defenders' drone swarms (the CPU defender has them too); null with --drones=off.
 var drones: DroneBay
+## The attackers' transport helicopters, standing by the main base.
+var fleet: HeloFleet
 var time_left := 600.0
 var started := false
 var finished := false
@@ -51,6 +53,14 @@ func _ready() -> void:
 	ui.level = level
 	ui.match_node = self
 	add_child(ui)
+
+	# The two transport helicopters by the main base (they join the match with the controllers, once the navmesh is in).
+	fleet = HeloFleet.new()
+	fleet.name = "HeloFleet"
+	fleet.base_position = level.spawn_points[0]
+	fleet.helo_added.connect(_on_helo_added)
+	fleet.helo_lost.connect(_on_helo_lost)
+	commander.fleet = fleet
 
 	if GameConfig.drones:
 		drones = DroneBay.new()
@@ -93,6 +103,7 @@ func _start() -> void:
 		add_child(armory)
 	if drones:
 		add_child(drones)
+	add_child(fleet)
 	add_child(player_controller)
 	if ai_attacker:
 		add_child(ai_attacker)
@@ -110,6 +121,29 @@ func _process(delta: float) -> void:
 		_end(GameConfig.TEAM_DEFENDER)
 	if GameConfig.autotest != "":
 		_autotest_step(delta)
+
+
+## A transport helicopter stands at the base (the start, or a replacement): the defender hears when it lifts off.
+func _on_helo_added(h: TransportHelo) -> void:
+	h.state_changed.connect(_on_helo_state)
+
+
+## A loaded helicopter lifting off for a helipad: the defending player is told where, and with how many (they can shoot it down).
+func _on_helo_state(h: TransportHelo) -> void:
+	if h.state != TransportHelo.State.CLIMB or not h.out_leg:
+		return
+	if GameConfig.player_side == GameConfig.PlayerSide.DEFENDER:
+		ui.alert("Enemy transport helicopter lifting off for %s with %d units aboard" % [h.dest_name, h.cargo.size()], UIKit.WARN)
+
+
+## A transport helicopter went down: what was aboard went with it, and a new one is HeloCargo.REPLACE_TIME s away.
+func _on_helo_lost(h: TransportHelo) -> void:
+	var lost: int = h.stats.units_lost
+	if GameConfig.player_side == GameConfig.PlayerSide.DEFENDER:
+		ui.alert("%s shot down%s" % [h.display_name, " with %d units aboard" % lost if lost > 0 else ""], UIKit.GOOD)
+	else:
+		ui.alert("%s destroyed%s · a new one in %d s" % [h.display_name, ", %d units lost" % lost if lost > 0 else "",
+				int(HeloCargo.REPLACE_TIME)], UIKit.DANGER)
 
 
 func _end(winner: int) -> void:
@@ -190,6 +224,12 @@ func _autotest_step(delta: float) -> void:
 			commander.submit({"type": "smoke", "units": ids, "pos": gate.global_position})
 			# Flash grenades onto the gate's machine gun (the first three posts are the gate guns).
 			commander.submit({"type": "flash", "units": ids, "pos": level.stations[step % 3].global_position})
+			# A few units board the first transport helicopter now and then, and it flies them to a helipad.
+			if step % 5 == 2:
+				commander.submit({"type": "helo_board", "units": ids.slice(0, 6), "helo": 0})
+			elif step % 5 == 4:
+				# (The helipads come last in the spawn list on both maps.)
+				commander.submit({"type": "helo_fly", "helo": 0, "spawn": commander.spawn_bases.size() - 1 - step % 2})
 			# Serpent Snipers up the tree nearest the gate, or round the bush nearest it, by turns.
 			if step % 4 == 1:
 				var tree := SerpentNest.tree_near(gate.global_position, 120.0)
@@ -240,6 +280,14 @@ func _autotest_report() -> void:
 				drones.airborne_count(), drones.ready_count(), drones.stats])
 	for b in level.bases:
 		print("AUTOTEST %s controlled=%s capture=%.1f" % [b.display_name, b.controlled, b.capture])
+	if fleet:
+		for i in fleet.slots.size():
+			var h := fleet.helo_at(i)
+			if h:
+				print("AUTOTEST %s %s hp=%d aboard=%d/%d stats=%s" % [h.display_name, h.status_text(), int(h.hp), h.spaces_used(),
+						HeloCargo.CAPACITY, h.stats])
+			else:
+				print("AUTOTEST Helo %d down, a new one in %d s" % [i + 1, int(fleet.replace_in[i])])
 	var dogs := commander.units.values().filter(func(u): return u.has_dog_modes())
 	print("AUTOTEST dogs healing=%d sweeping=%d mine_blasts=%d mines_disarmed=%d" % [dogs.filter(func(u): return u.dog_mode == "heal").size(),
 			dogs.filter(func(u): return u.dog_mode == "sweep").size(), GroundMine.blasts, GroundMine.disarms])

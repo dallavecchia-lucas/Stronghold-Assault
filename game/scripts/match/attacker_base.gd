@@ -124,6 +124,43 @@ func pad_centre() -> Vector3:
 	return global_transform * Vector3(PAD_CENTRE.x * scale_factor, deck_height, PAD_CENTRE.y * scale_factor)
 
 
+## Where a transport helicopter (TransportHelo) sets down for this base, and where the units it brings gather. It is far too
+## big for the pad (only the Jungle Keep's Outpost is made for one, and a deck is solid: nobody could walk off it), so it lands
+## on the open ground out beyond the spawn point, on the lane's side of the camp, its nose across the way out: LANDING_OUT m past
+## the spawn point (the rotors' sweep, 23 m each side of its middle, then clears the deck by about 8 m, whichever base), and its
+## units meet DROP_OUT m further out again. The classic field's camps are cramped for a helicopter this size; it comes down
+## between a camp and its lane there. The Jungle Keep's are not.
+const LANDING_OUT := 24.0
+const DROP_OUT := 30.0
+
+
+## The way out from the deck's middle toward its spawn point (flat, unit length): the lane's side.
+func lane_dir() -> Vector3:
+	var out := spawn_point - global_position
+	out.y = 0.0
+	return out.normalized() if out.length() > 0.1 else Vector3.RIGHT
+
+
+## The middle of the helicopter's touchdown, on the ground.
+func landing_point() -> Vector3:
+	var p := spawn_point + lane_dir() * LANDING_OUT
+	p.y = LevelBuilder.ground_height(p)
+	return p
+
+
+## The way the helicopter's nose points once down, as a yaw (a helicopter's front is +Z): along the deck's side.
+func landing_yaw() -> float:
+	var out := lane_dir()
+	return atan2(out.z, -out.x)
+
+
+## Where the units it unloads gather, on the ground.
+func drop_centre() -> Vector3:
+	var p := spawn_point + lane_dir() * (LANDING_OUT + DROP_OUT)
+	p.y = LevelBuilder.ground_height(p)
+	return p
+
+
 ## Flat distance from `p` to the deck's footprint (0 under it).
 func edge_distance(p: Vector3) -> float:
 	var l := global_transform.affine_inverse() * p
