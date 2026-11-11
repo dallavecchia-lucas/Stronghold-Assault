@@ -16,7 +16,8 @@ signal helo_lost(helo: TransportHelo)
 const PARK_SIDE := 88.0
 const PARK_FORWARD := 22.0
 
-## The main spawn point: where the army comes out (set before the fleet enters the tree).
+## The main spawn point: where the army comes out (set before the fleet enters the tree), and where units a helicopter
+## brings back get out.
 var base_position := Vector3.ZERO
 ## A showcase steps everything by hand and may leave the models out.
 var manual := false
@@ -83,6 +84,7 @@ func _spawn(i: int) -> void:
 	h.manual = manual
 	h.with_rig = with_rig
 	h.setup(i, spot.position, spot.yaw)
+	h.home_drop = base_position
 	add_child(h)
 	h.destroyed.connect(_on_destroyed)
 	slots[i] = h

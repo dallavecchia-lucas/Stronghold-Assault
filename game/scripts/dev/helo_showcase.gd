@@ -1,9 +1,10 @@
 extends Node3D
 ## The attackers' transport helicopters (TransportHelo, HeloFleet, HeloCargo) on a plain field with a stand-in for an outpost:
-## the hold (50 spaces, what each unit takes), boarding through the commander's commands, a trip (one outpost, units unloaded
-## a quarter of a second apart in the order they went in, then home), a hurt helicopter staying put till it is mended, a
-## helicopter destroyed (everything aboard lost, a new one 500 s later), and who can hurt it (the player's rounds and blasts
-## can; nothing idle ever picks it out).
+## the hold (50 spaces, what each unit takes), boarding through the commander's commands, a trip (one outpost, landing on its
+## pad, units put down next to the camp a quarter of a second apart in the order they went in, then home), the outpost lost on
+## the way (it brings them home) or while it is on the pad (a fifth of its health and away, or destroyed), a hurt helicopter
+## staying put till it is mended and the smoke and fire its hurt shows, a helicopter destroyed (everything aboard lost, a new
+## one 500 s later), and who can hurt it (the player's rounds and blasts can; nothing idle ever picks it out).
 ##
 ##   godot --path game --headless --fixed-fps 30 res://scenes/dev/helo_showcase.tscn -- --test   # HELO SHOWCASE PASS / FAIL
 ##   godot --path game res://scenes/dev/helo_showcase.tscn                                       # watch a helicopter ferry units
@@ -13,11 +14,11 @@ extends Node3D
 ## walk on.
 
 const DT := 1.0 / 30.0
-## The main spawn point of the Jungle Keep, and a stand-in outpost at the Quarry: where a helicopter sets down and where its
-## units gather.
+## The main spawn point of the Jungle Keep, and a stand-in outpost at the Quarry: its pad, on a deck 22 m up (the Outpost's
+## height), and the first spot on the ground beside the camp where a helicopter's units are put down.
 const MAIN := Vector3(0.0, 0.0, 610.0)
-const OUTPOST_LZ := Vector3(-383.0, 0.0, -40.0)
-const OUTPOST_DROP := Vector3(-353.0, 0.0, -40.0)
+const OUTPOST_PAD := Vector3(-383.0, 22.0, -40.0)
+const OUTPOST_DROP := Vector3(-330.0, 0.0, -40.0)
 
 
 ## A stand-in for a helipad the attackers hold: what a helicopter reads of one.
@@ -27,7 +28,7 @@ class FakeBase:
 	var short_name := "Quarry"
 	var display_name := "Quarry Helipad"
 	var landing := Vector3.ZERO
-	var landing_heading := 0.0
+	var landing_heading := PI * 0.5
 	var drop := Vector3.ZERO
 
 	func landing_point() -> Vector3:
@@ -36,8 +37,11 @@ class FakeBase:
 	func landing_yaw() -> float:
 		return landing_heading
 
-	func drop_centre() -> Vector3:
-		return drop
+	## Rows of DROP_SPACING going out from `drop`, like AttackerBase.drop_spot.
+	func drop_spot(index: int, count: int) -> Vector3:
+		var cols := maxi(ceili(sqrt(float(maxi(count, 1)))), 1)
+		var row := floori(float(index) / float(cols))
+		return drop + Vector3(float(row) * AttackerBase.DROP_SPACING, 0.0, float(index - row * cols) * AttackerBase.DROP_SPACING)
 
 
 ## A flyer the garrison's anti-air can lock onto (it is in "air_units"), to show the turret does look.
@@ -122,13 +126,13 @@ func _world(manual: bool) -> void:
 	commander = AttackerCommander.new()
 	commander.units_root = units_root
 	commander.supply = 1.0e7
-	var points: Array[Vector3] = [MAIN, OUTPOST_LZ]
+	var points: Array[Vector3] = [MAIN, OUTPOST_DROP]
 	commander.spawn_points = points
 	base = FakeBase.new()
-	base.landing = OUTPOST_LZ
+	base.landing = OUTPOST_PAD
 	base.drop = OUTPOST_DROP
 	add_child(base)
-	base.position = OUTPOST_LZ
+	base.position = OUTPOST_PAD
 	commander.spawn_bases = [null, base]
 	add_child(commander)
 	_new_fleet(manual)
@@ -217,6 +221,12 @@ func _run_tests() -> void:
 	await _test_mending()
 	await _reset()
 	await _test_outpost_rules()
+	await _reset()
+	await _test_caught_on_pad()
+	await _reset()
+	await _test_damage_looks()
+	await _reset()
+	await _test_real_pad()
 	await _reset()
 	await _test_destroyed()
 	await _reset()
@@ -385,13 +395,14 @@ func _test_trip() -> void:
 	_check("the rotors spin up (%.1f s) and it climbs to cruising height" % t_off, h.state == TransportHelo.State.CRUISE
 			and h.global_position.y >= TransportHelo.MIN_CRUISE - 0.1 and t_off >= TransportHelo.SPOOL_TIME)
 	_run(3.0)
-	var toward := Vector2(OUTPOST_LZ.x - h.global_position.x, OUTPOST_LZ.z - h.global_position.z)
+	var toward := Vector2(OUTPOST_PAD.x - h.global_position.x, OUTPOST_PAD.z - h.global_position.z)
 	_check("nose toward the outpost", absf(angle_difference(h.rotation.y, atan2(toward.x, toward.y))) < 0.3)
 	var t_land := _run(150.0, _state(h, TransportHelo.State.UNLOAD))
 	var landed_at := _clock
 	_check("it sets down by the outpost (%.0f s after it left)" % (t_land + t_off), h.state == TransportHelo.State.UNLOAD)
-	_check("... on the ground, over the spot", is_equal_approx(h.global_position.y, OUTPOST_LZ.y)
-			and Vector2(h.global_position.x - OUTPOST_LZ.x, h.global_position.z - OUTPOST_LZ.z).length() < 3.5)
+	_check("... on the pad itself, on the deck 22 m up", is_equal_approx(h.global_position.y, OUTPOST_PAD.y)
+			and Vector2(h.global_position.x - OUTPOST_PAD.x, h.global_position.z - OUTPOST_PAD.z).length() < 3.5)
+	_check("... its nose along the pad", absf(angle_difference(h.rotation.y, base.landing_heading)) < 0.05)
 	_check("nothing unloaded before it is down", h.unloaded_count == 0 and h.cargo.size() == 12)
 	# The queue: a unit a quarter of a second, in the order they went in.
 	var out_times: Array = []
@@ -401,7 +412,6 @@ func _test_trip() -> void:
 		out_times.append(_clock)
 		out_ids.append(u.unit_id)
 		out_at.append(u.global_position))
-	var ramp_then := h.ramp_point()
 	_run(10.0, func(): return h.state != TransportHelo.State.UNLOAD)
 	_check("all 12 came out", out_ids.size() == 12 and h.cargo.is_empty())
 	var steady := true
@@ -411,13 +421,16 @@ func _test_trip() -> void:
 			steady = false
 	_check("one every 0.25 s: the last at %.2f s (12 units: 3 s)" % (out_times[-1] - landed_at), steady)
 	_check("in the order they went in", out_ids == crew.map(func(u): return u.unit_id))
-	_check("out of the ramp at its tail", out_at.all(func(p): return Vector2(p.x - ramp_then.x, p.z - ramp_then.z).length() < 1.5))
+	var placed := true
+	for k in out_at.size():
+		if out_at[k].distance_to(base.drop_spot(k, 12) + Vector3.UP * 0.2) > 0.05:
+			placed = false
+	_check("each put down on the ground next to the camp, on a spot of its own (not on the deck)", placed
+			and out_at.all(func(p): return absf(p.y - 0.2) < 0.05) and _all_apart(out_at, 3.0))
 	_check("back in the world, alive and visible", crew.all(func(u): return u.is_alive() and u.visible and not u.is_stowed()))
 	_check("... in the groups the defenders look in", crew.all(func(u): return u.is_in_group("damageable") and u.is_in_group("attacker_units")))
 	_check("... thinking again", crew.all(func(u): return u.process_mode != Node.PROCESS_MODE_DISABLED))
-	_check("... sent to stand about the drop zone", crew.all(func(u): return u.order.type == "move"
-			and Vector2(u.order.pos.x - OUTPOST_DROP.x, u.order.pos.z - OUTPOST_DROP.z).length() < 20.0))
-	_check("... in places of their own", crew.map(func(u): return u.order.pos).size() == 12 and _all_apart(crew.map(func(u): return u.order.pos), 2.0))
+	_check("... standing there, theirs to order", crew.all(func(u): return u.order.type == "idle"))
 	_check("the helicopter isn't kept: unhurt, it goes straight home", h.state == TransportHelo.State.SPOOL and not h.out_leg)
 	var t_home := _run(200.0, _state(h, TransportHelo.State.PARKED))
 	_check("it comes home (%.0f s)" % t_home, h.state == TransportHelo.State.PARKED)
@@ -485,22 +498,184 @@ func _test_mending() -> void:
 
 
 func _test_outpost_rules() -> void:
-	print("the outposts")
+	print("the outpost lost on the way: it brings them home")
 	var h := fleet.helo_at(0)
-	_board(h, _unit("rifleman"))
+	var home := h.global_position
+	var aborted: Array = []
+	h.trip_aborted.connect(func(_h, on_pad): aborted.append(on_pad))
+	var crew: Array = []
+	for i in 6:
+		var u := _unit("rifleman")
+		_board(h, u)
+		crew.append(u)
 	base.controlled = false
 	_check("a helipad the attackers lost is no destination", not h.can_dispatch(base) and not h.dispatch(base)
 			and not commander.helo_can_fly(0, 1) and commander.submit({"type": "helo_fly", "helo": 0, "spawn": 1}) == 0)
-	_check("the load stays aboard", h.cargo.size() == 1 and h.state == TransportHelo.State.PARKED)
+	_check("the load stays aboard", h.cargo.size() == 6 and h.state == TransportHelo.State.PARKED)
 	base.controlled = true
 	_check("held, it can go", commander.helo_can_fly(0, 1))
 	_check("away", h.dispatch(base))
 	_run(60.0, _state(h, TransportHelo.State.CRUISE))
+	_run(4.0)
+	var hp_before := h.hp
+	var was := h.global_position
+	var going := Vector2(OUTPOST_PAD.x - was.x, OUTPOST_PAD.z - was.z).normalized()
 	base.controlled = false
+	_run(DT * 1.5)
+	_check("lost on the way: it turns back at once", not h.out_leg and h.state == TransportHelo.State.CLIMB and aborted == [false])
+	_check("... unhurt", h.hp == hp_before)
+	_check("... with everyone still aboard", h.cargo.size() == 6 and crew.all(func(u): return u.is_stowed()))
+	_run(2.0)
+	var on := Vector2(h.global_position.x - was.x, h.global_position.z - was.z)
+	_check("... carrying on its way a moment as it brakes, not stopping dead", on.dot(going) > 20.0, "(%.1f m on)" % on.dot(going))
 	_run(200.0, _state(h, TransportHelo.State.UNLOAD))
-	_check("an outpost sabotaged on the way still gets its units (they are there to retake it)", h.state == TransportHelo.State.UNLOAD)
-	_run(5.0, func(): return h.cargo.is_empty())
-	_check("... and they are put down", h.cargo.is_empty() and h.unloaded_count == 1)
+	_check("home, it sets down where it stood and lets them out", h.state == TransportHelo.State.UNLOAD and not h.out_leg
+			and h.global_position.distance_to(home) < 0.5)
+	_run(10.0, _state(h, TransportHelo.State.PARKED))
+	_check("all 6 out by the main spawn point", h.cargo.is_empty() and crew.all(func(u): return u.is_alive()
+			and Vector2(u.global_position.x - MAIN.x, u.global_position.z - MAIN.z).length() < 15.0))
+	_check("none of them were put down at the outpost", h.unloaded_count == 0 and h.stats.units_returned == 6)
+	_check("it stands at the base, open for the next load", h.state == TransportHelo.State.PARKED and h.can_board())
+	# Lost while it is still spinning up at the base: it never leaves.
+	for i in 2:
+		_board(h, _unit("rifleman"))
+	base.controlled = true
+	_check("away again", h.dispatch(base))
+	_run(2.0)
+	base.controlled = false
+	_run(DT * 1.5)
+	_check("lost while it spins up: it never leaves, and they get out again", h.state == TransportHelo.State.UNLOAD
+			and not h.out_leg and h.global_position.distance_to(home) < 0.5 and aborted.size() == 2)
+	_run(5.0, _state(h, TransportHelo.State.PARKED))
+	_check("... and it stands at the base again", h.state == TransportHelo.State.PARKED and h.cargo.is_empty())
+	# Lost as it sets down on the pad.
+	for i in 2:
+		_board(h, _unit("rifleman"))
+	base.controlled = true
+	_check("away a third time", h.dispatch(base))
+	_run(200.0, _state(h, TransportHelo.State.DESCEND))
+	_run(2.0)
+	base.controlled = false
+	_run(DT * 1.5)
+	_check("lost as it sets down: it climbs away with them", h.state == TransportHelo.State.CLIMB and h.cargo.size() == 2
+			and aborted == [false, false, false])
+	_run(30.0, _state(h, TransportHelo.State.CRUISE))
+	_check("... back up to an ordinary cruising height (not 55 m over where it was)",
+			absf(h.global_position.y - TransportHelo.cruise_altitude(Vector3(h.global_position.x, 0.0, h.global_position.z), h.home_position)) < 0.1,
+			"(%.0f m)" % h.global_position.y)
+	_run(300.0, _state(h, TransportHelo.State.PARKED))
+	_check("... home, they are out", h.cargo.is_empty() and h.global_position.distance_to(home) < 0.5)
+
+
+func _test_caught_on_pad() -> void:
+	print("caught on the pad as the outpost falls")
+	var h := fleet.helo_at(0)
+	var home := h.global_position
+	var aborted: Array = []
+	h.trip_aborted.connect(func(_h, on_pad): aborted.append(on_pad))
+	var crew: Array = []
+	for i in 12:
+		var u := _unit("rifleman")
+		_board(h, u)
+		crew.append(u)
+	_check("away", h.dispatch(base))
+	_run(200.0, _state(h, TransportHelo.State.UNLOAD))
+	_run(10.0, func(): return h.unloaded_count >= 4)
+	_check("4 of the 12 put down by the outpost", h.unloaded_count == 4 and h.cargo.size() == 8)
+	var pad_y := h.global_position.y
+	base.controlled = false
+	_run(DT * 1.5)
+	_check("the outpost falls as it unloads: it loses a fifth of its health", absf(h.hp - TransportHelo.MAX_HP * 0.8) < 0.01,
+			"(hp %.0f)" % h.hp)
+	_check("... and lifts off at once, no spinning up first", h.state == TransportHelo.State.CLIMB and h.global_position.y > pad_y
+			and aborted == [true])
+	_check("... with the other 8 still aboard", h.cargo.size() == 8 and h.unloaded_count == 4)
+	_run(300.0, _state(h, TransportHelo.State.PARKED))
+	_check("it brings them home and lets them out there", h.state == TransportHelo.State.PARKED and h.cargo.is_empty()
+			and h.stats.units_returned == 8 and h.global_position.distance_to(home) < 0.5)
+	_check("the 4 put down at the outpost are still there", crew.slice(0, 4).all(func(u): return u.is_alive()
+			and Vector2(u.global_position.x - OUTPOST_DROP.x, u.global_position.z - OUTPOST_DROP.z).length() < 15.0))
+	_check("the 8 brought back are by the main spawn point", crew.slice(4).all(func(u): return u.is_alive()
+			and Vector2(u.global_position.x - MAIN.x, u.global_position.z - MAIN.z).length() < 15.0))
+	_check("hurt, it mends at the base", h.hp > TransportHelo.MAX_HP * 0.8 and not h.can_dispatch(base))
+	# Too hurt to take the hit: it is destroyed on the pad with what is still aboard.
+	_run(200.0, func(): return h.hp >= TransportHelo.MAX_HP - 0.01)
+	base.controlled = true
+	for i in 10:
+		_board(h, _unit("rifleman"))
+	_check("mended and loaded, away", h.dispatch(base))
+	_run(200.0, _state(h, TransportHelo.State.UNLOAD))
+	_run(10.0, func(): return h.unloaded_count >= 3)
+	var died := [0]
+	commander.unit_died.connect(func(_u): died[0] += 1)
+	h.hp = TransportHelo.MAX_HP * 0.15
+	base.controlled = false
+	_run(DT * 1.5)
+	_check("at 15 percent a fifth is too much: destroyed on the pad", not h.is_alive() and fleet.helo_at(0) == null)
+	_check("... with the 7 still aboard", died[0] == 7)
+	_check("... and the outpost is lost all the same", not base.controlled)
+	_check("... it burns where it stood, on the deck", absf(h.global_position.y - pad_y) < 0.01)
+	_check("... and a new one is 500 s away", fleet.replace_in[0] > HeloCargo.REPLACE_TIME - 1.0)
+	# Caught while it mends on the pad (it had unloaded hurt): the same.
+	var h2 := fleet.helo_at(1)
+	base.controlled = true
+	for i in 2:
+		_board(h2, _unit("rifleman"))
+	_check("the other one away", h2.dispatch(base))
+	_run(200.0, _state(h2, TransportHelo.State.UNLOAD))
+	h2.take_damage(2400.0, GameConfig.TEAM_DEFENDER)
+	_run(5.0, _state(h2, TransportHelo.State.REPAIR))
+	_check("hurt, it stays on the pad mending", h2.state == TransportHelo.State.REPAIR and h2.cargo.is_empty())
+	var before := h2.hp
+	base.controlled = false
+	_run(DT * 1.5)
+	_check("caught mending: a fifth off and away", absf(h2.hp - (before - TransportHelo.MAX_HP * 0.2)) < 0.01
+			and h2.state == TransportHelo.State.CLIMB)
+
+
+func _test_damage_looks() -> void:
+	print("how its hurt shows")
+	var h := fleet.helo_at(0)
+	var names := ["nothing", "grey smoke", "black smoke", "fire"]
+	for pair in [[1.0, 0], [0.61, 0], [0.6, 1], [0.41, 1], [0.4, 2], [0.11, 2], [0.1, 3], [0.01, 3]]:
+		h.hp = TransportHelo.MAX_HP * float(pair[0])
+		_check("at %d percent: %s" % [roundi(float(pair[0]) * 100.0), names[pair[1]]], h.damage_stage() == pair[1],
+				"(stage %d)" % h.damage_stage())
+	h.hp = TransportHelo.MAX_HP * 0.05
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_check("the fire lights it up", h._fire_light.visible)
+	h.hp = TransportHelo.MAX_HP
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_check("mended: no fire, no smoke", not h._fire_light.visible and h.damage_stage() == 0)
+	h.hp = TransportHelo.MAX_HP * 0.05
+	h.take_damage(1.0e9, GameConfig.TEAM_DEFENDER)
+	_check("a wreck shows no engine fire of its own (the wreck burns instead)", h.damage_stage() == 0 and not h._fire_light.visible)
+
+
+func _test_real_pad() -> void:
+	print("a real helipad: its pad and the ground beside it")
+	for scale in [1.0, JungleLayout.OUTPOST_SCALE]:
+		var b := AttackerBase.new()
+		b.setup("east", "Outpost")
+		b.scale_factor = scale
+		b.position = Vector3(700.0, 0.0, -400.0)
+		b.spawn_point = b.position + Vector3(-(b.deck_size.x * 0.5 + AttackerBase.SPAWN_OUT), 0.0, 0.0)
+		add_child(b)
+		_check("it lands on the pad's middle, on the deck (size %.1f)" % scale,
+				b.landing_point().is_equal_approx(b.pad_centre()) and absf(b.landing_point().y - b.deck_height) < 0.01)
+		_check("... its nose along the pad, as the vehicle showcase's pad check stands it", absf(angle_difference(b.landing_yaw(), PI * 0.5)) < 0.001)
+		var spots := []
+		for k in 50:
+			spots.append(b.drop_spot(k, 50))
+		_check("50 units put down on the ground next to the camp: none on or under the deck",
+				spots.all(func(p): return b.edge_distance(p) >= AttackerBase.SPAWN_OUT - 0.01 and absf(p.y) < 0.01))
+		_check("... close by (within 30 m of the deck), on the spawn point's side",
+				spots.all(func(p): return b.edge_distance(p) < 30.0 and p.x < b.position.x))
+		_check("... each on a spot of its own", _all_apart(spots, 3.0))
+		b.queue_free()
+	await get_tree().physics_frame
 
 
 func _test_destroyed() -> void:
@@ -616,18 +791,21 @@ func _demo() -> void:
 	_demo_cam.far = 4000.0
 	add_child(_demo_cam)
 	_demo_cam.current = true
-	var mark := MeshInstance3D.new()
-	var cyl := CylinderMesh.new()
-	cyl.top_radius = 20.0
-	cyl.bottom_radius = 20.0
-	cyl.height = 0.4
-	mark.mesh = cyl
-	mark.material_override = Mats.flat(Color(0.8, 0.25, 0.2))
-	add_child(mark)
-	mark.position = OUTPOST_LZ
+	# The stand-in outpost: a deck 22 m up with the pad on it; its units are put down on the ground beside it.
+	add_child(Mats.box_mesh(Vector3(80.0, OUTPOST_PAD.y, 70.0), Vector3(OUTPOST_PAD.x, OUTPOST_PAD.y * 0.5, OUTPOST_PAD.z),
+			Mats.flat(Color(0.45, 0.45, 0.48))))
+	# The other helicopter starts badly hurt: on fire, then black smoke, then grey, as it mends at the base.
+	var hurt := fleet.helo_at(1)
+	if hurt:
+		hurt.hp = hurt.max_hp * 0.08
 	while true:
 		var h := fleet.helo_at(0)
 		if h != null and h.state == TransportHelo.State.PARKED and h.cargo.is_empty() and h.hp >= h.max_hp - 0.01:
+			# The last load is done with (the army can't grow past its 60).
+			for old in commander.units.values():
+				if is_instance_valid(old) and not old.is_stowed():
+					commander.units.erase(old.unit_id)
+					old.queue_free()
 			for t in ["rifleman", "rifleman", "elephant", "rhino", "kangaroo", "medic", "giraffe", "rifleman"]:
 				var u := _unit(t, h.ramp_point())
 				h.reserve(u)

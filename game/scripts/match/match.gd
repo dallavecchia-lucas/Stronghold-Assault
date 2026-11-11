@@ -126,6 +126,7 @@ func _process(delta: float) -> void:
 ## A transport helicopter stands at the base (the start, or a replacement): the defender hears when it lifts off.
 func _on_helo_added(h: TransportHelo) -> void:
 	h.state_changed.connect(_on_helo_state)
+	h.trip_aborted.connect(_on_helo_turned_back)
 
 
 ## A loaded helicopter lifting off for a helipad: the defending player is told where, and with how many (they can shoot it down).
@@ -134,6 +135,18 @@ func _on_helo_state(h: TransportHelo) -> void:
 		return
 	if GameConfig.player_side == GameConfig.PlayerSide.DEFENDER:
 		ui.alert("Enemy transport helicopter lifting off for %s with %d units aboard" % [h.dest_name, h.cargo.size()], UIKit.WARN)
+
+
+## The helipad of a helicopter's trip was lost: it turned for home with what was aboard (`on_pad`: caught on the pad as it
+## fell, and hit lifting off).
+func _on_helo_turned_back(h: TransportHelo, on_pad: bool) -> void:
+	if GameConfig.player_side == GameConfig.PlayerSide.DEFENDER:
+		ui.alert("Enemy transport helicopter driven off %s, hit" % h.dest_name if on_pad
+				else "Enemy transport helicopter turning back from %s" % h.dest_name, UIKit.GOOD)
+	elif on_pad:
+		ui.alert("%s hit lifting off %s as it fell · bringing %d units home" % [h.display_name, h.dest_name, h.cargo.size()], UIKit.DANGER)
+	else:
+		ui.alert("%s turning back: %s was lost · bringing %d units home" % [h.display_name, h.dest_name, h.cargo.size()], UIKit.WARN)
 
 
 ## A transport helicopter went down: what was aboard went with it, and a new one is HeloCargo.REPLACE_TIME s away.

@@ -53,7 +53,7 @@ func _ready() -> void:
 				continue
 			var fly := UIKit.button("Fly > %s" % level.spawn_names[k], 13)
 			fly.focus_mode = Control.FOCUS_NONE
-			fly.tooltip_text = "Fly what is aboard to %s, one the attackers hold: it unloads there (a unit every %.2f s) and comes home.\nThis is its only stop, and it can't turn back." % [level.spawn_bases[k].display_name, HeloCargo.UNLOAD_TIME]
+			fly.tooltip_text = "Fly what is aboard to %s, one the attackers hold: it lands on the pad, puts the units down beside the camp\n(one every %.2f s) and comes home. Its only stop; if the helipad is lost on the way it brings them back,\nand if it falls while it is on the pad it loses a fifth of its health lifting off." % [level.spawn_bases[k].display_name, HeloCargo.UNLOAD_TIME]
 			fly.pressed.connect(_on_fly.bind(i, k))
 			buttons.add_child(fly)
 			flies[k] = fly
@@ -100,7 +100,9 @@ func _process(_delta: float) -> void:
 		(row["info"] as Label).text = h.status_text()
 		var bar: ProgressBar = row["bar"]
 		bar.value = h.health()
-		UIKit.set_bar_color(bar, UIKit.DANGER if h.health() < 0.35 else UIKit.WARN if h.health() < 0.7 else UIKit.GOOD)
+		# The same steps as the smoke it trails: grey at 60%, black at 40%, fire at 10%.
+		var f := h.health()
+		UIKit.set_bar_color(bar, UIKit.DANGER if f <= TransportHelo.BLACK_SMOKE_AT else UIKit.WARN if f <= TransportHelo.GREY_SMOKE_AT else UIKit.GOOD)
 		var board: Button = row["board"]
 		board.disabled = not h.can_board() or can_board_n == 0 or h.spaces_free() <= 0
 		board.text = "Board %d" % can_board_n if can_board_n > 0 else "Board"

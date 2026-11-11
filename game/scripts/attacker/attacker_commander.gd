@@ -53,8 +53,9 @@ extends Node
 ##               spaces for (HeloCargo: an elephant or a giraffe takes 5, a rhino or a hippo 2, a bison 10, a mule 15, the rest 1);
 ##               the ones that don't fit wait by it. Returns how many got a place.
 ##   {"type": "helo_fly", "helo": 0, "spawn": 2}   sends transport helicopter 0, with what it has aboard, to the forward helipad
-##               at spawn point 2 (spawn_bases): one of the ones the attackers hold, its only stop; it unloads there and comes home.
-##               Returns 1 if it took off, 0 if it can't (hurt, not at the base, empty, or the helipad isn't held).
+##               at spawn point 2 (spawn_bases): one of the ones the attackers hold, its only stop; it lands on the pad, puts its units
+##               down beside the camp and comes home (the helipad lost on the way, it brings them back: TransportHelo). Returns 1 if
+##               it took off, 0 if it can't (hurt, not at the base, empty, or the helipad isn't held).
 ##
 ## Across the Jungle Keep's water (RiverCrossing), a move order ferries: the riders in it that can't walk there
 ## (no bridge on the way) climb onto the rafts the hippos and elephants moved with them tow, two to a raft or a rhino
