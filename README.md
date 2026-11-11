@@ -190,7 +190,7 @@ Open `game/project.godot` in **Godot 4.5** and press Play (F5). Pick a side on t
 - Camera: `WASD`/arrows/screen edge to pan, `Q`/`E` or middle mouse to rotate, wheel to zoom
 - `Esc` pauses (both sides)
 
-Balance numbers live in `game/scripts/units/unit_types.gd` and the constants at the top of each defense script.
+Balance numbers live in `game/scripts/units/unit_types.gd` and the constants at the top of each defense script. The plan for balancing them (match length, win rate, the mathematics and a model of the match) is in `docs/balance/BALANCE_PLAN.md`.
 
 ### Light and effects
 

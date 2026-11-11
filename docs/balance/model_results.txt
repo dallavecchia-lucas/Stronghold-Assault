@@ -1,0 +1,63 @@
+# python3 tools/balance/siege_model.py  (200 matches a row; probes 8). A model, not the engine: see BALANCE_PLAN.md.
+== 1. The game as it stands: CPU attacker against the garrison's AI ==
+classic 10 min · CPU Easy                              P(att)= 34.5% ± 6.6 | length med  10.0 [p10   5.3, p90  10.0] min | in 20-30:   0.0% | gate falls 100.0% (med   3.5) | att-win med   5.4
+classic 10 min · CPU Normal                            P(att)= 79.5% ± 5.6 | length med   9.6 [p10   4.8, p90  10.0] min | in 20-30:   0.0% | gate falls 100.0% (med   3.0) | att-win med   9.6
+classic 10 min · CPU Hard                              P(att)= 80.0% ± 5.5 | length med   7.9 [p10   4.3, p90  10.0] min | in 20-30:   0.0% | gate falls 100.0% (med   2.4) | att-win med   7.9
+jungle 15 min · CPU Easy                               P(att)= 11.0% ± 4.3 | length med  15.0 [p10  14.5, p90  15.0] min | in 20-30:   0.0% | gate falls  15.5% (med  12.4) | att-win med  14.2
+jungle 15 min · CPU Normal                             P(att)= 22.0% ± 5.7 | length med  15.0 [p10  11.9, p90  15.0] min | in 20-30:   0.0% | gate falls  40.5% (med  10.2) | att-win med  12.0
+jungle 15 min · CPU Hard                               P(att)= 78.0% ± 5.7 | length med  14.5 [p10   9.8, p90  15.0] min | in 20-30:   0.0% | gate falls 100.0% (med   8.4) | att-win med  10.1
+
+== 2. The game as it stands: scripted exploit probes against the garrison's AI ==
+classic · ram rush                                     P(att)=100.0% ± 0.0 | length med   1.5 [p10   1.5, p90   1.5] min | in 20-30:   0.0% | gate falls 100.0% (med   0.9) | att-win med   1.5
+classic · 3 mules then rams                            P(att)=100.0% ± 0.0 | length med   2.1 [p10   2.1, p90   2.1] min | in 20-30:   0.0% | gate falls 100.0% (med   0.7) | att-win med   2.1
+classic · combined arms, one lane                      P(att)=100.0% ± 0.0 | length med   2.4 [p10   2.4, p90   2.4] min | in 20-30:   0.0% | gate falls 100.0% (med   1.7) | att-win med   2.4
+jungle · ram rush                                      P(att)=100.0% ± 0.0 | length med   2.7 [p10   2.7, p90   2.7] min | in 20-30:   0.0% | gate falls 100.0% (med   2.1) | att-win med   2.7
+jungle · 3 mules then rams                             P(att)=100.0% ± 0.0 | length med   3.4 [p10   3.4, p90   3.4] min | in 20-30:   0.0% | gate falls 100.0% (med   2.5) | att-win med   3.4
+jungle · combined arms, one lane                       P(att)=100.0% ± 0.0 | length med   3.7 [p10   3.7, p90   3.7] min | in 20-30:   0.0% | gate falls 100.0% (med   3.0) | att-win med   3.7
+
+== 3. Only the clock changed (26:00 + up to 4:00 overtime) ==
+classic · CPU Normal                                   P(att)= 93.5% ± 3.4 | length med   9.6 [p10   4.8, p90  16.4] min | in 20-30:   9.5% | gate falls 100.0% (med   3.0) | att-win med   9.6
+classic · ram rush                                     P(att)=100.0% ± 0.0 | length med   1.5 [p10   1.5, p90   1.5] min | in 20-30:   0.0% | gate falls 100.0% (med   0.9) | att-win med   1.5
+jungle · CPU Normal                                    P(att)= 96.0% ± 2.7 | length med  18.8 [p10  11.9, p90  23.9] min | in 20-30:  25.5% | gate falls 100.0% (med  16.7) | att-win med  18.8
+jungle · ram rush                                      P(att)=100.0% ± 0.0 | length med   2.7 [p10   2.7, p90   2.7] min | in 20-30:   0.0% | gate falls 100.0% (med   2.1) | att-win med   2.7
+
+== 4. Phase 1 structure, then the two master knobs: objective scale H x garrison scale g ==
+   (H = 1: gate 9000, Keep 16000; small arms at 10% against gates, 4 rams on the Keep at a time,
+    the Gunner Squad guards the Keep, CPU waves bring 3 rams)
+classic · H=0.25 g=0.5 · CPU Normal                    P(att)=100.0% ± 0.0 | length med   9.9 [p10   7.8, p90  13.0] min | in 20-30:   0.5% | gate falls 100.0% (med   3.9) | att-win med   9.9
+classic · H=0.25 g=1.0 · CPU Normal                    P(att)= 30.5% ± 6.4 | length med  26.0 [p10  24.3, p90  26.0] min | in 20-30: 100.0% | gate falls 100.0% (med   7.2) | att-win med  24.9
+classic · H=0.25 g=2.0 · CPU Normal                    P(att)=  0.0% ± 0.0 | length med  26.0 [p10  26.0, p90  26.0] min | in 20-30: 100.0% | gate falls 100.0% (med   8.8) | att-win med   nan
+classic · H=0.5  g=0.5 · CPU Normal                    P(att)= 96.5% ± 2.5 | length med  16.2 [p10   9.4, p90  21.9] min | in 20-30:  16.5% | gate falls 100.0% (med   6.1) | att-win med  16.1
+classic · H=0.5  g=1.0 · CPU Normal                    P(att)=  0.0% ± 0.0 | length med  26.0 [p10  26.0, p90  26.0] min | in 20-30: 100.0% | gate falls 100.0% (med   9.8) | att-win med   nan
+classic · H=0.5  g=2.0 · CPU Normal                    P(att)=  0.0% ± 0.0 | length med  26.0 [p10  26.0, p90  26.0] min | in 20-30: 100.0% | gate falls  99.5% (med  14.2) | att-win med   nan
+classic · H=1.0  g=0.5 · CPU Normal                    P(att)= 48.5% ± 6.9 | length med  26.0 [p10  13.1, p90  26.0] min | in 20-30:  71.5% | gate falls 100.0% (med   9.8) | att-win med  17.3
+classic · H=1.0  g=1.0 · CPU Normal                    P(att)=  0.0% ± 0.0 | length med  26.0 [p10  26.0, p90  26.0] min | in 20-30: 100.0% | gate falls  96.0% (med  16.2) | att-win med   nan
+classic · H=1.0  g=2.0 · CPU Normal                    P(att)=  0.0% ± 0.0 | length med  26.0 [p10  26.0, p90  26.0] min | in 20-30: 100.0% | gate falls  53.5% (med  20.9) | att-win med   nan
+jungle · H=0.25 g=0.5 · CPU Normal                     P(att)= 46.5% ± 6.9 | length med  26.0 [p10  15.1, p90  26.0] min | in 20-30:  68.0% | gate falls 100.0% (med   7.9) | att-win med  19.0
+jungle · H=0.25 g=1.0 · CPU Normal                     P(att)=  0.0% ± 0.0 | length med  26.0 [p10  26.0, p90  26.0] min | in 20-30: 100.0% | gate falls 100.0% (med  10.8) | att-win med   nan
+jungle · H=0.25 g=2.0 · CPU Normal                     P(att)=  0.0% ± 0.0 | length med  26.0 [p10  26.0, p90  26.0] min | in 20-30: 100.0% | gate falls 100.0% (med  15.7) | att-win med   nan
+jungle · H=0.5  g=0.5 · CPU Normal                     P(att)= 10.0% ± 4.2 | length med  26.0 [p10  26.0, p90  26.0] min | in 20-30:  95.0% | gate falls 100.0% (med  10.5) | att-win med  20.3
+jungle · H=0.5  g=1.0 · CPU Normal                     P(att)=  0.0% ± 0.0 | length med  26.0 [p10  26.0, p90  26.0] min | in 20-30: 100.0% | gate falls  58.0% (med  19.2) | att-win med   nan
+jungle · H=0.5  g=2.0 · CPU Normal                     P(att)=  0.0% ± 0.0 | length med  26.0 [p10  26.0, p90  26.0] min | in 20-30: 100.0% | gate falls  20.0% (med  24.6) | att-win med   nan
+jungle · H=1.0  g=0.5 · CPU Normal                     P(att)=  4.0% ± 2.7 | length med  26.0 [p10  26.0, p90  26.0] min | in 20-30:  98.0% | gate falls  90.5% (med  17.9) | att-win med  19.3
+jungle · H=1.0  g=1.0 · CPU Normal                     P(att)=  0.0% ± 0.0 | length med  26.0 [p10  26.0, p90  26.0] min | in 20-30: 100.0% | gate falls   2.0% (med  22.6) | att-win med   nan
+jungle · H=1.0  g=2.0 · CPU Normal                     P(att)=  0.0% ± 0.0 | length med  26.0 [p10  26.0, p90  26.0] min | in 20-30: 100.0% | gate falls   0.0% (med   nan) | att-win med   nan
+
+== 5. Phase 1 structure: the exploit probes' earliest wins (H = 1, g = 1) ==
+classic · ram rush                                     P(att)=100.0% ± 0.0 | length med   7.4 [p10   7.0, p90   8.7] min | in 20-30:   0.0% | gate falls 100.0% (med   3.7) | att-win med   7.3
+classic · 3 mules then rams                            P(att)=  0.0% ± 0.0 | length med  26.0 [p10  26.0, p90  26.0] min | in 20-30: 100.0% | gate falls 100.0% (med   3.0) | att-win med   nan
+classic · combined arms, one lane                      P(att)=  0.0% ± 0.0 | length med  26.0 [p10  26.0, p90  26.0] min | in 20-30: 100.0% | gate falls 100.0% (med   9.0) | att-win med   nan
+jungle · ram rush                                      P(att)=100.0% ± 0.0 | length med  10.5 [p10  10.4, p90  10.8] min | in 20-30:   0.0% | gate falls 100.0% (med   5.2) | att-win med  10.5
+jungle · 3 mules then rams                             P(att)=  0.0% ± 0.0 | length med  26.0 [p10  26.0, p90  26.0] min | in 20-30: 100.0% | gate falls 100.0% (med   6.9) | att-win med   nan
+jungle · combined arms, one lane                       P(att)=  0.0% ± 0.0 | length med  26.0 [p10  26.0, p90  26.1] min | in 20-30: 100.0% | gate falls 100.0% (med  11.8) | att-win med   nan
+
+== 6. Solving for 50%: bisection on ln g at a fixed objective scale ==
+classic · H=0.25 g*=0.93 · CPU Normal                  P(att)= 50.5% ± 6.9 | length med  26.0 [p10  21.9, p90  26.0] min | in 20-30:  99.5% | gate falls 100.0% (med   7.2) | att-win med  24.9
+classic · H=0.25 g*=0.93 · ram rush                    P(att)=100.0% ± 0.0 | length med   2.9 [p10   2.6, p90   3.0] min | in 20-30:   0.0% | gate falls 100.0% (med   1.0) | att-win med   2.8
+classic · H=0.5  g*=0.74 · CPU Normal                  P(att)= 60.0% ± 6.8 | length med  25.4 [p10  20.9, p90  26.0] min | in 20-30:  94.5% | gate falls 100.0% (med   7.8) | att-win med  23.1
+classic · H=0.5  g*=0.74 · ram rush                    P(att)=100.0% ± 0.0 | length med   4.0 [p10   3.9, p90   4.1] min | in 20-30:   0.0% | gate falls 100.0% (med   1.9) | att-win med   4.0
+jungle · H=0.25 g*=0.52 · CPU Normal                   P(att)= 42.0% ± 6.8 | length med  26.0 [p10  15.1, p90  26.0] min | in 20-30:  71.5% | gate falls 100.0% (med   8.2) | att-win med  18.9
+jungle · H=0.25 g*=0.52 · ram rush                     P(att)=100.0% ± 0.0 | length med   3.1 [p10   3.0, p90   3.4] min | in 20-30:   0.0% | gate falls 100.0% (med   2.2) | att-win med   3.1
+jungle · H=0.5  g*=0.43 · CPU Normal                   P(att)= 50.0% ± 6.9 | length med  26.0 [p10  15.5, p90  26.0] min | in 20-30:  69.5% | gate falls 100.0% (med   9.9) | att-win med  19.2
+jungle · H=0.5  g*=0.43 · ram rush                     P(att)=100.0% ± 0.0 | length med   4.5 [p10   4.5, p90   4.5] min | in 20-30:   0.0% | gate falls 100.0% (med   3.2) | att-win med   4.5
+
