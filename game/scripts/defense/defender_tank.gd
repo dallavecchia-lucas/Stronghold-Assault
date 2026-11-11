@@ -92,7 +92,7 @@ const MG_TRAIL_STEP := 2.2
 const MG_TRAIL_LIFE := 0.5
 const MG_TRAIL := Color(3.2, 1.9, 0.6)
 ## Left alone: how far it picks a target (m, flat), the machine guns' reach, and how often it looks round (s).
-const AI_RANGE := 110.0
+const AI_RANGE := 150.0
 const AI_MG_RANGE := 65.0
 const AI_LOOK := 0.4
 
@@ -732,6 +732,9 @@ func _pick_target() -> Node3D:
 	var from := global_position + Vector3.UP * 3.0
 	for u in get_tree().get_nodes_in_group("attacker_units"):
 		if not u.is_alive() or u.is_flying() or u.is_submerged():
+			continue
+		# Left to itself it can't pick out a sneaking (invisible) lioness, an anaconda coiled in a bush, or anyone in woodland.
+		if u.is_sneaking() or u.is_coiled() or LevelBuilder.in_forest(u.global_position):
 			continue
 		var d := Vector2(u.global_position.x - global_position.x, u.global_position.z - global_position.z).length()
 		if d < best_d and Combat.has_line_of_sight(self, from, Combat.aim_point(u), u):
