@@ -16,6 +16,8 @@ extends Node3D
 ## (AttackerUnit._follow_route).
 
 signal navigation_ready
+## Emitted once the last rooftop vent is destroyed: the attackers have won.
+signal vents_destroyed
 
 const MAP_HALF := 200.0
 const STRONGHOLD := "res://assets/stronghold/stronghold.glb"
@@ -25,12 +27,17 @@ const STRONGHOLD_OFFSET := Vector3(0, 0, 78)
 ## Map center to the foot of the rock below each face, and half the mountain's footprint.
 const FACE_DIST := 80.0
 const MOUNTAIN_HALF := 86.0
-const GATE_HP := 1500.0
+const GATE_HP := 30000.0
+## A fallen gate is rebuilt this long after it falls (s).
+const GATE_REBUILD := 480.0
 ## The bushes out on the field: how wide (m, the Serpent Sniper's 2.3 m rifle lies hidden across one), no
 ## taller than BUSH_TALLEST (m).
 const BUSH_WIDTH := [2.8, 3.3]
 const BUSH_TALLEST := 2.2
-const KEEP_HP := 4000.0
+## The hot-air vents on the roofs (one over every bay clear of the rock, VENT_FX_* markers): the attackers win by
+## destroying all of them. Each one's health, and the box that takes hits round its hood.
+const VENT_HP := 2500.0
+const VENT_SIZE := Vector3(3.6, 2.4, 3.0)
 ## Blast door filling an exit C tunnel portal (between the concrete jambs, under the lintel).
 const DOOR_SIZE := Vector3(3.0, 2.8, 0.4)
 ## Bay whose ground tunnel is the side's gate; every other tunnel is welded shut.
@@ -106,7 +113,8 @@ const REBAKE_DELAY := 6.0
 var nav_region: NavigationRegion3D
 ## The sky, sun and haze (and the WorldEnvironment and DirectionalLight3D it added under the level).
 var atmosphere: Atmosphere
-var keep: Structure
+## The rooftop air vents, the attackers' objective (Structure.is_vent).
+var vents: Array[Structure] = []
 var gates := {}  # side -> Structure
 var stations := []  # possessable defender stations, in hotkey order
 var aa_turrets := []  # autonomous, nobody takes them over
@@ -221,7 +229,7 @@ func _build_all() -> void:
 			_build_gate(side)
 	_seal_tunnels()
 	_build_climbs()
-	_build_keep()
+	_build_vents()
 	_build_bases()
 	_build_scenery()
 	# Grass standing in the field round the camera (GrassField), clear of the tracks and the helipads.
@@ -317,10 +325,12 @@ func _build_stronghold() -> void:
 	# Placeholder weapons on the mounts make way for turret models (_build_mounts).
 	for n in _stronghold.find_children("PH_*", "", true, false):
 		n.free()
-	# The keep brings its own collision for the reactor.
+	# The old keep (the reactor in the core hall) is gone: the vents are the objective now.
+	for n in _stronghold.find_children("Reactor*", "", true, false):
+		if is_instance_valid(n):
+			n.free()
 	for mi in _stronghold.find_children("*", "MeshInstance3D", true, false):
-		if not mi.name.begins_with("Reactor"):
-			_add_collision(mi)
+		_add_collision(mi)
 
 
 ## Static trimesh collision for one of the stronghold's meshes.
@@ -388,6 +398,7 @@ func _build_gate(side: String) -> void:
 	var exit := _marker("EXIT_C_%s%d" % [SIDES[side].face, GATE_BAY])
 	var gate := Structure.new()
 	gate.setup("%s Gate" % side.capitalize(), GATE_HP, 2.5)
+	gate.rebuild_time = GATE_REBUILD
 	gate.name = "Gate_%s" % side
 	gate.transform = Transform3D(exit.global_basis, exit.global_position + Vector3.UP * DOOR_SIZE.y * 0.5)
 	var cs := CollisionShape3D.new()
@@ -412,6 +423,7 @@ func _build_gate(side: String) -> void:
 	breach.set_meta("breach", true)
 	breach.add_to_group("breaches")
 	gate.destroyed.connect(func(_g): breach.enabled = true)
+	gate.rebuilt.connect(func(_g): breach.enabled = false)
 	# The Gunner Squad goes out and back in whether the gate stands or not (the door opens for it,
 	# Structure.hold_open): a link of its own, on a layer only the squad's troopers path on. It
 	# spans just the gap the plug leaves in the navmesh, so a trooper in the doorway is never sent
@@ -475,36 +487,74 @@ func _bay_route(door: Node3D, points: Array) -> Array[Vector3]:
 	return out
 
 
-## The keep is the reactor in the core hall under the peak. Attackers have to get inside
-## the mountain to hit it (Structure.buried).
-func _build_keep() -> void:
-	var reactor := _marker("Reactor") as MeshInstance3D
-	keep = Structure.new()
-	keep.setup("The Keep", KEEP_HP, 5.0)
-	keep.buried = true
-	keep.name = "Keep"
-	keep.position = reactor.global_position
-	var cs := CollisionShape3D.new()
-	var shape := CylinderShape3D.new()
-	shape.radius = 4.0
-	shape.height = 7.0
-	cs.shape = shape
-	keep.add_child(cs)
-	var visual := Node3D.new()
-	keep.add_child(visual)
-	nav_region.add_child(keep)
-	reactor.reparent(visual)
-	var band := _marker("ReactorBand") as MeshInstance3D
-	band.reparent(visual)
-	band.material_override = Mats.glow(Color(1.0, 0.45, 0.1), 3.0)
-	var light := OmniLight3D.new()
-	light.light_color = Color(1.0, 0.6, 0.3)
-	light.light_energy = 3.0
-	light.omni_range = 22.0
-	light.position = Vector3(0, 4.0, 0)
-	visual.add_child(light)
-	keep.visual = visual
-	keep.visual_half_height = 3.5
+## The hot-air vents over every bay's roof hatch: the attackers' objective. Each is a Structure
+## round its hood mesh, venting a plume while it stands and smoking once it is wrecked. They are
+## never rebuilt; the last one falling wins the match for the attackers.
+func _build_vents() -> void:
+	for marker in _stronghold.find_children("VENT_FX_*", "", true, false):
+		var key := String(marker.name).trim_prefix("VENT_FX_")
+		var hood := _marker("Vent_" + key) as Node3D
+		var side: String = SIDES.keys().filter(func(k): return SIDES[k].face == key[0])[0]
+		# The end bay's hatch opens into the mountain (ROOF_EXPOSED_HALF): its hood stays scenery.
+		if not _on_open_roof(marker.global_position, side):
+			continue
+		var vent := Structure.new()
+		vent.setup("%s Vent %s" % [side.capitalize(), key.substr(1)], VENT_HP, 2.0)
+		vent.is_vent = true
+		vent.name = "Vent_%s" % key
+		vent.transform = Transform3D(Basis.looking_at(-SIDES[side].dir, Vector3.UP), marker.global_position)
+		var cs := CollisionShape3D.new()
+		var box := BoxShape3D.new()
+		box.size = VENT_SIZE
+		cs.shape = box
+		cs.position.y = -VENT_SIZE.y * 0.5 + 0.4
+		vent.add_child(cs)
+		var visual := Node3D.new()
+		vent.add_child(visual)
+		nav_region.add_child(vent)
+		if hood:
+			# The vent's own box takes the hits now, not the hood's trimesh.
+			for c in hood.get_children():
+				if c is StaticBody3D:
+					c.free()
+			hood.reparent(visual)
+		vent.visual = visual
+		vent.visual_half_height = VENT_SIZE.y * 0.5
+		var plume := VentPlume.new()
+		plume.position.y = 0.4
+		vent.add_child(plume)
+		var smoke := WreckSmoke.new()
+		smoke.size = 1.6
+		smoke.position.y = 0.2
+		vent.add_child(smoke)
+		vent.destroyed.connect(func(v): _on_vent_destroyed(v, plume, smoke))
+		vents.append(vent)
+
+
+func _on_vent_destroyed(_v: Structure, plume: VentPlume, smoke: WreckSmoke) -> void:
+	plume.emitting = false
+	smoke.emitting = true
+	if vents_left() == 0:
+		vents_destroyed.emit()
+
+
+## True if `p` (on `side`'s roof) is clear of the rock: within ROOF_EXPOSED_HALF of the face's middle.
+func _on_open_roof(p: Vector3, side: String) -> bool:
+	var along: Vector3 = (SIDES[side].dir as Vector3).cross(Vector3.UP)
+	return absf(p.dot(along)) <= ROOF_EXPOSED_HALF
+
+
+func vents_left() -> int:
+	return vents.filter(func(v): return v.is_alive()).size()
+
+
+## The standing vent nearest `p`, or null.
+func nearest_vent(p: Vector3) -> Structure:
+	var best: Structure = null
+	for v in vents:
+		if v.is_alive() and (best == null or p.distance_to(v.global_position) < p.distance_to(best.global_position)):
+			best = v
+	return best
 
 
 func _build_scenery() -> void:
@@ -771,19 +821,34 @@ func squad_post(face: String, offset: Vector3) -> Transform3D:
 	return Transform3D(Basis.looking_at(post.global_basis.x), post.global_transform * offset)
 
 
-## Turret models on every weapon mount no station uses: guns on the gun decks, launchers on
-## the roofs. Unmanned dressing, no collision.
+## A real weapon on every mount no station uses: an AI-crewed heavy machine gun on each gun-deck
+## mount (the defender can take any of them over) and an AA turret on each roof mount. Nothing on
+## the walls is decoration.
 func _build_mounts(used: Array) -> void:
 	for mount in _stronghold.find_children("MOUNT_*", "", true, false):
-		if String(mount.name) in used:
+		var mname := String(mount.name)
+		if mname in used:
 			continue
-		var model: Node3D
-		if mount.name.begins_with("MOUNT_GUN"):
-			model = Props.instance(Props.ORBITAL_SENTRY_GUN if mount.name.ends_with("_1") else Props.SENTINEL_BASTION, 2.0)
-		else:
-			model = Props.instance(Props.SENTINEL_SPIRE, 3.0)
-		model.transform = Transform3D(Basis.looking_at(mount.global_basis.z), mount.global_position)
-		add_child(model)
+		var gun := mname.begins_with("MOUNT_GUN_")
+		var key := mname.trim_prefix("MOUNT_GUN_" if gun else "MOUNT_AA_")
+		var side: String = SIDES.keys().filter(func(k): return SIDES[k].face == key[0])[0]
+		if gun:
+			var mg := MountedGun.new()
+			mg.model_path = Props.ORBITAL_SENTRY_GUN if mname.ends_with("_1") else Props.SENTINEL_BASTION
+			mg.pivot_height = 1.5
+			mg.station_name = "MG · %s Deck %s" % [side.capitalize(), key.substr(1)]
+			mg.name = "MG_%s" % key
+			_place_facing_out(mg, side, mount.global_position + mount.global_basis.z * 0.6)
+			add_child(mg)
+			stations.append(mg)
+			_nav_plug(mg.transform.translated_local(Vector3.UP * 0.8), Vector3(1.4, 1.6, 1.4))
+		elif _on_open_roof(mount.global_position, side):
+			var t := AATurret.new()
+			t.name = "AA_%s" % key
+			t.station_name = "AA Turret · %s Roof" % side.capitalize()
+			_place_facing_out(t, side, mount.global_position)
+			add_child(t)
+			aa_turrets.append(t)
 
 
 func _place_facing_out(node: Node3D, side: String, pos: Vector3) -> void:

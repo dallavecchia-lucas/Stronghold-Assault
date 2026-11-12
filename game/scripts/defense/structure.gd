@@ -1,9 +1,11 @@
 class_name Structure
 extends StaticBody3D
-## Destructible defender building (gates, the keep). Blocks navigation while standing.
+## Destructible defender building: the gates and the rooftop air vents (the attackers' objective).
+## Blocks navigation while standing. A gate with rebuild_time > 0 comes back that long after it falls.
 
 signal damaged(structure: Structure)
 signal destroyed(structure: Structure)
+signal rebuilt(structure: Structure)
 
 ## Seconds a gate's door stays up after the last hold_open(), and to open or shut it.
 const OPEN_HOLD := 1.0
@@ -23,8 +25,14 @@ var visual_half_height := 3.0
 var buried := false
 ## Gates open for the defenders' Gunner Squad: 0 shut, 1 fully up in the lintel.
 var opened := 0.0
+## An air vent on the roof: what the attackers must destroy to win. Ground units need line of sight
+## to hit one (artillery and flyers don't); rams can't charge one.
+var is_vent := false
+## Seconds after falling that it stands again at full health (0: never).
+var rebuild_time := 0.0
 
 var _hold := 0.0
+var _rebuild_timer: Timer
 
 
 func setup(p_name: String, p_hp: float, p_radius: float) -> void:
@@ -72,8 +80,10 @@ func get_aim_point() -> Vector3:
 	return global_position
 
 
-## Where attackers walk to: in front of a gate (it faces out along +Z), the keep itself.
+## Where attackers walk to: in front of a gate (it faces out along +Z), below a vent's face.
 func get_approach_point() -> Vector3:
+	if is_vent:
+		return Combat.wall_approach(global_position)
 	if buried:
 		return global_position
 	var p := global_position + global_basis.z * target_radius
@@ -103,10 +113,30 @@ func _destroy() -> void:
 	collision_layer = 0
 	for c in get_children():
 		if c is CollisionShape3D:
-			c.queue_free()
+			c.set_deferred("disabled", true)
 	Combat.spawn_explosion(self, global_position, 6.0)
 	if visual:
 		var tw := visual.create_tween()
 		tw.tween_property(visual, "scale:y", 0.12, 0.6).set_trans(Tween.TRANS_BOUNCE)
 		tw.parallel().tween_property(visual, "position:y", visual.position.y - visual_half_height * 0.88, 0.6)
+	if rebuild_time > 0.0:
+		if _rebuild_timer == null:
+			_rebuild_timer = Timer.new()
+			_rebuild_timer.one_shot = true
+			_rebuild_timer.timeout.connect(_rebuild)
+			add_child(_rebuild_timer)
+		_rebuild_timer.start(rebuild_time)
 	destroyed.emit(self)
+
+
+## Back up at full health: collision, the navmesh plug's job and the door all return.
+func _rebuild() -> void:
+	hp = max_hp
+	collision_layer = GameConfig.LAYER_STRUCTURES
+	for c in get_children():
+		if c is CollisionShape3D:
+			c.disabled = false
+	if visual:
+		visual.scale.y = 1.0
+		visual.position.y = 0.0
+	rebuilt.emit(self)

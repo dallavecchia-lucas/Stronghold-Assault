@@ -12,7 +12,7 @@ const MAX_RANGE := 150.0
 const SHELL_DAMAGE := 150.0
 const SHELL_RADIUS := 7.0
 const AI_ERROR := 5.0
-const REPAIR_TIME := 30.0
+const REPAIR_TIME := 360.0  # 6 minutes
 
 ## Where the spotter view starts (and returns to), looking away from the map center.
 var spotter_home := Vector3(0, 0, 45)
