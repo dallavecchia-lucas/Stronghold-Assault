@@ -43,7 +43,9 @@ var mouse_sensitivity := 0.0025
 #   --map=jungle|classic           the map to play
 #   --lighting=raytraced|standard  how the light is rendered
 #   --drones=off                   no defender drones (DroneBay) in the match
+#   --garrison=off                 no garrison (Garrison): no spawned soldiers, and the guns crew themselves as before
 var drones := true
+var garrison := true
 var autotest := ""
 var screenshot_path := ""
 var autotest_duration := 90.0
@@ -64,6 +66,8 @@ func _ready() -> void:
 			lighting = arg.get_slice("=", 1)
 		elif arg.begins_with("--drones="):
 			drones = arg.get_slice("=", 1) != "off"
+		elif arg.begins_with("--garrison="):
+			garrison = arg.get_slice("=", 1) != "off"
 
 
 ## CPU attacker income multiplier for the chosen difficulty.

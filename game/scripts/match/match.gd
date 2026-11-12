@@ -17,6 +17,8 @@ var armory: DefenderArmory
 var drones: DroneBay
 ## The attackers' transport helicopters, standing by the main base.
 var fleet: HeloFleet
+## The defenders' foot soldiers, spawned all match long (the CPU defender has them too).
+var garrison: Garrison
 var time_left := 600.0
 var started := false
 var finished := false
@@ -104,6 +106,15 @@ func _start() -> void:
 	if drones:
 		add_child(drones)
 	add_child(fleet)
+	if GameConfig.garrison:
+		garrison = Garrison.new()
+		garrison.name = "Garrison"
+		garrison.level = level
+		garrison.local_player = 0 if GameConfig.player_side == GameConfig.PlayerSide.DEFENDER else -1
+		add_child(garrison)
+		if player_controller is DefenderController:
+			player_controller.garrison = garrison
+			player_controller.player_number = garrison.local_player
 	add_child(player_controller)
 	if ai_attacker:
 		add_child(ai_attacker)
@@ -211,6 +222,11 @@ func _autotest_step(delta: float) -> void:
 			if step % 7 == 5:
 				for s in armory.squads:
 					s.cycle_order()
+			# The player's spawn: moved round the base and switched between BASE and FIELD now and then.
+			if step % 9 == 4:
+				dc.cycle_spawn()
+			elif step % 9 == 8:
+				dc.toggle_spawn_priority()
 			if step % 4 == 0:
 				dc.select_most_threatened()
 			elif step % 4 == 2 and not armory.squads.is_empty():
@@ -303,6 +319,12 @@ func _autotest_report() -> void:
 						HeloCargo.CAPACITY, h.stats])
 			else:
 				print("AUTOTEST Helo %d down, a new one in %d s" % [i + 1, int(fleet.replace_in[i])])
+	if garrison:
+		var g := garrison.summary()
+		print("AUTOTEST garrison guns=%d/%d deck=%d/%d field=%d walking=%d" % [g.guns, g.guns_alive, g.deck, g.deck_total,
+				g.field, g.walking])
+		for line in garrison.report().split("\n"):
+			print("AUTOTEST garrison %s" % line)
 	var dogs := commander.units.values().filter(func(u): return u.has_dog_modes())
 	print("AUTOTEST dogs healing=%d sweeping=%d mine_blasts=%d mines_disarmed=%d" % [dogs.filter(func(u): return u.dog_mode == "heal").size(),
 			dogs.filter(func(u): return u.dog_mode == "sweep").size(), GroundMine.blasts, GroundMine.disarms])

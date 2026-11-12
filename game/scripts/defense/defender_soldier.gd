@@ -12,7 +12,11 @@ const MAG_SIZE := 30
 const RELOAD_TIME := 1.8
 const PLAYER_DAMAGE := 26.0
 const PLAYER_FIRE_INTERVAL := 0.11
-const AI_RANGE := 50.0
+## Left to the CPU, a soldier sees and fights like the attackers' Bear Rifleman (UnitTypes "rifleman"): it picks
+## out attackers only within AI_SIGHT (and in its line of sight), turns onto them, and fires at those within
+## AI_RANGE. Nothing is sniped from further off.
+const AI_SIGHT := 34.0
+const AI_RANGE := 30.0
 const AI_DAMAGE := 11.0
 const AI_FIRE_INTERVAL := 0.6
 const RESPAWN_TIME := 15.0
@@ -26,6 +30,9 @@ const PLAIN_HIP := Vector3(0.22, -0.22, -0.45)
 const PLAIN_AIM := Vector3(0.0, -0.16, -0.38)
 
 var station_name := "Soldier"
+## Built with the first-person camera, view model and scope (a post the player takes over); a garrison soldier
+## (GarrisonSoldier), which only the CPU ever runs, is built without them.
+var first_person := true
 var station_kind := "soldier"
 var team := GameConfig.TEAM_DEFENDER
 var max_hp := 150.0
@@ -111,6 +118,12 @@ func _ready() -> void:
 	_head = Node3D.new()
 	_head.position.y = 1.6
 	add_child(_head)
+	if first_person:
+		_build_first_person()
+
+
+## The camera, the view model and (with the Shadowline) its arms and smart scope.
+func _build_first_person() -> void:
 	_camera = Camera3D.new()
 	_camera.fov = 75.0
 	_camera.near = 0.05
@@ -406,10 +419,18 @@ func _ai_update(delta: float) -> void:
 	if _retarget_cd <= 0.0:
 		_retarget_cd = 0.4 + randf() * 0.2
 		_target = _find_target()
+	_engage(delta)
+
+
+## Turns onto the target it has picked out and fires at it once it is within AI_RANGE.
+func _engage(delta: float) -> void:
 	if not Combat.is_valid_target(_target):
 		return
 	var to := _target.global_position - global_position
 	rotation.y = lerp_angle(rotation.y, atan2(-to.x, -to.z), delta * 6.0)
+	# Seen but out of reach: it watches it come.
+	if to.length_squared() > AI_RANGE * AI_RANGE:
+		return
 	if _fire_cd <= 0.0 and _reloading <= 0.0:
 		_fire_cd = AI_FIRE_INTERVAL * randf_range(0.8, 1.3)
 		ammo -= 1
@@ -422,12 +443,13 @@ func _ai_update(delta: float) -> void:
 			Combat.spawn_muzzle_flash(self, _body_muzzle.global_position, Combat.aim_point(_target) - _body_muzzle.global_position)
 
 
+## The nearest attacker within AI_SIGHT that it can see.
 func _find_target() -> Node3D:
 	var eye := global_position + Vector3.UP * 1.6
 	var best: Node3D = null
-	var best_d := AI_RANGE
+	var best_d := AI_SIGHT * AI_SIGHT
 	for u in get_tree().get_nodes_in_group("attacker_units"):
-		var d := global_position.distance_to(u.global_position)
+		var d := global_position.distance_squared_to(u.global_position)
 		if d < best_d and Combat.has_line_of_sight(self, eye, Combat.aim_point(u), u):
 			best_d = d
 			best = u

@@ -80,12 +80,13 @@ const SQUAD_POST_OFFSET := Vector3(-3.0, 0.0, 0.15)
 ## Stair shaft and ladder in every bay, as [x along the bay, depth behind the front, floor height]
 ## (tools/blender/build_stronghold.py). DECK_ROUTE: junction -> switchback stair -> deck landing
 ## -> door B onto the gun deck. ROOF_ROUTE: gun deck -> door B -> upper flights -> top landing ->
-## ladder through hatch A -> roof.
+## ladder through hatch A -> roof, and a step out onto it: the roof's navmesh starts about a metre short of the hatch
+## (it keeps clear of the hatch's hole and lid), past the reach a link joins it from (1 m).
 const DECK_ROUTE := [[4.8, 13.55, 2.8], [4.1, 12.875, 2.8], [-0.4, 12.875, 5.425], [-1.1, 13.55, 5.425],
 		[-0.4, 14.225, 5.425], [4.1, 14.225, 8.05], [4.8, 13.2, 8.05], [4.8, 12.0, 8.05], [4.8, 10.9, 8.05]]
 const ROOF_ROUTE := [[4.8, 10.9, 8.05], [4.8, 12.0, 8.05], [4.8, 13.2, 8.05], [4.1, 12.875, 8.05],
 		[0.8, 12.875, 9.975], [0.1, 13.55, 9.975], [0.8, 14.225, 9.975], [4.1, 14.225, 11.9],
-		[4.75, 12.7, 11.9], [4.75, 12.7, 15.05], [4.75, 11.0, 15.05]]
+		[4.75, 12.7, 11.9], [4.75, 12.7, 15.05], [4.75, 11.0, 15.05], [4.75, 10.2, 15.05]]
 ## Door B's marker (EXIT_B_*) in those coordinates.
 const DOOR_B := Vector3(4.8, 11.125, 8.05)
 ## The roofs are clear of the rock only this far either side of a face's middle (CUT_HALF): the
@@ -346,6 +347,11 @@ func _add_collision(mi: MeshInstance3D) -> void:
 
 func _marker(marker_name: String) -> Node3D:
 	return _stronghold.find_child(marker_name, true, false) as Node3D
+
+
+## One of the stronghold model's markers (SPAWN_S3, MOUNT_GUN_E2_1, EXIT_C_W3, ...), or null.
+func marker(marker_name: String) -> Node3D:
+	return _marker(marker_name)
 
 
 ## Index into FORESTS of the grove `p` stands in, or -1. On the Jungle Keep the jungle is one grove (0).

@@ -1,7 +1,9 @@
 class_name MountedGun
 extends StaticBody3D
 ## Heavy machine gun emplacement on the walls. Faces its node's -Z axis at rest.
-## Crew-operated by AI unless the defending player takes it over.
+## Crew-operated by AI unless the defending player takes it over. In a match with a garrison (Garrison) the gun needs
+## a crew: it fires on its own only once a garrison soldier has walked up to it and stands at its handles (crew), and
+## falls silent again if that soldier dies; the player can still take it over, crewed or not.
 
 signal became_unavailable(station)
 
@@ -15,6 +17,8 @@ const AI_FIRE_INTERVAL := 0.16
 const AI_RANGE := 60.0
 const HEAT_PER_SHOT := 0.032
 const REPAIR_TIME := 360.0  # 6 minutes
+## How far behind the swivel a garrison crew stands (m), clear of the gun's navmesh plug.
+const CREW_BACK := 1.45
 
 ## Turret model shown while the AI crews the gun (empty = sandbags + gunner capsule).
 ## The player always sees the simple first-person gun instead, so the model never blocks the view.
@@ -30,6 +34,10 @@ var target_radius := 0.5
 var possessed := false
 var heat := 0.0
 var overheated := false
+## Fires on its own only while crewed (the Garrison sets this); off: always crewed, as before there was a garrison.
+var needs_crew := false
+## The garrison soldier at its handles (GarrisonSoldier), or null.
+var crew: Node3D = null
 
 var _yaw := 0.0
 var _pitch := 0.0
@@ -161,6 +169,18 @@ func get_camera() -> Camera3D:
 	return _camera
 
 
+## True if it can fire on its own: it needs no crew, or one stands at it (the player at it counts too).
+func is_manned() -> bool:
+	return not needs_crew or possessed or (crew != null and is_instance_valid(crew) and crew.is_alive())
+
+
+## Where the crew stands and which way it faces: behind the swivel, turned with the gun's aim.
+func crew_spot() -> Transform3D:
+	var yaw := global_rotation.y + _yaw
+	var back := Vector3(sin(yaw), 0.0, cos(yaw))
+	return Transform3D(Basis(Vector3.UP, yaw), global_position + back * CREW_BACK + Vector3.UP * 0.05)
+
+
 func get_hud_info() -> Dictionary:
 	var status := "OVERHEATED" if overheated else "HEAT %d%%" % int(heat * 100.0)
 	return {"weapon": "Heavy MG", "status": status, "heat": heat, "hp": hp / max_hp,
@@ -215,7 +235,7 @@ func _physics_process(delta: float) -> void:
 		_camera.fov = lerpf(_camera.fov, 40.0 if zoom else 70.0, delta * 10.0)
 		if Input.is_action_pressed("fire"):
 			firing = _try_fire(true)
-	else:
+	elif is_manned():
 		firing = _ai_update(delta)
 	heat = maxf(heat - delta * (0.22 if firing else 0.4), 0.0)
 	if overheated and heat < 0.35:

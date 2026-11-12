@@ -13,6 +13,8 @@ const SHELL_DAMAGE := 150.0
 const SHELL_RADIUS := 7.0
 const AI_ERROR := 5.0
 const REPAIR_TIME := 360.0  # 6 minutes
+## How far behind the mortar a garrison crew stands (m).
+const CREW_BACK := 2.1
 
 ## Where the spotter view starts (and returns to), looking away from the map center.
 var spotter_home := Vector3(0, 0, 45)
@@ -24,6 +26,9 @@ var hp := 400.0
 var target_radius := 1.0
 var possessed := false
 var map_half := 120.0
+## Fires on its own only while crewed (the Garrison sets this); off: always crewed. See MountedGun.
+var needs_crew := false
+var crew: Node3D = null
 
 var _reload := 0.0
 var _repair_cd := 0.0
@@ -131,6 +136,17 @@ func get_camera() -> Camera3D:
 	return _camera
 
 
+## True if it can fire on its own: it needs no crew, or one stands at it.
+func is_manned() -> bool:
+	return not needs_crew or possessed or (crew != null and is_instance_valid(crew) and crew.is_alive())
+
+
+## Where the crew stands: behind the mortar (toward the mountain's middle), facing out.
+func crew_spot() -> Transform3D:
+	var back := Vector3(-global_position.x, 0.0, -global_position.z).normalized()
+	return Transform3D(Basis(Vector3.UP, atan2(back.x, back.z)), global_position + back * CREW_BACK + Vector3.UP * 0.05)
+
+
 func get_hud_info() -> Dictionary:
 	var status := "READY" if _reload <= 0.0 else "RELOADING %.1fs" % _reload
 	if possessed and not _aim_valid:
@@ -175,7 +191,7 @@ func _physics_process(delta: float) -> void:
 	_reload -= delta
 	if possessed:
 		_player_update(delta)
-	elif _reload <= 0.0 and not FlashGrenade.is_blind(self):
+	elif _reload <= 0.0 and is_manned() and not FlashGrenade.is_blind(self):
 		_ai_fire()
 
 
