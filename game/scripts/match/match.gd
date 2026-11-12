@@ -2,7 +2,7 @@ extends Node3D
 ## One offline match: builds the level, puts the human on their chosen side and the
 ## CPU on the other, and decides the winner.
 ##
-## Attacker wins by destroying the keep. Defender wins by holding until time runs out.
+## Attacker wins by destroying every air vent on the roofs. Defender wins by holding until time runs out.
 
 var level: LevelBuilder
 var commander: AttackerCommander
@@ -89,7 +89,7 @@ func _ready() -> void:
 		player_controller = ac
 	ui.resumed.connect(player_controller.restore_mouse)
 
-	level.keep.destroyed.connect(func(_k): _end(GameConfig.TEAM_ATTACKER))
+	level.vents_destroyed.connect(func(): _end(GameConfig.TEAM_ATTACKER))
 
 	# Nothing moves until the navmesh is ready.
 	commander.process_mode = Node.PROCESS_MODE_DISABLED
@@ -233,7 +233,9 @@ func _autotest_step(delta: float) -> void:
 				commander.submit({"type": "ram", "units": ids})
 				commander.submit({"type": "attack", "units": ids, "target": gate.get_path()})
 			else:
-				commander.submit({"type": "attack", "units": ids, "target": level.keep.get_path()})
+				var vent := level.nearest_vent(gate.global_position)
+				if vent:
+					commander.submit({"type": "attack", "units": ids, "target": vent.get_path()})
 			commander.submit({"type": "smoke", "units": ids, "pos": gate.global_position})
 			# Flash grenades onto the gate's machine gun (the first three posts are the gate guns).
 			commander.submit({"type": "flash", "units": ids, "pos": level.stations[step % 3].global_position})
@@ -267,8 +269,8 @@ func _autotest_report() -> void:
 	var gates := []
 	for side in level.gates:
 		gates.append("%s=%d" % [side, level.gates[side].hp])
-	print("AUTOTEST report t=%.0f units=%d supply=%d keep=%d gates=%s" % [
-			_autotest_t, commander.units.size(), commander.supply, level.keep.hp, ", ".join(gates)])
+	print("AUTOTEST report t=%.0f units=%d supply=%d vents=%d gates=%s" % [
+			_autotest_t, commander.units.size(), commander.supply, level.vents_left(), ", ".join(gates)])
 	if armory:
 		for s in armory.squads:
 			if s is DefenderMachine:

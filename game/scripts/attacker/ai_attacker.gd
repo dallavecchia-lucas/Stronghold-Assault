@@ -2,7 +2,7 @@ class_name AIAttacker
 extends Node
 ## CPU commander for the attacking army. Builds up waves at a spawn point (the side's Forward
 ## Helipad while it holds it, else the map's edge), then sends them at the gate on that side; once a
-## gate falls everyone pushes for the keep. A helipad the defenders sabotaged is retaken by the
+## gate falls everyone pushes for the air vents on the roofs. A helipad the defenders sabotaged is retaken by the
 ## ground units nearest it (_retake_bases). It never goes after the defenders' infiltrators: it
 ## doesn't know they are there (their low profile, Combat.low_profile), unless its giraffes' pings
 ## reveal them (_giraffe_pings). Its bears dive when they are shot at out swimming (_bear_dives). Its lionesses
@@ -218,11 +218,14 @@ func _launch_wave() -> void:
 		var infantry := []
 		var siege := []
 		var artillery := []
+		var flyers := []
 		for id in ids:
 			var u = commander.units.get(id)
 			if u == null:
 				continue
-			if u.has_ram():
+			if u.is_flying() and u.has_basic_attack():
+				flyers.append(id)
+			elif u.has_ram():
 				siege.append(id)
 			elif u.role == "artillery" or u.has_setup():
 				artillery.append(id)
@@ -234,15 +237,20 @@ func _launch_wave() -> void:
 		var out: Vector3 = LevelBuilder.SIDES[_wave_side].dir
 		commander.submit({"type": "move", "units": infantry, "pos": out * (LevelBuilder.FACE_DIST + 14.0), "attack": true})
 		commander.submit({"type": "attack", "units": siege + artillery, "target": gate.get_path()})
+		# Gunships skip the gate and go straight for the air vents on that face's roof.
+		var vent := level.nearest_vent(out * LevelBuilder.FACE_DIST)
+		if vent and not flyers.is_empty():
+			commander.submit({"type": "attack", "units": flyers, "target": vent.get_path()})
+		elif not flyers.is_empty():
+			commander.submit({"type": "move", "units": flyers, "pos": out * (LevelBuilder.FACE_DIST + 14.0), "attack": true})
 	else:
 		_push_keep(ids)
 
 
 func _push_keep(ids: Array) -> void:
-	# The keep is deep inside the mountain and only infiltrators can get to it. Chimps that make it
-	# in go raiding on their own (AttackerUnit._raid_target).
-	# Flyers circle over the breached side's gun deck, big units hold in front of that face
-	# (off to one side, clear of the tunnel), both picking off the defenders on it.
+	# The objective is the air vents on the roofs. Infiltrators that make it in climb up and go
+	# for them (AttackerUnit._raid_target), flyers hit them from above, big units hold in front of
+	# that face (off to one side, clear of the tunnel), picking off the defenders on it.
 	var inside := []
 	var flyers := []
 	var big := []
@@ -257,10 +265,13 @@ func _push_keep(ids: Array) -> void:
 		else:
 			big.append(id)
 	var out: Vector3 = LevelBuilder.SIDES[_breached_side()].dir
+	var vent := level.nearest_vent(out * LevelBuilder.FACE_DIST)
+	if vent == null:
+		return
 	if not inside.is_empty():
-		commander.submit({"type": "attack", "units": inside, "target": level.keep.get_path()})
+		commander.submit({"type": "attack", "units": inside, "target": vent.get_path()})
 	if not flyers.is_empty():
-		commander.submit({"type": "move", "units": flyers, "pos": out * (LevelBuilder.FACE_DIST - 8.0), "attack": true})
+		commander.submit({"type": "attack", "units": flyers, "target": vent.get_path()})
 	if not big.is_empty():
 		var hold := out * (LevelBuilder.FACE_DIST + 16.0) + out.cross(Vector3.UP) * 14.0
 		commander.submit({"type": "move", "units": big, "pos": hold, "attack": true})
@@ -585,7 +596,7 @@ func _reassign_idle() -> void:
 		_send_on(idle)
 
 
-## Sends `ids` on to the next objective: the keep once a gate is down, else the standing gate nearest each.
+## Sends `ids` on to the next objective: the air vents once a gate is down, else the standing gate nearest each.
 func _send_on(ids: Array) -> void:
 	if level.gates.values().any(func(g): return not g.is_alive()):
 		_push_keep(ids)

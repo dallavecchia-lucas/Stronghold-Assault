@@ -97,7 +97,7 @@ func _deploy_machine(kind: String, hall: String) -> DefenderMachine:
 		m.home = Transform3D(Basis.looking_at(out, Vector3.UP), Vector3(at.x, 0.0, at.z))
 	m.gates = level.gates.values()
 	m.map_half = LevelBuilder.map_half
-	m.loiter_centre = level.keep.global_position if level.keep else Vector3.ZERO
+	m.loiter_centre = Vector3.ZERO
 	m.wiped_out.connect(_on_wiped_out)
 	level.add_child(m)
 	squads.append(m)

@@ -12,9 +12,9 @@ const REACH := 1.5
 const SLOT_SPACING := 1.0
 
 
-## Ground gates only: the keep is inside the mountain, out of reach of a charge.
+## Ground gates only: the roof vents are out of reach of a charge.
 static func is_gate(t: Node) -> bool:
-	return t is Structure and not t.buried and t.is_alive()
+	return t is Structure and not t.buried and not t.is_vent and t.is_alive()
 
 
 ## Where the ram in `slot` runs to: in front of the doorway, slots spread across it.

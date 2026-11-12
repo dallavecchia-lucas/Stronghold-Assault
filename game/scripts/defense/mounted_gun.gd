@@ -14,7 +14,7 @@ const AI_DAMAGE := 8.0
 const AI_FIRE_INTERVAL := 0.16
 const AI_RANGE := 60.0
 const HEAT_PER_SHOT := 0.032
-const REPAIR_TIME := 25.0
+const REPAIR_TIME := 360.0  # 6 minutes
 
 ## Turret model shown while the AI crews the gun (empty = sandbags + gunner capsule).
 ## The player always sees the simple first-person gun instead, so the model never blocks the view.

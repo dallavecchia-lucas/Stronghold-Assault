@@ -11,7 +11,7 @@ const LOCK_TIME := 1.2
 const RELOAD := 3.0
 const MISSILE_DAMAGE := 18.0
 const TURN_RATE := 2.5
-const REPAIR_TIME := 75.0
+const REPAIR_TIME := 360.0  # 6 minutes
 ## Where its missiles leave from, above the mount.
 const HEAD := 2.6
 

@@ -1326,11 +1326,13 @@ func _nearest_breach() -> NavigationLink3D:
 	return best
 
 
+## The objective: the standing rooftop air vent nearest this unit, or null.
 func _keep() -> Structure:
+	var best: Structure = null
 	for s in get_tree().get_nodes_in_group("structures"):
-		if s.buried and s.is_alive():
-			return s
-	return null
+		if s.is_vent and s.is_alive() and (best == null or global_position.distance_to(s.global_position) < global_position.distance_to(best.global_position)):
+			best = s
+	return best
 
 
 # ---------------------------------------------------------------- combat
@@ -1485,6 +1487,9 @@ func _can_see(t: Node3D) -> bool:
 		return true  # within arm's reach
 	if t.get("buried"):
 		return not is_flying() and Combat.has_line_of_sight(self, _eye(), Combat.aim_point(t), t)
+	# Roof vents: shells and flyers get at them from above; anyone else has to see one.
+	if t.get("is_vent"):
+		return role == "artillery" or is_flying() or Combat.has_line_of_sight(self, _eye(), Combat.aim_point(t), t)
 	if role == "artillery" or t.is_in_group("structures"):
 		return true  # shells arc over walls; buildings are big enough to always hit
 	return Combat.has_line_of_sight(self, _eye(), Combat.aim_point(t), t)

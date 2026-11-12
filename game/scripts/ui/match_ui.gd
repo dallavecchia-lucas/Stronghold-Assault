@@ -1,6 +1,6 @@
 class_name MatchUI
 extends CanvasLayer
-## HUD shared by both sides: keep/gate status, match timer, alert feed, pause menu
+## HUD shared by both sides: vent/gate status, match timer, alert feed, pause menu
 ## and the end-of-match screen.
 
 signal resumed
@@ -9,7 +9,8 @@ var level: LevelBuilder
 var match_node: Node
 
 var _timer_label: Label
-var _keep_bar: ProgressBar
+var _vent_bar: ProgressBar
+var _vent_label: Label
 var _gate_bars := {}
 var _alerts: VBoxContainer
 var _pause_panel: Control
@@ -33,11 +34,12 @@ func _ready() -> void:
 	row.add_theme_constant_override("separation", 18)
 	top.add_child(row)
 
-	var keep_box := VBoxContainer.new()
-	keep_box.add_child(UIKit.label("THE KEEP", 12, Color(0.75, 0.8, 0.9)))
-	_keep_bar = UIKit.bar(180, 12, UIKit.ACCENT)
-	keep_box.add_child(_keep_bar)
-	row.add_child(keep_box)
+	var vent_box := VBoxContainer.new()
+	_vent_label = UIKit.label("AIR VENTS", 12, Color(0.75, 0.8, 0.9))
+	vent_box.add_child(_vent_label)
+	_vent_bar = UIKit.bar(180, 12, UIKit.ACCENT)
+	vent_box.add_child(_vent_bar)
+	row.add_child(vent_box)
 
 	for side in level.gates:
 		var gb := VBoxContainer.new()
@@ -48,8 +50,11 @@ func _ready() -> void:
 		_gate_bars[side] = bar
 		var gate: Structure = level.gates[side]
 		gate.damaged.connect(func(_g): _alert_once("gate_" + side, "%s Gate under attack!" % side.capitalize(), UIKit.WARN))
-		gate.destroyed.connect(func(_g): alert("%s Gate has been breached!" % side.capitalize(), UIKit.DANGER))
-	level.keep.damaged.connect(func(_k): _alert_once("keep", "The Keep is under attack!", UIKit.DANGER))
+		gate.destroyed.connect(func(_g): alert("%s Gate has been breached! Rebuilt in %d min" % [side.capitalize(), int(gate.rebuild_time / 60.0)], UIKit.DANGER))
+		gate.rebuilt.connect(func(_g): alert("%s Gate rebuilt" % side.capitalize(), UIKit.GOOD))
+	for v in level.vents:
+		v.damaged.connect(func(_v): _alert_once("vents", "The air vents are under attack!", UIKit.DANGER))
+		v.destroyed.connect(func(_v): alert("%s destroyed! %d left" % [v.display_name, level.vents_left()], UIKit.DANGER))
 	# The helipads: good news for one side is bad news for the other.
 	var defending := GameConfig.player_side == GameConfig.PlayerSide.DEFENDER
 	for b in level.bases:
@@ -79,7 +84,11 @@ func _process(delta: float) -> void:
 		_clock += delta
 	if not is_instance_valid(level):
 		return
-	_keep_bar.value = level.keep.hp / level.keep.max_hp
+	var vent_hp := 0.0
+	for v in level.vents:
+		vent_hp += v.hp
+	_vent_bar.value = vent_hp / maxf(level.vents.size() * LevelBuilder.VENT_HP, 1.0)
+	_vent_label.text = "AIR VENTS  %d/%d" % [level.vents_left(), level.vents.size()]
 	for side in _gate_bars:
 		var g: Structure = level.gates[side]
 		_gate_bars[side].value = g.hp / g.max_hp

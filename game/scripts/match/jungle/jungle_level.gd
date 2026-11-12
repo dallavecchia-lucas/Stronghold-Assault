@@ -85,7 +85,7 @@ func _build_all() -> void:
 			_build_gate(side)
 	_seal_tunnels()
 	_build_climbs()
-	_build_keep()
+	_build_vents()
 	_build_bases()
 	_build_scenery()
 	# Grass standing in the clearings round the camera (GrassField).
