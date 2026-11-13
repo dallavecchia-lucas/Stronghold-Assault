@@ -355,22 +355,22 @@ func _gun_goal(g) -> Vector3:
 	return _gun_goals[g]
 
 
-## Where a gun's crew walks to: the floor beside its seat, out past the box that keeps the navmesh off the gun (whose
-## top the bake makes a little platform of, right under a seat): from there it sits down (GarrisonSoldier._crew).
+## Where a gun's crew walks to: up the ramp beside a gun-deck gun's seat, or the floor beside the mortar's seat, out past the
+## box that keeps the navmesh off the gun (whose top the bake makes a little platform of, right under a seat): from there
+## it steps into the seat (GarrisonSoldier._crew).
 func _beside_seat(g) -> Vector3:
-	# Up on a pedestal: the foot of its ladder.
-	if g.has_method("boarding"):
-		var way: Array[Vector3] = g.boarding()
-		if not way.is_empty():
-			return LevelBuilder.nav_closest(_map, way[0] + Vector3.UP * 0.3)
+	# A gun-deck gun on its bay's platform: up the ramp between the bay's two guns (MountedGun.crew_stand).
+	var stand = g.get("crew_stand")
+	if stand != null and stand != Vector3.INF:
+		return LevelBuilder.nav_closest(_map, stand + Vector3.UP * 0.3)
 	var seat: Vector3 = (g.crew_spot() as Transform3D).origin
 	var base: Vector3 = g.global_position
 	var out := Vector3(seat.x - base.x, 0.0, seat.z - base.z)
 	var clear := SEAT_CLEAR_MORTAR if g.station_kind == "artillery" else SEAT_CLEAR_GUN
 	if out.length() < 0.01:
 		out = g.global_basis.z
-	var stand := base + out.normalized() * maxf(out.length(), clear) + Vector3.UP * 0.3
-	return LevelBuilder.nav_closest(_map, stand)
+	var beside := base + out.normalized() * maxf(out.length(), clear) + Vector3.UP * 0.3
+	return LevelBuilder.nav_closest(_map, beside)
 
 
 ## A fresh soldier: how far it walks from its side's spawn point to `to` along the navmesh (worked out once per side

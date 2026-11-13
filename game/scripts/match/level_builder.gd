@@ -68,18 +68,21 @@ const MORTAR_MOUNT := "MOUNT_AA_S4_1"
 ## The gun decks' manned guns, on every gun mount: an Orbital Sentry Gun (a gatling) on each bay's first mount and an
 ## Arctic Sentinel Cannon on its second, this tall (m). Both have a side seat for their crew (Props.SEATS).
 const DECK_GUN_HEIGHT := 2.2
-## The deck guns stand on pedestals this tall (m; MountedGun.base_height), their swivel DECK_GUN_PIVOT over the turret's
-## foot: 4.8 m over the deck, 7.3 m in from the face's front (DECK_GUN_OUT). From there the line of fire clears the
-## parapet (1.1 m) and the rock that bulges out under the deck, straight out and 20 degrees either side, at every aim
-## down to the guns' lowest (MountedGun.PITCH_MIN, 40 degrees), and lands on the field about 5 m past the face (the
-## rock's foot is 2.2 m past it). Standing on the deck, 500 of those 672 lines (every gun, 0-40 degrees down every 10)
-## hit the parapet or the rock, every one at 40 degrees; a 3.1 m pedestal is the lowest that clears them all
-## (GarrisonShowcase checks it). The cannon's legs, up there, reach out over the parapet instead of through it.
-const DECK_GUN_BASE := 3.3
-const DECK_GUN_PIVOT := 1.5
-## How far toward the parapet (+) from its mount each gun stands (m): the deck is 5.25 m deep, the parapet's inside face
-## 1.25 m in front of the mounts; the pedestal's column (0.6 m round) stays clear of it.
-const DECK_GUN_OUT := {"sentry": 0.4, "cannon": 0.4}
+## The deck guns stand on low concrete platforms against the parapet, just over its top (the parapet is 1.1 m), so the
+## guns are above it rather than behind it: one platform per bay under both its guns, DECK_PLATFORM_H tall and
+## DECK_PLATFORM_DEPTH deep from the parapet's inside face (DECK_PARAPET_IN in front of the mounts), reaching
+## DECK_PLATFORM_END past each gun along the face. A ramp DECK_RAMP_WIDTH wide is cut into its middle, rising from the
+## walkway at the platform's back to the parapet (27 degrees): the two guns' seats face each other across it, and their
+## crews walk up it and step across into them (MountedGun.crew_stand). The walkway behind the platforms (2.9 m) and the
+## gaps between the bays' platforms (3.1 m) stay at deck level.
+const DECK_PLATFORM_H := 1.2
+const DECK_PLATFORM_DEPTH := 2.4
+const DECK_PARAPET_IN := 1.25
+const DECK_PLATFORM_END := {"sentry": 1.2, "cannon": 1.7}
+const DECK_RAMP_WIDTH := 2.0
+## Where a crew stands on the ramp before stepping into its seat: this far toward the parapet from the mounts' line (m).
+const DECK_CREW_STAND := 0.3
+const DECK_GUN_OUT := {"sentry": 0.3, "cannon": 0.5}
 ## The roofs' turrets, which run themselves (nobody sits in them): a Sentinel Bastion (a gatling, MountedGun "bastion")
 ## on each bay's first roof mount and a Sentinel Spire (AA missiles, AATurret) on its second.
 const ROOF_BASTION_HEIGHT := 2.0
@@ -772,6 +775,7 @@ func _on_base_lot(p: Vector3) -> bool:
 ## Builds the possessable stations on the bunker's mounts and gun decks; returns the mounts used.
 func _build_stations() -> Array:
 	var used := []
+	_build_deck_platforms()
 	# Sentry guns on the gun deck above each gate, pushed up to the parapet and raised so
 	# they can fire down to within ~5 m of the rock foot (the doorway itself is dead ground).
 	for side in ["south", "east", "west"]:
@@ -801,7 +805,9 @@ func _build_stations() -> Array:
 		soldier.model_path = DEFENDER_MODELS[i % DEFENDER_MODELS.size()]
 		soldier.station_name = "Rifleman · %s Deck" % side.capitalize()
 		soldier.name = "Soldier_%s_%d" % [side, RIFLE_POSTS[i][1]]
-		var pos := mount.global_position + mount.global_basis.x * 3.0 + mount.global_basis.z * 0.8 + Vector3.UP * 0.1
+		# In the bay's middle, where its platform's ramp comes up to the parapet: on the ramp.
+		var pos := mount.global_position + mount.global_basis.x * 3.0 + mount.global_basis.z * 0.8 \
+				+ Vector3.UP * (deck_ramp_height(0.8) + 0.1)
 		_place_facing_out(soldier, side, pos)
 		add_child(soldier)
 		stations.append(soldier)
@@ -863,21 +869,95 @@ func _build_mounts(used: Array) -> void:
 
 
 ## A manned gun on a gun-deck mount: the bay's first mount an Orbital Sentry Gun, its second an Arctic Sentinel Cannon,
-## up on a pedestal (DECK_GUN_BASE) near the parapet (DECK_GUN_OUT). Raiders on the deck walk round the pedestal.
+## on the bay's platform (_build_deck_platforms). Raiders on the platform walk round it.
 func _deck_gun(mount: Node3D, side: String, title: String) -> MountedGun:
 	var mg := MountedGun.new()
-	var sentry := String(mount.name).ends_with("_1")
+	var mname := String(mount.name)
+	var sentry := mname.ends_with("_1")
 	mg.kind = "sentry" if sentry else "cannon"
 	mg.model_path = Props.ORBITAL_SENTRY_GUN if sentry else Props.ARCTIC_SENTINEL_CANNON
 	mg.model_height = DECK_GUN_HEIGHT
-	mg.base_height = DECK_GUN_BASE
-	mg.pivot_height = DECK_GUN_BASE + DECK_GUN_PIVOT
+	mg.pivot_height = 1.5
 	mg.station_name = title
-	var out: float = DECK_GUN_OUT[mg.kind]
-	_place_facing_out(mg, side, mount.global_position + mount.global_basis.z * out)
+	var out: Vector3 = SIDES[side].dir
+	var base := mount.global_position
+	_place_facing_out(mg, side, base + out * float(DECK_GUN_OUT[mg.kind]) + Vector3.UP * DECK_PLATFORM_H)
+	# Its crew comes up the ramp in the bay's middle (between this mount and the bay's other one).
+	var other := _marker(mname.left(mname.length() - 1) + ("2" if sentry else "1"))
+	var middle := (base + other.global_position) * 0.5
+	mg.crew_stand = middle + out * DECK_CREW_STAND + Vector3.UP * deck_ramp_height(DECK_CREW_STAND)
 	add_child(mg)
 	_nav_plug(mg.transform.translated_local(Vector3.UP * 0.8), Vector3(1.4, 1.6, 1.4))
 	return mg
+
+
+## How high the bays' ramps are (m over the deck) `out` m toward the parapet from the mounts' line.
+static func deck_ramp_height(out: float) -> float:
+	var back := DECK_PARAPET_IN - DECK_PLATFORM_DEPTH
+	return clampf((out - back) / DECK_PLATFORM_DEPTH, 0.0, 1.0) * DECK_PLATFORM_H
+
+
+## Every bay's gun platform (baked into the navmesh): a concrete block either side of the ramp in the bay's middle, from
+## the parapet to DECK_PLATFORM_DEPTH back, reaching DECK_PLATFORM_END past each of the bay's two gun mounts along the
+## face, with a hazard band along its back edge; and the ramp, a wedge rising from the walkway to the parapet.
+func _build_deck_platforms() -> void:
+	var concrete: Material = StrongholdLook.material("Concrete", jungle)
+	var stripes: Material = StrongholdLook.material("HatchStripes", jungle)
+	if stripes == null:
+		stripes = Mats.flat(Color(0.8, 0.35, 0.08), 0.3, 0.6)
+	var h := DECK_PLATFORM_H
+	var mid_out := DECK_PARAPET_IN - DECK_PLATFORM_DEPTH * 0.5
+	for side in SIDES:
+		var face: String = SIDES[side].face
+		var out: Vector3 = SIDES[side].dir
+		for bay in range(1, 10):
+			var m1 := _marker("MOUNT_GUN_%s%d_1" % [face, bay])
+			var m2 := _marker("MOUNT_GUN_%s%d_2" % [face, bay])
+			if m1 == null or m2 == null:
+				continue
+			var a := m1.global_position
+			var b := m2.global_position
+			var along := (b - a).normalized()
+			var middle := (a + b) * 0.5
+			var frame := Basis(along, Vector3.UP, along.cross(Vector3.UP))
+			var half_gap := a.distance_to(b) * 0.5
+			var notch := DECK_RAMP_WIDTH * 0.5
+			# The two blocks: from past the sentry to the ramp, and from the ramp to past the cannon.
+			for part in [[-(half_gap + float(DECK_PLATFORM_END.sentry)), -notch], [notch, half_gap + float(DECK_PLATFORM_END.cannon)]]:
+				var w: float = part[1] - part[0]
+				var at: Vector3 = middle + along * (part[0] + part[1]) * 0.5 + out * mid_out + Vector3.UP * h * 0.5
+				var size := Vector3(w, h, DECK_PLATFORM_DEPTH)
+				var block := StaticBody3D.new()
+				block.name = "DeckPlatform_%s%d" % [face, bay]
+				block.collision_layer = GameConfig.LAYER_WORLD
+				block.collision_mask = 0
+				block.transform = Transform3D(frame, at)
+				var cs := CollisionShape3D.new()
+				var box := BoxShape3D.new()
+				box.size = size
+				cs.shape = box
+				block.add_child(cs)
+				block.add_child(Mats.box_mesh(size, Vector3.ZERO, concrete))
+				# The back edge (away from the parapet), in the block's frame (its z is along x up).
+				var back_z := DECK_PLATFORM_DEPTH * 0.5 * (1.0 if frame.z.dot(out) < 0.0 else -1.0)
+				block.add_child(Mats.box_mesh(Vector3(w, 0.14, 0.04), Vector3(0.0, h * 0.5 - 0.07, back_z + signf(back_z) * 0.02), stripes))
+				nav_region.add_child(block)
+			var prism := PrismMesh.new()
+			prism.left_to_right = 1.0
+			prism.size = Vector3(DECK_PLATFORM_DEPTH, h, DECK_RAMP_WIDTH)
+			var ramp := StaticBody3D.new()
+			ramp.name = "DeckRamp_%s%d" % [face, bay]
+			ramp.collision_layer = GameConfig.LAYER_WORLD
+			ramp.collision_mask = 0
+			ramp.transform = Transform3D(Basis(out, Vector3.UP, out.cross(Vector3.UP)), middle + out * mid_out + Vector3.UP * h * 0.5)
+			var rcs := CollisionShape3D.new()
+			rcs.shape = prism.create_convex_shape()
+			ramp.add_child(rcs)
+			var rmi := MeshInstance3D.new()
+			rmi.mesh = prism
+			rmi.material_override = concrete
+			ramp.add_child(rmi)
+			nav_region.add_child(ramp)
 
 
 func _place_facing_out(node: Node3D, side: String, pos: Vector3) -> void:

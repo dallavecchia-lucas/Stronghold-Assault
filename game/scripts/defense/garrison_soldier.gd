@@ -4,7 +4,7 @@ extends DefenderSoldier
 ## run by the CPU only. The garrison hands it a job and it walks there on the navmesh: up the stair shafts to the gun
 ## decks (the climbing links' routes, like the infiltrating attackers'), through the gates (the door opens for it, as
 ## for the squads: Structure.hold_open) and out round the base. There it holds:
-##   GUN    it climbs the ladder up the gun's pedestal (MountedGun.boarding) and sits in the gun's seat
+##   GUN    it walks up beside the gun (on the gun decks, up the ramp onto the gun's platform) and steps into its seat
 ##          (MountedGun.crew_spot: the sentry gun's and the cannon's side seats, the mortar's too), seated by its SeatRig
 ##          with its rifle put away, turning with the gun; the gun fires (once it is seated: at_post), it doesn't.
 ##   DECK   it holds its spot on a gun deck, behind the parapet, and fights with its rifle.
@@ -75,12 +75,11 @@ var _stuck_at := Vector3.ZERO
 var _fighting := false
 var _seat_rig: SeatRig
 var _rifle: Node3D
-## Going up to its gun's seat: the points of the climb left (MountedGun.boarding), whether it is off the floor and in the
-## seat, and the gun it climbed (for climbing back down when it is sent elsewhere).
-var _boarding: Array[Vector3] = []
-var _up := false
+## Stepping into its gun's seat: whether it is in it, and where it stood beside the gun (it steps back down there when
+## it is sent elsewhere).
 var _seated := false
-var _board_gun: Node3D = null
+var _boarding := false
+var _stood_at := Vector3.ZERO
 
 
 func _init() -> void:
@@ -132,15 +131,11 @@ func send(new_job: Job, to: Vector3, face: Vector3, now: float) -> void:
 	arrived = false
 	arrived_at = -1.0
 	assigned_at = now
-	# Up on a gun's pedestal: back down the ladder to its foot first.
-	if _up and is_instance_valid(_board_gun) and _board_gun.has_method("boarding"):
-		var way: Array[Vector3] = _board_gun.boarding()
-		if not way.is_empty():
-			global_position = way[0]
-	_up = false
+	# In (or getting into) a gun's seat: out of it, back where it stood beside the gun.
+	if _boarding or _seated:
+		global_position = _stood_at
 	_seated = false
-	_boarding.clear()
-	_board_gun = null
+	_boarding = false
 	# Halfway up a stair or a ladder it climbs on to the end first (the route), then makes for the new spot.
 	_agent.target_position = to
 	_check_reach = true
@@ -231,8 +226,8 @@ func _physics_process(delta: float) -> void:
 		_walk(delta)
 
 
-## At its gun: up the ladder of the gun's pedestal (if it has one) and into its seat, then sat there (a gun with no seat:
-## stood behind it), turned with the gun; the gun does the shooting.
+## At its gun: from where it stands beside it into its seat, then sat there (a gun with no seat: stood behind it), turned
+## with the gun; the gun does the shooting.
 func _crew(delta: float) -> void:
 	velocity = Vector3.ZERO
 	if not is_instance_valid(gun):
@@ -251,31 +246,22 @@ func _crew(delta: float) -> void:
 	_body.visible = not (gun.possessed and gun.station_kind == "mg")
 
 
-## One step of the way into the seat at `seat`: up the ladder (facing the pedestal) and across the turntable. True once
-## it is in it.
+## One step of the way from where it stands beside the gun into the seat at `seat`. True once it is in it.
 func _climb_to_seat(seat: Vector3, delta: float) -> bool:
-	if _board_gun != gun:
-		_board_gun = gun
-		_boarding = gun.boarding() if gun.has_method("boarding") else ([] as Array[Vector3])
-	_up = true
-	var next: Vector3 = _boarding[0] if not _boarding.is_empty() else seat
-	var to := next - global_position
-	var climbing := absf(to.y) > Vector2(to.x, to.z).length()
-	var speed := CLIMB_SPEED if climbing else ROUTE_SPEED
-	if to.length() <= speed * delta:
-		global_position = next
-		if _boarding.is_empty():
-			_seated = true
-			if garrison:
-				garrison.seated(self)
-			return true
-		_boarding.pop_front()
-		return false
-	velocity = to.normalized() * speed
+	if not _boarding:
+		_boarding = true
+		_stood_at = global_position
+	var to := seat - global_position
+	if to.length() <= ROUTE_SPEED * delta:
+		global_position = seat
+		_seated = true
+		if garrison:
+			garrison.seated(self)
+		return true
+	velocity = to.normalized() * ROUTE_SPEED
 	global_position += velocity * delta
-	var look := gun.global_position - global_position if climbing else to
-	if Vector2(look.x, look.z).length() > 0.05:
-		rotation.y = lerp_angle(rotation.y, atan2(-look.x, -look.z), minf(10.0 * delta, 1.0))
+	if Vector2(to.x, to.z).length() > 0.05:
+		rotation.y = lerp_angle(rotation.y, atan2(-to.x, -to.z), minf(10.0 * delta, 1.0))
 	return false
 
 
