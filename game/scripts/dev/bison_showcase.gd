@@ -21,7 +21,7 @@ extends Node3D
 const SOLO_AT := Vector3(-8.0, 0.0, 140.0)
 const GROUP_AT := [Vector3(4.0, 0.0, 136.0), Vector3(10.0, 0.0, 136.0), Vector3(7.0, 0.0, 142.0),
 		Vector3(13.0, 0.0, 142.0)]
-## The south deck's riflemen the group aims between (LevelBuilder.RIFLE_POSTS: south bays 2 and 4).
+## The south deck's riflemen the group aims between (LevelBuilder.RIFLE_POSTS: south bays 3 and 5).
 const DECK_SOLDIERS := ["Soldier_south_2", "Soldier_south_4"]
 ## How far out the view is over the bisons, and up at the face while aiming.
 const FIELD_ZOOM := 46.0

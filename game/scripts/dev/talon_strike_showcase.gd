@@ -122,8 +122,8 @@ func _ready() -> void:
 			SOLDIER_E: soldier_e = s
 	for a in level.aa_turrets:
 		match String(a.name):
-			"AA_S2_2": turret_w = a
-			"AA_S4_2": turret_e = a
+			"AA_S3_2": turret_w = a
+			"AA_S5_2": turret_e = a
 			_: a.process_mode = Node.PROCESS_MODE_DISABLED  # only the south face's are in it
 	var units_root := Node3D.new()
 	add_child(units_root)

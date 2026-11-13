@@ -44,8 +44,31 @@ const FACING := {
 	SENTINEL_SPIRE: PI,
 }
 
+## The crew seats the manned turrets carry, for a turret scaled to SEAT_REF_HEIGHT tall and facing -Z (after FACING):
+## the middle of the seat pan's top, and the way the one sitting in it faces. Both are side seats facing in toward the
+## gun: the Orbital Sentry Gun's on its left, the Arctic Sentinel Cannon's on its right (measured off orthographic
+## renders of the models on a 10 cm grid). The Sentinel Bastion and Sentinel Spire have none: they run themselves.
+const SEAT_REF_HEIGHT := 2.0
+const SEATS := {
+	ORBITAL_SENTRY_GUN: {"pan": Vector3(-1.08, 0.58, 0.36), "face": Vector3(1, 0, 0)},
+	ARCTIC_SENTINEL_CANNON: {"pan": Vector3(1.05, 0.41, 0.43), "face": Vector3(-1, 0, 0)},
+}
+
 static var _scenes := {}
 static var _sizes := {}
+
+
+## Whether `path` has a crew seat (SEATS).
+static func has_seat(path: String) -> bool:
+	return SEATS.has(path)
+
+
+## The seat of `path` instanced `height` tall (instance()), in that instance's frame: origin on the middle of the seat
+## pan's top, -Z the way the one sitting in it faces.
+static func seat(path: String, height: float) -> Transform3D:
+	var s: Dictionary = SEATS[path]
+	var k := height / SEAT_REF_HEIGHT
+	return Transform3D(Basis.looking_at(s.face), (s.pan as Vector3) * k)
 
 
 ## Instance of `path` scaled uniformly to `height`, facing -Z.

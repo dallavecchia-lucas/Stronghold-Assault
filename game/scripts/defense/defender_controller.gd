@@ -12,6 +12,10 @@ extends CanvasLayer
 ##
 ## A kangaroo's flash grenade going off where the post the player is on sees it (FlashGrenade) turns
 ## the screen full white for as long as it blinds, then it clears.
+##
+## The garrison (Garrison): the player has one of the base's four spawn controls (player 0's, on the south side at the
+## start). Y moves it to the next side round the base (south, east, north, west), U switches the soldiers it spawns
+## between BASE (guns, then the decks, then the field) and FIELD (straight out). A panel at the top right shows it.
 
 const THREAT_RADIUS := 45.0
 const SWITCH_FADE := 0.18
@@ -27,12 +31,18 @@ const BUY_SNIPER_KEY := KEY_K
 const CALL_DRONES_KEY := KEY_C
 const BUY_JET_KEY := KEY_J
 const BUY_TANK_KEY := KEY_H
+## The garrison's spawn control: Y the next side, U BASE / FIELD.
+const SPAWN_SIDE_KEY := KEY_Y
+const SPAWN_PRIORITY_KEY := KEY_U
 
 var level: LevelBuilder
 ## The defenders' credits and bought squads; null: no roster.
 var armory: DefenderArmory
 ## The defenders' drone swarms; null: none in this match.
 var drones: DroneBay
+## The garrison and which of its spawn controls is the player's; null: none in this match.
+var garrison: Garrison
+var player_number := 0
 var stations := []
 var current = null
 
@@ -45,6 +55,7 @@ var _weapon_label: Label
 var _status_label: Label
 var _hint_label: Label
 var _drone_label: Label
+var _garrison_label: Label
 var _hp_bar: ProgressBar
 var _heat_bar: ProgressBar
 var _prompt: Label
@@ -84,6 +95,13 @@ func _unhandled_input(event: InputEvent) -> void:
 	if drones and event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == CALL_DRONES_KEY:
 		call_drones()
 		return
+	if garrison and event is InputEventKey and event.pressed and not event.echo:
+		if event.physical_keycode == SPAWN_SIDE_KEY:
+			cycle_spawn()
+			return
+		if event.physical_keycode == SPAWN_PRIORITY_KEY:
+			toggle_spawn_priority()
+			return
 	if armory and event is InputEventKey and event.pressed and not event.echo:
 		var k := ROSTER_KEYS.find(event.physical_keycode)
 		if k >= 0:
@@ -164,6 +182,23 @@ func buy_squad(kind := "aa"):
 
 func _on_squad_bought(s) -> void:
 	s.became_unavailable.connect(_on_station_unavailable)
+
+
+## Y: the player's garrison spawn to the next side round the base.
+func cycle_spawn() -> void:
+	if garrison == null:
+		return
+	var side := garrison.cycle_spawn(player_number)
+	_flash_prompt("Your spawn: %s · %s now spawns %d at a time" % [side.to_upper(), side.capitalize(), garrison.spawns_at(side)])
+
+
+## U: the player's garrison spawn between BASE (guns, decks, then the field) and FIELD (straight out to the field).
+func toggle_spawn_priority() -> void:
+	if garrison == null:
+		return
+	var p := garrison.toggle_priority(player_number)
+	_flash_prompt("Your soldiers: %s" % ("BASE · guns, then the decks, then the field" if p == Garrison.Priority.BASE
+			else "FIELD · straight out to the field"))
 
 
 ## C: calls a drone swarm to where the player's post stands. Refused if no swarm can get there on the fuel it has
@@ -365,6 +400,15 @@ func _build_hud() -> void:
 		_drone_label.position += Vector2(-16, 90)
 		root.add_child(_drone_label)
 
+	if garrison:
+		var gpanel := UIKit.panel()
+		gpanel.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+		gpanel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+		gpanel.position += Vector2(-16, 118)
+		root.add_child(gpanel)
+		_garrison_label = UIKit.label("", 14, Color(0.85, 0.9, 1.0))
+		gpanel.add_child(_garrison_label)
+
 	_prompt = UIKit.label("", 26, UIKit.WARN)
 	_prompt.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
 	_prompt.grow_horizontal = Control.GROW_DIRECTION_BOTH
@@ -393,6 +437,20 @@ func _build_hud() -> void:
 	flash_layer.add_child(_whiteout)
 
 
+## The garrison panel: the player's spawn, how many come out on each side, and where the soldiers are.
+func _garrison_text() -> String:
+	var c := garrison.control_of(player_number)
+	var g := garrison.summary()
+	var sides := []
+	for side in Garrison.SIDE_ORDER:
+		sides.append("%s %d" % [side.substr(0, 1).to_upper(), garrison.spawns_at(side)])
+	var mine := "—"
+	if not c.is_empty():
+		mine = "%s · %s" % [String(c.side).to_upper(), Garrison.PRIORITY_NAMES[c.priority]]
+	return "GARRISON  ·  Y move spawn  ·  U base/field\nYour spawn: %s\nSpawns  %s  (1 each per %d s)\nGuns crewed %d/%d  ·  Deck %d/%d  ·  Field %d  ·  Moving %d" % [
+			mine, "  ".join(sides), int(Garrison.SPAWN_INTERVAL), g.guns, g.guns_alive, g.deck, g.deck_total, g.field, g.walking]
+
+
 func _refresh_threat() -> void:
 	_threat.clear()
 	var units := get_tree().get_nodes_in_group("attacker_units")
@@ -412,6 +470,8 @@ func _process(delta: float) -> void:
 		_refresh_threat()
 		if _drone_label:
 			_drone_label.text = drones.status_text() + "  ·  C call a swarm here"
+		if _garrison_label:
+			_garrison_label.text = _garrison_text()
 	for i in stations.size():
 		var s = stations[i]
 		var row: Dictionary = _rows[i]
@@ -419,6 +479,8 @@ func _process(delta: float) -> void:
 		row.hp.value = s.hp / s.max_hp
 		var n: int = _threat.get(s, 0)
 		row.threat.text = ("%d near" % n) if n > 0 else ""
+		if alive and s.has_method("is_manned") and not s.is_manned():
+			row.threat.text = "no crew" if n == 0 else "%d · no crew" % n
 		var col := UIKit.ACCENT if s == current else (Color(0.5, 0.5, 0.5) if not alive else Color.WHITE)
 		row.name.add_theme_color_override("font_color", col)
 

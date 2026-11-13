@@ -92,7 +92,12 @@ static func fire_hitscan(shooter: Node3D, from: Vector3, aim_at: Vector3, spread
 	if spread > 0.0:
 		dir = apply_spread(dir, spread)
 	var to := from + dir * 300.0
-	var q := PhysicsRayQueryParameters3D.create(from, to, GameConfig.LAYER_ALL_SOLID, exclude)
+	# The defenders' rounds pass through their own people (the garrison stands in rows round the base, in front of
+	# the guns and of each other); the attackers' stop on whatever body they meet.
+	var mask := GameConfig.LAYER_ALL_SOLID
+	if team == GameConfig.TEAM_DEFENDER:
+		mask &= ~GameConfig.LAYER_DEFENDERS
+	var q := PhysicsRayQueryParameters3D.create(from, to, mask, exclude)
 	var hit := shooter.get_world_3d().direct_space_state.intersect_ray(q)
 	var end := to
 	var hurt := false

@@ -13,6 +13,8 @@ const SHELL_DAMAGE := 150.0
 const SHELL_RADIUS := 7.0
 const AI_ERROR := 5.0
 const REPAIR_TIME := 360.0  # 6 minutes
+## How tall the mortar's model (the Arctic Sentinel Cannon) stands (m); its crew sits in its side seat.
+const CANNON_HEIGHT := 1.9
 
 ## Where the spotter view starts (and returns to), looking away from the map center.
 var spotter_home := Vector3(0, 0, 45)
@@ -24,10 +26,15 @@ var hp := 400.0
 var target_radius := 1.0
 var possessed := false
 var map_half := 120.0
+## Fires on its own only while crewed (the Garrison sets this); off: always crewed. See MountedGun.
+var needs_crew := false
+var crew: Node3D = null
 
 var _reload := 0.0
 var _repair_cd := 0.0
 var _barrel_pivot: Node3D
+## The Arctic Sentinel Cannon's model (it turns with the barrel pivot), whose side seat the crew sits in.
+var _cannon: Node3D
 var _muzzle: Node3D
 var _spotter: Node3D
 var _camera: Camera3D
@@ -55,7 +62,8 @@ func _ready() -> void:
 	_barrel_pivot.position.y = 0.7
 	add_child(_barrel_pivot)
 	# The whole cannon turns toward the target; shells still leave from the muzzle below.
-	var cannon := Props.instance(Props.ARCTIC_SENTINEL_CANNON, 1.9)
+	var cannon := Props.instance(Props.ARCTIC_SENTINEL_CANNON, CANNON_HEIGHT)
+	_cannon = cannon
 	cannon.position.y = 0.35 - _barrel_pivot.position.y
 	_barrel_pivot.add_child(cannon)
 	var tilt := Node3D.new()
@@ -131,6 +139,24 @@ func get_camera() -> Camera3D:
 	return _camera
 
 
+## True if it can fire on its own: it needs no crew, or one stands at it.
+func is_manned() -> bool:
+	if not needs_crew or possessed:
+		return true
+	if crew == null or not is_instance_valid(crew) or not crew.is_alive():
+		return false
+	return not crew.has_method("at_post") or crew.at_post()
+
+
+func has_seat() -> bool:
+	return _cannon != null
+
+
+## Where the crew sits: the cannon's side seat (Props.SEATS), turning with it as it lays the barrel.
+func crew_spot() -> Transform3D:
+	return _cannon.global_transform * Props.seat(Props.ARCTIC_SENTINEL_CANNON, CANNON_HEIGHT)
+
+
 func get_hud_info() -> Dictionary:
 	var status := "READY" if _reload <= 0.0 else "RELOADING %.1fs" % _reload
 	if possessed and not _aim_valid:
@@ -175,7 +201,7 @@ func _physics_process(delta: float) -> void:
 	_reload -= delta
 	if possessed:
 		_player_update(delta)
-	elif _reload <= 0.0 and not FlashGrenade.is_blind(self):
+	elif _reload <= 0.0 and is_manned() and not FlashGrenade.is_blind(self):
 		_ai_fire()
 
 
