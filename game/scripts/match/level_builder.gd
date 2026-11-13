@@ -68,6 +68,9 @@ const MORTAR_MOUNT := "MOUNT_AA_S4_1"
 ## The gun decks' manned guns, on every gun mount: an Orbital Sentry Gun (a gatling) on each bay's first mount and an
 ## Arctic Sentinel Cannon on its second, this tall (m). Both have a side seat for their crew (Props.SEATS).
 const DECK_GUN_HEIGHT := 2.2
+## How far toward the parapet (+) from its mount each kind stands (m): the deck is 5.25 m deep, the parapet's inside
+## face 1.25 m in front of the mounts.
+const DECK_GUN_OUT := {"sentry": 0.1, "cannon": -0.9}
 ## The roofs' turrets, which run themselves (nobody sits in them): a Sentinel Bastion (a gatling, MountedGun "bastion")
 ## on each bay's first roof mount and a Sentinel Spire (AA missiles, AATurret) on its second.
 const ROOF_BASTION_HEIGHT := 2.0
@@ -850,8 +853,10 @@ func _build_mounts(used: Array) -> void:
 				aa_turrets.append(t)
 
 
-## A manned gun on a gun-deck mount: the bay's first mount an Orbital Sentry Gun, its second an Arctic Sentinel Cannon,
-## pushed up to the parapet. Raiders on the deck walk round it.
+## A manned gun on a gun-deck mount: the bay's first mount an Orbital Sentry Gun, its second an Arctic Sentinel Cannon.
+## Each stands as near the parapet as its body allows (DECK_GUN_OUT): the cannon's legs reach 2.1 m out from its middle
+## and so it stands back from the mount, clear of the parapet in front and the wall behind however it turns. Raiders on
+## the deck walk round it.
 func _deck_gun(mount: Node3D, side: String, title: String) -> MountedGun:
 	var mg := MountedGun.new()
 	var sentry := String(mount.name).ends_with("_1")
@@ -860,7 +865,8 @@ func _deck_gun(mount: Node3D, side: String, title: String) -> MountedGun:
 	mg.model_height = DECK_GUN_HEIGHT
 	mg.pivot_height = 1.5
 	mg.station_name = title
-	_place_facing_out(mg, side, mount.global_position + mount.global_basis.z * 0.6)
+	var out: float = DECK_GUN_OUT[mg.kind]
+	_place_facing_out(mg, side, mount.global_position + mount.global_basis.z * out)
 	add_child(mg)
 	_nav_plug(mg.transform.translated_local(Vector3.UP * 0.8), Vector3(1.4, 1.6, 1.4))
 	return mg
