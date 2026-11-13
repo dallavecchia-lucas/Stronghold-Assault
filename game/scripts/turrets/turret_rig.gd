@@ -55,11 +55,7 @@ var height := 0.0
 ## Running (crewed, or it runs itself): the sensors scan and the dome turns. Off: they stop where they rest.
 var powered := true
 ## Knocked out (see the top).
-var wrecked := false:
-	set(v):
-		if v != wrecked:
-			wrecked = v
-			_on_wrecked(v)
+var wrecked := false
 ## 0..1: how hot the barrels are (the owner's heat): they glow, and smoke when it is high.
 var heat := 0.0
 ## The world point the sensors hold; INF: nothing, they scan.
@@ -94,7 +90,6 @@ var _dome := 0.0
 var _dome_v := 0.0
 var _casings: Casings
 var _glow: Array[StandardMaterial3D] = []
-var _time := 0.0
 ## What the parts were last posed from (one number: nothing moved, nothing is posed again).
 var _posed := NAN
 var _glow_shown := -1.0
@@ -154,11 +149,6 @@ func _animate(_delta: float) -> void:
 	pass
 
 
-## Hook: knocked out, or repaired.
-func _on_wrecked(_on: bool) -> void:
-	pass
-
-
 ## Hands the rig the aim (rad): the traverse (left positive) and the elevation.
 func set_aim(p_yaw: float, p_pitch: float) -> void:
 	yaw = p_yaw
@@ -215,7 +205,6 @@ func _process(delta: float) -> void:
 	# Out of sight (its owner shows the player's own gun instead), it rests.
 	if model == null or not is_visible_in_tree():
 		return
-	_time += delta
 	_springs(delta)
 	_sensors(delta)
 	_animate(delta)
@@ -366,8 +355,7 @@ func _eject(speed: float) -> void:
 	if _casings == null or not has_part("eject"):
 		return
 	var port := spot("eject")
-	var turret_v := Vector3.ZERO
-	_casings.throw(port, port.basis.z * speed * randf_range(0.8, 1.2) + Vector3.UP * randf_range(0.4, 1.1) + turret_v,
+	_casings.throw(port, port.basis.z * speed * randf_range(0.8, 1.2) + Vector3.UP * randf_range(0.4, 1.1),
 			global_position.y, Vector2(global_position.x, global_position.z))
 
 

@@ -772,6 +772,14 @@ godot --path game --rendering-driver opengl3 --resolution 1600x900 --fixed-fps 3
 # green where they land on the field), north_deck, west_deck, south_gate, spawn_corridor (.png named <scenario>_t<time>_<view>)
 ```
 
+`-- --film=view:from:to` films one of those views between two game times for `--write-movie` (nothing is drawn before `from`), printing the frames to keep for `tools/video/cut_showcase.py`; after an `--attack=` that is the gun decks at work, every gun laid by its own crew (`media/gun_decks.mp4`):
+
+```sh
+godot --path game --resolution 960x540 --write-movie decks.avi --fixed-fps 30 res://scenes/dev/garrison_showcase.tscn -- \
+    --attack=78 --film=south_deck_front:81:90 --lighting=standard > decks.log
+python3 tools/video/cut_showcase.py decks.avi decks.log media/gun_decks.mp4
+```
+
 Between the stills the render loop is off, so the run goes at the simulation's pace; on software GL the stills get a lighter shadow map, no multisampling, thinner haze, the plain sky and the helipads' name tags hidden.
 
 The ladders to the roofs used to end a little short of the roofs' navmesh (it keeps about a metre clear of the hatch), past the metre a navigation link reaches to join it, so nothing could path up onto a roof; `LevelBuilder.ROOF_ROUTE` now ends with a step out onto the roof (the mortar's crew climbs it, and so can the raiding attackers).
