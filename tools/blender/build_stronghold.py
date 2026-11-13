@@ -37,10 +37,10 @@ from mathutils import Matrix, Vector
 
 PX_SCALE = 0.035          # meters per sketch pixel
 PX_ORIGIN = (280.0, 770.0)  # sketch pixel of (front, ground)
-MODULES = 5
+MODULES = 7               # bays per face: 7 x 12 m, 14 gun mounts along each gun deck
 BAY = 12.0                # bay length (m)
 END_CHAMFER = 6.0         # how much longer the front is than the back at each end
-C_BAYS = (0, 2, 4)        # bays with a ground tunnel exit
+C_BAYS = (0, 3, 6)        # bays with a ground tunnel exit (the middle one is the gate)
 
 # Interior, in meters. x is relative to the bay centre, d is depth from the front.
 HEADROOM = 3.0
@@ -90,9 +90,9 @@ MOUNTAIN_CUT = [(-20.0, -0.5), (-2.2, 0.0), (-1.9, 1.0), (-1.4, 2.6), (-1.1, 4.3
 # so bumps never poke up through the deck or the roof
 MOUNTAIN_CUT_NOISE = [1, 1, 1, 1, 1, 1, 1, 0.6, 0.25, 0, 0, 0, 0.3, 1, 1, 1, 1, 1]
 MOUNTAIN_COLUMNS = 160    # columns across each face's wedge of the mountain
-CUT_HALF = 27.0           # decks fully exposed within +-CUT_HALF ...
-CUT_BLEND = 6.0           # ... and buried again CUT_BLEND further out
-PARAPET_HALF = 32.0       # parapets run on into the rock at both ends
+CUT_HALF = 42.0           # decks fully exposed within +-CUT_HALF (the whole 7-bay face) ...
+CUT_BLEND = 5.0           # ... and buried again CUT_BLEND further out
+PARAPET_HALF = 46.0       # parapets run on into the rock at both ends
 PORTAL = (-2.6, -0.6)     # depth of the concrete portal frames around exit C
 
 # Four faces around one mountain. Face S is the original (front at y = 0, facing -Y); E, N, W are
@@ -104,7 +104,7 @@ CENTER = Vector((0.0, MOUNTAIN_R, 0.0))
 # (through the deck-level stair landings), ROOF ring at roof level joins all rooftops.
 RING_D = (16.0, 19.0)               # depth band of the straight ring runs behind each face
 RING_H = 3.0
-RING_STRAIGHT = 38.5                # straight run is +-this; diagonals cut the corners
+RING_STRAIGHT = 44.0                # straight run is +-this (past the end bays' ring doors); diagonals cut the corners
 RING_DOOR_W = 2.0                   # roof terrace -> roof ring doors, one per bay
 CORRIDOR = (4.0, 3.5)               # ground corridors to the core: width, height
 CORRIDOR_D0 = 21.0                  # starts inside the spawn hall

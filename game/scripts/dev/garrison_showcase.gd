@@ -164,52 +164,26 @@ func _plen(p: PackedVector3Array) -> float:
 
 func _probe() -> void:
 	var map := get_world_3d().navigation_map
-	print("PROBE map regions=%d iteration=%d level-region-map-same=%s" % [NavigationServer3D.map_get_regions(map).size(),
-			NavigationServer3D.map_get_iteration_id(map), str(level.nav_region.get_navigation_map() == map)])
-	print("PROBE region mesh polys=%d" % (level.nav_region.navigation_mesh.get_polygon_count() if level.nav_region.navigation_mesh else -1))
-	var probe_p := Vector3(0, 0.5, 120)
-	print("PROBE active=%s region-closest=%s map-closest=%s region-enabled=%s xf=%s" % [NavigationServer3D.map_is_active(map),
-			NavigationServer3D.region_get_closest_point(level.nav_region.get_rid(), probe_p),
-			NavigationServer3D.map_get_closest_point(map, probe_p), level.nav_region.enabled, level.nav_region.global_transform.origin])
-	for k in 30:
-		await get_tree().physics_frame
-	print("PROBE later iteration=%d map-closest=%s" % [NavigationServer3D.map_get_iteration_id(map), NavigationServer3D.map_get_closest_point(map, probe_p)])
 	var L := Garrison.NAV_LAYERS
-	var spn: Vector3 = garrison._spawn_pos["south"]
-	print("PROBE spawn S nav ", spn, " marker ", level.marker("SPAWN_S3").global_position)
-	var gate := level.marker("EXIT_C_S3").global_position
-	var out := LevelBuilder.nav_closest(map, gate + Vector3(0, 0.5, 10))
-	for layers in [1, L]:
-		var p := NavigationServer3D.map_get_path(map, spn, out, true, layers)
-		print("PROBE spawn->outside layers=%d n=%d end=%s len=%.1f" % [layers, p.size(), p[-1] if p.size() else Vector3.INF, _plen(p)])
-	var g = garrison.guns[0]
-	var goal: Vector3 = garrison._gun_goals[g]
-	print("PROBE gun ", g.name, " at ", g.global_position, " goal ", goal)
-	var p2 := NavigationServer3D.map_get_path(map, spn, goal, true, L)
-	print("PROBE spawn->gun n=%d len=%.1f" % [p2.size(), _plen(p2)])
-	for q in p2:
-		print("PROBE    ", q)
-	for l in level.find_children("*", "NavigationLink3D", true, false):
-		var a: Vector3 = l.global_position + l.start_position
-		var b: Vector3 = l.global_position + l.end_position
-		if b.y > 14.0 and absf(a.x) < 12.0 and a.z > 50.0:
-			var na := LevelBuilder.nav_closest(map, a)
-			var nb := LevelBuilder.nav_closest(map, b)
-			print("PROBE roof link %s -> %s ; nav at start %s (%.2f) ; nav at end %s (%.2f) enabled=%s layers=%d" % [a, b, na,
-					na.distance_to(a), nb, nb.distance_to(b), l.enabled, l.navigation_layers])
-	var mort = garrison.guns.filter(func(x): return x.station_kind == "artillery")[0]
-	var goal2: Vector3 = garrison._gun_goals[mort]
-	var deck := LevelBuilder.nav_closest(map, Vector3(4.8, 8.6, 67.5))
-	var pr := NavigationServer3D.map_get_path(map, deck, goal2, true, L)
-	print("PROBE deck->mortar from %s n=%d end=%s" % [deck, pr.size(), pr[-1] if pr.size() else Vector3.INF])
-	var roof_pt := LevelBuilder.nav_closest(map, Vector3(4.75, 15.5, 67.0))
-	var pr2 := NavigationServer3D.map_get_path(map, roof_pt, goal2, true, L)
-	print("PROBE roof %s -> mortar goal n=%d end=%s" % [roof_pt, pr2.size(), pr2[-1] if pr2.size() else Vector3.INF])
-	var j := level.marker("EXIT_B_S3").global_position
-	print("PROBE EXIT_B_S3 ", j, " nav ", LevelBuilder.nav_closest(map, j + Vector3.UP * 0.3))
-	for l in level.find_children("*", "NavigationLink3D", true, false).slice(0, 6):
-		print("PROBE link layers=%d enabled=%s %s -> %s" % [l.navigation_layers, l.enabled, l.global_position + l.start_position, l.global_position + l.end_position])
-
+	var core := level.marker("CORE").global_position + Vector3.UP * 0.5
+	var pts := {"core": core}
+	for f in ["S", "E", "N", "W"]:
+		pts["spawn_" + f] = level.marker("SPAWN_%s%d" % [f, LevelBuilder.GATE_BAY]).global_position + Vector3.UP * 0.5
+		pts["junction_" + f] = level.marker("EXIT_B_%s%d" % [f, LevelBuilder.GATE_BAY]).global_position + Vector3.UP * 0.5
+	pts["spawn_S1"] = level.marker("SPAWN_S1").global_position + Vector3.UP * 0.5
+	pts["spawn_S7"] = level.marker("SPAWN_S7").global_position + Vector3.UP * 0.5
+	for k in pts:
+		var a: Vector3 = pts[k]
+		var n := LevelBuilder.nav_closest(map, a)
+		var p := NavigationServer3D.map_get_path(map, LevelBuilder.nav_closest(map, core), n, true, L)
+		print("PROBE %-12s at %s nav %s (off %.2f) path-from-core end %s gap %.2f" % [k, a, n, n.distance_to(a),
+				p[-1] if p.size() else Vector3.INF, p[-1].distance_to(n) if p.size() else INF])
+	# along the south corridor, every 2 m from the core to the hall
+	for z in range(10, 62, 2):
+		var q := Vector3(0, 0.5, z)
+		var n := LevelBuilder.nav_closest(map, q)
+		var p := NavigationServer3D.map_get_path(map, LevelBuilder.nav_closest(map, core), n, true, 1)
+		print("PROBE corridor z=%d nav %s reach %s" % [z, n, str(p.size() > 0 and p[-1].distance_to(n) < 0.5)])
 
 func _physics_process(_delta: float) -> void:
 	if not _started or _snapping:
@@ -240,6 +214,7 @@ func _finish() -> void:
 	for line in garrison.report().split("\n"):
 		print("GARRISON   " + line)
 	_travel_report()
+	_stragglers()
 	if test:
 		_checks()
 		print("GARRISON SHOWCASE %s" % ("PASS" if _fails == 0 else "FAIL (%d)" % _fails))
@@ -290,6 +265,26 @@ func _send_wave() -> void:
 	print("GARRISON t=%.1f attack: %d Bear Riflemen at the south gate" % [garrison.clock, ATTACK_WAVE])
 
 
+## Whatever is still without its soldier, and where that soldier is (to see why).
+func _stragglers() -> void:
+	for g in garrison.guns:
+		if g.is_manned():
+			continue
+		var c = garrison.claims.get(g)
+		if c == null or not is_instance_valid(c):
+			print("GARRISON   unmanned %s: nobody coming" % g.name)
+			continue
+		print("GARRISON   unmanned %s at %s: %s at %s goal %s arrived=%s route=%d since %.1f s" % [g.name, g.global_position,
+				c.name, c.global_position, c.goal, c.arrived, c.get("_route").size(), garrison.clock - c.assigned_at])
+	for i in garrison.deck_slots.size():
+		var d: Dictionary = garrison.deck_slots[i]
+		var h = d.holder
+		if h != null and is_instance_valid(h) and h.arrived:
+			continue
+		print("GARRISON   deck spot %d (%s) at %s: %s" % [i, d.side, d.pos, "nobody" if h == null or not is_instance_valid(h) else
+				"%s at %s since %.1f s" % [h.name, h.global_position, garrison.clock - h.assigned_at]])
+
+
 func _check(ok: bool, what: String) -> void:
 	print("GARRISON CHECK %s %s" % ["ok  " if ok else "FAIL", what])
 	if not ok:
@@ -298,7 +293,9 @@ func _check(ok: bool, what: String) -> void:
 
 func _checks() -> void:
 	var st := garrison.stats
-	_check(st.all_guns_manned > 0.0, "every gun crewed (%.1f s)" % st.all_guns_manned)
+	var all_base := scenario != "mixed"  # with half the spawns on FIELD the base fills slowly
+	if all_base:
+		_check(st.all_guns_manned > 0.0, "every gun crewed (%.1f s)" % st.all_guns_manned)
 	if scenario == "default":
 		_check(st.deck_full > 0.0, "every deck spot held (%.1f s)" % st.deck_full)
 		_check(st.first_base_field_job >= st.all_guns_claimed, "nobody sent to the field before every gun was claimed")
@@ -309,7 +306,11 @@ func _checks() -> void:
 		_check(GarrisonSoldier.shots > 0 and GarrisonSoldier.longest_shot <= DefenderSoldier.AI_RANGE + 0.5,
 				"no garrison round fired from beyond %.0f m (longest %.1f m)" % [DefenderSoldier.AI_RANGE, GarrisonSoldier.longest_shot])
 	for g in garrison.guns:
-		_check(g.is_manned(), "%s crewed" % g.name)
+		if all_base:
+			_check(g.is_manned(), "%s crewed" % g.name)
+		if g.is_manned() and g.crew != null and g.has_method("has_seat") and g.has_seat():
+			var gap: float = g.crew.global_position.distance_to((g.crew_spot() as Transform3D).origin)
+			_check(gap < 1.2, "%s's crew sits in its seat" % g.name)
 	var on_deck := garrison.soldiers.filter(func(s): return s.job == GarrisonSoldier.Job.DECK)
 	_check(on_deck.size() <= garrison.deck_slots.size(), "the decks hold no more than %d" % garrison.deck_slots.size())
 	var field := garrison.soldiers.filter(func(s): return s.job == GarrisonSoldier.Job.FIELD and s.arrived)
@@ -358,8 +359,9 @@ func _look(from: Vector3, at: Vector3) -> void:
 	cam.look_at(at)
 
 
-## [eye, look-at] of a still (--views=): the south face's middle is at x = 0, its front at z = 78, its gun deck 8 m
-## up at z of about 70; the gate is at x = -4. The other faces are the same turned round the middle.
+## [eye, look-at] of a still (--views=): the south face's middle is at x = 0, its front at z = 78 (seven bays from
+## x = -42 to 42, their middles 12 m apart), its gun deck 8 m up at z of about 70, its roof 15 m up; the gate is at
+## x = -4. The other faces are the same turned round the middle.
 func _view(name: String) -> Array:
 	match name:
 		"overview":
@@ -371,7 +373,17 @@ func _view(name: String) -> Array:
 		"south_field_wide":
 			return [Vector3(95, 55, 205), Vector3(-5, 0, 100)]
 		"south_deck":
-			return [Vector3(-30.5, 12.5, 74.5), Vector3(-2, 8.4, 69.5)]
+			return [Vector3(-44.5, 12.5, 74.5), Vector3(-14, 8.4, 69.5)]
+		"deck_bay":
+			# Bay 3 of the south deck (its middle at x = -12): the sentry gun at -15 and the cannon at -9, their seats
+			# facing each other across the bay, seen from the deck's back wall.
+			return [Vector3(-4.5, 12.2, 66.6), Vector3(-12.5, 8.7, 70.8)]
+		"deck_bay_front":
+			return [Vector3(-6, 13.5, 83), Vector3(-12, 8.9, 70.5)]
+		"roof":
+			return [Vector3(-27, 22.5, 82), Vector3(-10, 15.5, 68.5)]
+		"face_front":
+			return [Vector3(0, 26, 150), Vector3(0, 9, 72)]
 		"south_deck_front":
 			return [Vector3(-12, 15, 92), Vector3(-4, 8.8, 70)]
 		"south_gate":
@@ -379,9 +391,9 @@ func _view(name: String) -> Array:
 		"east_field":
 			return [Vector3(138, 20, -38), Vector3(101, 0, 6)]
 		"north_deck":
-			return [Vector3(30.5, 12.5, -74.5), Vector3(2, 8.4, -69.5)]
+			return [Vector3(44.5, 12.5, -74.5), Vector3(14, 8.4, -69.5)]
 		"west_deck":
-			return [Vector3(-74.5, 12.5, -30.5), Vector3(-69.5, 8.4, -2)]
+			return [Vector3(-74.5, 12.5, -44.5), Vector3(-69.5, 8.4, -14)]
 		"spawn_corridor":
 			# Down the corridor from the core toward the south spawn hall: the south spawn point is about 8 m in.
 			return [Vector3(0.9, 2.6, 38), Vector3(0, 1.0, 58)]

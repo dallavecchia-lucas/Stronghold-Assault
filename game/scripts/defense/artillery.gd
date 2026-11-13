@@ -13,8 +13,8 @@ const SHELL_DAMAGE := 150.0
 const SHELL_RADIUS := 7.0
 const AI_ERROR := 5.0
 const REPAIR_TIME := 360.0  # 6 minutes
-## How far behind the mortar a garrison crew stands (m).
-const CREW_BACK := 2.1
+## How tall the mortar's model (the Arctic Sentinel Cannon) stands (m); its crew sits in its side seat.
+const CANNON_HEIGHT := 1.9
 
 ## Where the spotter view starts (and returns to), looking away from the map center.
 var spotter_home := Vector3(0, 0, 45)
@@ -33,6 +33,8 @@ var crew: Node3D = null
 var _reload := 0.0
 var _repair_cd := 0.0
 var _barrel_pivot: Node3D
+## The Arctic Sentinel Cannon's model (it turns with the barrel pivot), whose side seat the crew sits in.
+var _cannon: Node3D
 var _muzzle: Node3D
 var _spotter: Node3D
 var _camera: Camera3D
@@ -60,7 +62,8 @@ func _ready() -> void:
 	_barrel_pivot.position.y = 0.7
 	add_child(_barrel_pivot)
 	# The whole cannon turns toward the target; shells still leave from the muzzle below.
-	var cannon := Props.instance(Props.ARCTIC_SENTINEL_CANNON, 1.9)
+	var cannon := Props.instance(Props.ARCTIC_SENTINEL_CANNON, CANNON_HEIGHT)
+	_cannon = cannon
 	cannon.position.y = 0.35 - _barrel_pivot.position.y
 	_barrel_pivot.add_child(cannon)
 	var tilt := Node3D.new()
@@ -141,10 +144,13 @@ func is_manned() -> bool:
 	return not needs_crew or possessed or (crew != null and is_instance_valid(crew) and crew.is_alive())
 
 
-## Where the crew stands: behind the mortar (toward the mountain's middle), facing out.
+func has_seat() -> bool:
+	return _cannon != null
+
+
+## Where the crew sits: the cannon's side seat (Props.SEATS), turning with it as it lays the barrel.
 func crew_spot() -> Transform3D:
-	var back := Vector3(-global_position.x, 0.0, -global_position.z).normalized()
-	return Transform3D(Basis(Vector3.UP, atan2(back.x, back.z)), global_position + back * CREW_BACK + Vector3.UP * 0.05)
+	return _cannon.global_transform * Props.seat(Props.ARCTIC_SENTINEL_CANNON, CANNON_HEIGHT)
 
 
 func get_hud_info() -> Dictionary:

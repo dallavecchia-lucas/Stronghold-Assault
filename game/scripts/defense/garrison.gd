@@ -14,12 +14,12 @@ extends Node3D
 ## Two controls on one side are independent: one can spawn for the base while the other spawns for the field.
 ##
 ## Jobs, handed out as each soldier comes out (_dispatch):
-##   GUN   every gun the defenders can take over (every gun-deck machine gun and the mortar) needs a crew to fire on
-##         its own (MountedGun.needs_crew). A soldier claims the unclaimed gun nearest it along the navmesh, wherever
-##         it is, on its own side or not, and walks there. A crew lost: a soldier holding that side's deck steps over
-##         to the gun (_audit), or the next soldier out takes it.
-##   DECK  DECK_SLOTS_PER_SIDE spots on each gun deck, in the gaps between the guns, clear of the rifle posts: soldiers
-##         on the decks, but never a crowd.
+##   GUN   every gun the defenders can take over (every gun deck's sentry guns and cannons, and the mortar) needs a crew
+##         to fire on its own (MountedGun.needs_crew). A soldier claims the unclaimed gun nearest it along the navmesh,
+##         wherever it is, on its own side or not, walks there and sits in its seat. A crew lost: a soldier holding
+##         that side's deck steps over to the gun (_audit), or the next soldier out takes it.
+##   DECK  DECK_GAPS.size() spots on each gun deck, in the gaps between the guns, clear of the rifle posts and the
+##         guns' seats: soldiers on the decks, but never a crowd.
 ##   FIELD a perimeter round the base (_build_field): spots in loose, staggered rows round the mountain, FIELD_SPACING
 ##         apart, jittered. They are taken cheapest first: the cost is how far out the row is, plus FIELD_LATERAL of how
 ##         far round the base the spot is from the nearest gate. So the perimeter starts as a loose band in front of the
@@ -41,9 +41,10 @@ const SPAWN_DEPTH := 8.0
 const SPAWN_SPREAD := 1.2
 ## Alive at once at most: past this, a control's turn passes without a soldier.
 const MAX_ALIVE := 320
-## The gaps between a deck's ten guns (0-8, west to east along the face) that get a garrison soldier: the end bays'
-## and those between the bays. The bay middles of bays 2-4 are left to the rifle posts (LevelBuilder.RIFLE_POSTS).
-const DECK_GAPS := [0, 1, 3, 5, 7, 8]
+## The gaps between a deck's fourteen guns (0-12, west to east along the face) that get a garrison soldier: the end bays'
+## middles and the gaps between the bays (8 a deck). The middles of bays 3-5 are left to the rifle posts
+## (LevelBuilder.RIFLE_POSTS); within a bay the two guns' seats face each other across its middle.
+const DECK_GAPS := [0, 1, 3, 5, 7, 9, 11, 12]
 ## Deck spots sit this far toward the parapet from the guns' mounts.
 const DECK_OUT := 0.8
 ## The perimeter: the first row this far out from the mountain's footprint (LevelBuilder.base_distance), the rows
@@ -62,6 +63,10 @@ const FIELD_BASE_CLEAR := 8.0
 const FIELD_NAV_SLACK := 1.5
 ## How often the jobs are looked over (s), and how far a deck soldier walks to take over a gun that lost its crew.
 const AUDIT_EVERY := 0.5
+## How far from a gun's middle its crew walks to beside the seat (m): clear of the navmesh block round a deck gun or a
+## roof turret (1.4 m across), round the mortar (2.6 m).
+const SEAT_CLEAR_GUN := 1.4
+const SEAT_CLEAR_MORTAR := 2.0
 const DECK_TO_GUN := 45.0
 const NAV_LAYERS := 1 | LevelBuilder.NAV_INFILTRATORS | LevelBuilder.NAV_SQUAD
 
@@ -131,7 +136,7 @@ func _try_setup() -> bool:
 	for side in level.gates:
 		_exits[side] = LevelBuilder.nav_closest(_map, level.gates[side].global_position + LevelBuilder.SIDES[side].dir * 4.0)
 	for g in guns:
-		_gun_goals[g] = LevelBuilder.nav_closest(_map, (g.crew_spot() as Transform3D).origin + Vector3.UP * 0.3)
+		_gun_goals[g] = _beside_seat(g)
 	_build_deck_slots()
 	_build_field()
 	set_up = true
@@ -350,6 +355,19 @@ func _gun_goal(g) -> Vector3:
 	return _gun_goals[g]
 
 
+## Where a gun's crew walks to: the floor beside its seat, out past the box that keeps the navmesh off the gun (whose
+## top the bake makes a little platform of, right under a seat): from there it sits down (GarrisonSoldier._crew).
+func _beside_seat(g) -> Vector3:
+	var seat: Vector3 = (g.crew_spot() as Transform3D).origin
+	var base: Vector3 = g.global_position
+	var out := Vector3(seat.x - base.x, 0.0, seat.z - base.z)
+	var clear := SEAT_CLEAR_MORTAR if g.station_kind == "artillery" else SEAT_CLEAR_GUN
+	if out.length() < 0.01:
+		out = g.global_basis.z
+	var stand := base + out.normalized() * maxf(out.length(), clear) + Vector3.UP * 0.3
+	return LevelBuilder.nav_closest(_map, stand)
+
+
 ## A fresh soldier: how far it walks from its side's spawn point to `to` along the navmesh (worked out once per side
 ## and target; INF: no way there). One already out: straight from where it stands.
 func _job_cost(s: GarrisonSoldier, fresh: bool, key: String, to: Vector3) -> float:
@@ -466,6 +484,8 @@ func _audit() -> void:
 		for d in soldiers:
 			if d.job != GarrisonSoldier.Job.DECK or deck_slots[d.slot].side != gun_side[g]:
 				continue
+			if d.avoid.has("gun%d" % g.get_instance_id()):
+				continue
 			var dist := d.global_position.distance_to(g.global_position)
 			if dist < best_d:
 				best_d = dist
@@ -536,7 +556,7 @@ func _build_deck_slots() -> void:
 	for side in LevelBuilder.SIDES:
 		var face: String = LevelBuilder.SIDES[side].face
 		var mounts := []
-		for bay in range(1, 6):
+		for bay in range(1, 10):
 			for k in [1, 2]:
 				var m := level.marker("MOUNT_GUN_%s%d_%d" % [face, bay, k])
 				if m:

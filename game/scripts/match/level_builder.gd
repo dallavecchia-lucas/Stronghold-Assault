@@ -40,8 +40,8 @@ const VENT_HP := 2500.0
 const VENT_SIZE := Vector3(3.6, 2.4, 3.0)
 ## Blast door filling an exit C tunnel portal (between the concrete jambs, under the lintel).
 const DOOR_SIZE := Vector3(3.0, 2.8, 0.4)
-## Bay whose ground tunnel is the side's gate; every other tunnel is welded shut.
-const GATE_BAY := 3
+## Bay whose ground tunnel is the side's gate (the middle one of the face's seven); every other tunnel is welded shut.
+const GATE_BAY := 4
 
 ## Defender garrison models, one per rifle post (rigged, with Idle/Running clips; the Heavy Gunner
 ## walks instead of running). The Cyber Orc Sentinel holds the Shadowline assault rifle
@@ -62,11 +62,15 @@ const SIDES := {
 	"east": {"dir": Vector3(1, 0, 0), "face": "E", "gate": true},
 	"west": {"dir": Vector3(-1, 0, 0), "face": "W", "gate": true},
 }
-## Rifle posts on the gun decks: [side, bay].
-const RIFLE_POSTS := [["south", 2], ["south", 4], ["east", 2], ["west", 4], ["north", 3], ["east", 4]]
-const MORTAR_MOUNT := "MOUNT_AA_S3_1"
-## Roof mounts that carry autonomous AA turrets (AATurret): two on every face, over bays 2 and 4.
-const AA_TURRETS := ["S2_2", "S4_2", "E2_2", "E4_2", "W2_2", "W4_2", "N2_2", "N4_2"]
+## Rifle posts on the gun decks: [side, bay] (the bays either side of the gate bay, and the north's middle one).
+const RIFLE_POSTS := [["south", 3], ["south", 5], ["east", 3], ["west", 5], ["north", 4], ["east", 5]]
+const MORTAR_MOUNT := "MOUNT_AA_S4_1"
+## The gun decks' manned guns, on every gun mount: an Orbital Sentry Gun (a gatling) on each bay's first mount and an
+## Arctic Sentinel Cannon on its second, this tall (m). Both have a side seat for their crew (Props.SEATS).
+const DECK_GUN_HEIGHT := 2.2
+## The roofs' turrets, which run themselves (nobody sits in them): a Sentinel Bastion (a gatling, MountedGun "bastion")
+## on each bay's first roof mount and a Sentinel Spire (AA missiles, AATurret) on its second.
+const ROOF_BASTION_HEIGHT := 2.0
 ## Navigation layer bit for the links only infiltrators may take.
 const NAV_INFILTRATORS := 2
 ## Navigation layer bit for the links through the gates the defenders' Gunner Squad takes, and how
@@ -74,7 +78,7 @@ const NAV_INFILTRATORS := 2
 const NAV_SQUAD := 4
 const SALLY_OUT := 1.5
 const SALLY_IN := 1.3
-## The Gunner Squad's post: in the south spawn hall, this far along it from SPAWN_S3 (toward the
+## The Gunner Squad's post: in the south spawn hall, this far along it from SPAWN_S4 (toward the
 ## bay's spawn ramp, which it faces). Bought AA Squads deploy in the gate halls too (DefenderArmory).
 const SQUAD_POST_OFFSET := Vector3(-3.0, 0.0, 0.15)
 ## Stair shaft and ladder in every bay, as [x along the bay, depth behind the front, floor height]
@@ -89,9 +93,12 @@ const ROOF_ROUTE := [[4.8, 10.9, 8.05], [4.8, 12.0, 8.05], [4.8, 13.2, 8.05], [4
 		[4.75, 12.7, 11.9], [4.75, 12.7, 15.05], [4.75, 11.0, 15.05], [4.75, 10.2, 15.05]]
 ## Door B's marker (EXIT_B_*) in those coordinates.
 const DOOR_B := Vector3(4.8, 11.125, 8.05)
-## The roofs are clear of the rock only this far either side of a face's middle (CUT_HALF): the
-## end bays' hatches open into the mountain.
-const ROOF_EXPOSED_HALF := 27.0
+## The decks and roofs are clear of the rock only this far either side of a face's middle (CUT_HALF): the
+## last bay's hatch (4.75 m off its middle) opens into the mountain.
+const ROOF_EXPOSED_HALF := 42.0
+## The vents the attackers have to destroy: the ones over the roof within this of a face's middle (four a face, as
+## before the decks were lengthened to seven bays); the others are scenery.
+const VENT_HALF := 27.0
 ## Forest groves as [center x, center z, radius]: off the attack lanes, dense with trees.
 const FORESTS := [[42.0, 140.0, 16.0], [-44.0, 150.0, 18.0], [135.0, 125.0, 24.0], [-130.0, 120.0, 22.0],
 		[145.0, -50.0, 20.0], [-140.0, -55.0, 20.0], [110.0, -140.0, 24.0], [-120.0, -135.0, 22.0]]
@@ -118,7 +125,7 @@ var atmosphere: Atmosphere
 var vents: Array[Structure] = []
 var gates := {}  # side -> Structure
 var stations := []  # possessable defender stations, in hotkey order
-var aa_turrets := []  # autonomous, nobody takes them over
+var aa_turrets := []  # the roofs' turrets (Sentinel Spires and Bastions): they run themselves, nobody takes them over
 var spawn_points: Array[Vector3] = []
 var spawn_names: Array[String] = []
 ## Per spawn point: the AttackerBase it belongs to (a forward helipad: open only while the attackers
@@ -236,7 +243,7 @@ func _build_all() -> void:
 	# Grass standing in the field round the camera (GrassField), clear of the tracks and the helipads.
 	GrassField.build(self)
 	_build_spawns()
-	_build_mounts(_build_stations() + _build_aa_turrets())
+	_build_mounts(_build_stations())
 	rebake_navigation()
 
 
@@ -349,7 +356,7 @@ func _marker(marker_name: String) -> Node3D:
 	return _stronghold.find_child(marker_name, true, false) as Node3D
 
 
-## One of the stronghold model's markers (SPAWN_S3, MOUNT_GUN_E2_1, EXIT_C_W3, ...), or null.
+## One of the stronghold model's markers (SPAWN_S4, MOUNT_GUN_E2_1, EXIT_C_W4, ...), or null.
 func marker(marker_name: String) -> Node3D:
 	return _marker(marker_name)
 
@@ -501,8 +508,8 @@ func _build_vents() -> void:
 		var key := String(marker.name).trim_prefix("VENT_FX_")
 		var hood := _marker("Vent_" + key) as Node3D
 		var side: String = SIDES.keys().filter(func(k): return SIDES[k].face == key[0])[0]
-		# The end bay's hatch opens into the mountain (ROOF_EXPOSED_HALF): its hood stays scenery.
-		if not _on_open_roof(marker.global_position, side):
+		# The end bays' hoods stay scenery (VENT_HALF); a hatch that opens into the mountain, too (ROOF_EXPOSED_HALF).
+		if not _on_open_roof(marker.global_position, side, VENT_HALF):
 			continue
 		var vent := Structure.new()
 		vent.setup("%s Vent %s" % [side.capitalize(), key.substr(1)], VENT_HP, 2.0)
@@ -544,10 +551,10 @@ func _on_vent_destroyed(_v: Structure, plume: VentPlume, smoke: WreckSmoke) -> v
 		vents_destroyed.emit()
 
 
-## True if `p` (on `side`'s roof) is clear of the rock: within ROOF_EXPOSED_HALF of the face's middle.
-func _on_open_roof(p: Vector3, side: String) -> bool:
+## True if `p` (on `side`'s roof) is clear of the rock: within ROOF_EXPOSED_HALF (or `half`) of the face's middle.
+func _on_open_roof(p: Vector3, side: String, half := ROOF_EXPOSED_HALF) -> bool:
 	var along: Vector3 = (SIDES[side].dir as Vector3).cross(Vector3.UP)
-	return absf(p.dot(along)) <= ROOF_EXPOSED_HALF
+	return absf(p.dot(along)) <= half
 
 
 func vents_left() -> int:
@@ -753,21 +760,14 @@ func _on_base_lot(p: Vector3) -> bool:
 ## Builds the possessable stations on the bunker's mounts and gun decks; returns the mounts used.
 func _build_stations() -> Array:
 	var used := []
-	# Machine guns on the gun deck above each gate, pushed up to the parapet and raised so
+	# Sentry guns on the gun deck above each gate, pushed up to the parapet and raised so
 	# they can fire down to within ~5 m of the rock foot (the doorway itself is dead ground).
 	for side in ["south", "east", "west"]:
 		var mount := _marker("MOUNT_GUN_%s%d_1" % [SIDES[side].face, GATE_BAY])
 		used.append(String(mount.name))
-		var mg := MountedGun.new()
-		mg.model_path = Props.SENTINEL_BASTION if side == "south" else Props.ORBITAL_SENTRY_GUN
-		mg.pivot_height = 1.5
-		mg.station_name = "MG · %s Gate" % side.capitalize()
+		var mg := _deck_gun(mount, side, "Sentry · %s Gate" % side.capitalize())
 		mg.name = "MG_%s" % side
-		_place_facing_out(mg, side, mount.global_position + mount.global_basis.z * 0.6)
-		add_child(mg)
 		stations.append(mg)
-		# Raiders on the deck walk around the gun instead of into it.
-		_nav_plug(mg.transform.translated_local(Vector3.UP * 0.8), Vector3(1.4, 1.6, 1.4))
 
 	var mortar := _marker(MORTAR_MOUNT)
 	used.append(String(mortar.name))
@@ -804,22 +804,6 @@ func _build_stations() -> Array:
 	return used
 
 
-## The AA turrets on the roofs; returns the mounts used.
-func _build_aa_turrets() -> Array:
-	var used := []
-	for key in AA_TURRETS:
-		var mount := _marker("MOUNT_AA_%s" % key)
-		used.append(String(mount.name))
-		var side: String = SIDES.keys().filter(func(k): return SIDES[k].face == key[0])[0]
-		var t := AATurret.new()
-		t.name = "AA_%s" % key
-		t.station_name = "AA Turret · %s Roof" % side.capitalize()
-		_place_facing_out(t, side, mount.global_position)
-		add_child(t)
-		aa_turrets.append(t)
-	return used
-
-
 ## A squad's post in the gate spawn hall of a face ("S", "E", "W"): `offset` from the hall's spawn
 ## marker, in the marker's frame (x runs along the hall), facing the hall's spawn ramp.
 func squad_post(face: String, offset: Vector3) -> Transform3D:
@@ -827,9 +811,10 @@ func squad_post(face: String, offset: Vector3) -> Transform3D:
 	return Transform3D(Basis.looking_at(post.global_basis.x), post.global_transform * offset)
 
 
-## A real weapon on every mount no station uses: an AI-crewed heavy machine gun on each gun-deck
-## mount (the defender can take any of them over) and an AA turret on each roof mount. Nothing on
-## the walls is decoration.
+## A real weapon on every mount no station uses: on each gun deck an Orbital Sentry Gun on every bay's first mount and an
+## Arctic Sentinel Cannon on its second (manned: the defender can take any of them over, and in a match the garrison
+## crews them, sitting in their seats); on each roof a Sentinel Bastion on every bay's first mount and a Sentinel Spire
+## (AA) on its second, both running themselves. Nothing on the walls is decoration.
 func _build_mounts(used: Array) -> void:
 	for mount in _stronghold.find_children("MOUNT_*", "", true, false):
 		var mname := String(mount.name)
@@ -839,22 +824,46 @@ func _build_mounts(used: Array) -> void:
 		var key := mname.trim_prefix("MOUNT_GUN_" if gun else "MOUNT_AA_")
 		var side: String = SIDES.keys().filter(func(k): return SIDES[k].face == key[0])[0]
 		if gun:
-			var mg := MountedGun.new()
-			mg.model_path = Props.ORBITAL_SENTRY_GUN if mname.ends_with("_1") else Props.SENTINEL_BASTION
-			mg.pivot_height = 1.5
-			mg.station_name = "MG · %s Deck %s" % [side.capitalize(), key.substr(1)]
+			var kind := "Sentry" if mname.ends_with("_1") else "Cannon"
+			var mg := _deck_gun(mount, side, "%s · %s Deck %s" % [kind, side.capitalize(), key.substr(1)])
 			mg.name = "MG_%s" % key
-			_place_facing_out(mg, side, mount.global_position + mount.global_basis.z * 0.6)
-			add_child(mg)
 			stations.append(mg)
-			_nav_plug(mg.transform.translated_local(Vector3.UP * 0.8), Vector3(1.4, 1.6, 1.4))
 		elif _on_open_roof(mount.global_position, side):
-			var t := AATurret.new()
-			t.name = "AA_%s" % key
-			t.station_name = "AA Turret · %s Roof" % side.capitalize()
-			_place_facing_out(t, side, mount.global_position)
-			add_child(t)
-			aa_turrets.append(t)
+			if mname.ends_with("_1"):
+				var b := MountedGun.new()
+				b.kind = "bastion"
+				b.model_path = Props.SENTINEL_BASTION
+				b.model_height = ROOF_BASTION_HEIGHT
+				b.pivot_height = 1.5
+				b.name = "Bastion_%s" % key
+				b.station_name = "Bastion · %s Roof" % side.capitalize()
+				_place_facing_out(b, side, mount.global_position)
+				add_child(b)
+				aa_turrets.append(b)
+				_nav_plug(b.transform.translated_local(Vector3.UP * 0.8), Vector3(1.4, 1.6, 1.4))
+			else:
+				var t := AATurret.new()
+				t.name = "AA_%s" % key
+				t.station_name = "AA Turret · %s Roof" % side.capitalize()
+				_place_facing_out(t, side, mount.global_position)
+				add_child(t)
+				aa_turrets.append(t)
+
+
+## A manned gun on a gun-deck mount: the bay's first mount an Orbital Sentry Gun, its second an Arctic Sentinel Cannon,
+## pushed up to the parapet. Raiders on the deck walk round it.
+func _deck_gun(mount: Node3D, side: String, title: String) -> MountedGun:
+	var mg := MountedGun.new()
+	var sentry := String(mount.name).ends_with("_1")
+	mg.kind = "sentry" if sentry else "cannon"
+	mg.model_path = Props.ORBITAL_SENTRY_GUN if sentry else Props.ARCTIC_SENTINEL_CANNON
+	mg.model_height = DECK_GUN_HEIGHT
+	mg.pivot_height = 1.5
+	mg.station_name = title
+	_place_facing_out(mg, side, mount.global_position + mount.global_basis.z * 0.6)
+	add_child(mg)
+	_nav_plug(mg.transform.translated_local(Vector3.UP * 0.8), Vector3(1.4, 1.6, 1.4))
+	return mg
 
 
 func _place_facing_out(node: Node3D, side: String, pos: Vector3) -> void:

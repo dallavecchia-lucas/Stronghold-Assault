@@ -1,9 +1,14 @@
 class_name MountedGun
 extends StaticBody3D
-## Heavy machine gun emplacement on the walls. Faces its node's -Z axis at rest.
-## Crew-operated by AI unless the defending player takes it over. In a match with a garrison (Garrison) the gun needs
-## a crew: it fires on its own only once a garrison soldier has walked up to it and stands at its handles (crew), and
-## falls silent again if that soldier dies; the player can still take it over, crewed or not.
+## Gun emplacement on the walls. Faces its node's -Z axis at rest. Three kinds (`kind`):
+##   "sentry"  the Orbital Sentry Gun on the gun decks: a gatling, fast and light.
+##   "cannon"  the Arctic Sentinel Cannon on the gun decks: a heavy round every CANNON_INTERVAL that bursts where it
+##             lands (CANNON_BLAST), slow and hard-hitting.
+##   "bastion" the Sentinel Bastion on the roofs: a gatling that runs itself (no seat, no crew, not a post).
+## Crew-operated by AI unless the defending player takes it over. In a match with a garrison (Garrison) the sentries and
+## cannons need a crew: one fires on its own only once a garrison soldier has walked up to it and sits in its seat
+## (crew_spot: the model's own side seat, Props.SEATS, turning with the gun), and falls silent again if that soldier
+## dies; the player can still take it over, crewed or not.
 
 signal became_unavailable(station)
 
@@ -16,6 +21,15 @@ const AI_DAMAGE := 8.0
 const AI_FIRE_INTERVAL := 0.16
 const AI_RANGE := 60.0
 const HEAT_PER_SHOT := 0.032
+## The cannon: a round every CANNON_INTERVAL (the player's every CANNON_PLAYER_INTERVAL), CANNON_DAMAGE to what it hits
+## and CANNON_SPLASH within CANNON_BLAST (m) of where it lands, CANNON_HEAT a round.
+const CANNON_INTERVAL := 1.5
+const CANNON_PLAYER_INTERVAL := 0.9
+const CANNON_DAMAGE := 55.0
+const CANNON_PLAYER_DAMAGE := 80.0
+const CANNON_SPLASH := 30.0
+const CANNON_BLAST := 3.0
+const CANNON_HEAT := 0.16
 const REPAIR_TIME := 360.0  # 6 minutes
 ## How far behind the swivel a garrison crew stands (m), clear of the gun's navmesh plug.
 const CREW_BACK := 1.45
@@ -23,6 +37,10 @@ const CREW_BACK := 1.45
 ## Turret model shown while the AI crews the gun (empty = sandbags + gunner capsule).
 ## The player always sees the simple first-person gun instead, so the model never blocks the view.
 var model_path := ""
+## How tall the turret model stands (m).
+var model_height := 2.0
+## "sentry", "cannon" or "bastion" (see the top).
+var kind := "sentry"
 ## Height of the gun's swivel above the node; raised to fire over a tall parapet.
 var pivot_height := 1.15
 var station_name := "Machine Gun"
@@ -96,7 +114,7 @@ func _ready() -> void:
 	for x in [-0.12, 0.12]:
 		_viewmodel.add_child(Mats.box_mesh(Vector3(0.04, 0.14, 0.04), Vector3(x, -0.05, 0.45), metal))  # grips
 	_muzzle = Node3D.new()
-	_muzzle.position = Vector3(0, 0.02, -1.42)
+	_muzzle.position = Vector3(0, 0.02, -2.0 if kind == "cannon" else -1.42)
 	_pitch_pivot.add_child(_muzzle)
 	_camera = Camera3D.new()
 	_camera.position = Vector3(0, 0.42, 1.25)
@@ -119,7 +137,7 @@ func _ready() -> void:
 		_gunner.add_child(gm)
 	else:
 		# The turret swivels with the yaw pivot; its base sits on the walkway.
-		_turret = Props.instance(model_path, 2.0)
+		_turret = Props.instance(model_path, model_height)
 		_turret.position.y = -_yaw_pivot.position.y
 		_yaw_pivot.add_child(_turret)
 		_viewmodel.visible = false
@@ -174,8 +192,16 @@ func is_manned() -> bool:
 	return not needs_crew or possessed or (crew != null and is_instance_valid(crew) and crew.is_alive())
 
 
-## Where the crew stands and which way it faces: behind the swivel, turned with the gun's aim.
+## Whether its crew sits (the model has a seat) or stands behind it.
+func has_seat() -> bool:
+	return _turret != null and Props.has_seat(model_path)
+
+
+## Where the crew goes: the model's seat (the middle of the seat pan's top, -Z the way the one in it faces), turning with
+## the gun; with no seat, standing behind the swivel turned with the gun's aim.
 func crew_spot() -> Transform3D:
+	if has_seat():
+		return _turret.global_transform * Props.seat(model_path, model_height)
 	var yaw := global_rotation.y + _yaw
 	var back := Vector3(sin(yaw), 0.0, cos(yaw))
 	return Transform3D(Basis(Vector3.UP, yaw), global_position + back * CREW_BACK + Vector3.UP * 0.05)
@@ -183,7 +209,8 @@ func crew_spot() -> Transform3D:
 
 func get_hud_info() -> Dictionary:
 	var status := "OVERHEATED" if overheated else "HEAT %d%%" % int(heat * 100.0)
-	return {"weapon": "Heavy MG", "status": status, "heat": heat, "hp": hp / max_hp,
+	var weapon: String = {"cannon": "Sentinel Cannon", "bastion": "Bastion Gatling"}.get(kind, "Sentry Gatling")
+	return {"weapon": weapon, "status": status, "heat": heat, "hp": hp / max_hp,
 			"hint": "Mouse aim · LMB fire · RMB zoom · watch the heat"}
 
 
@@ -263,6 +290,8 @@ func _apply_aim() -> void:
 func _try_fire(player: bool) -> bool:
 	if overheated or _fire_cd > 0.0:
 		return false
+	if kind == "cannon":
+		return _fire_cannon(player)
 	_fire_cd = PLAYER_FIRE_INTERVAL if player else AI_FIRE_INTERVAL
 	heat += HEAT_PER_SHOT
 	if heat >= 1.0:
@@ -276,6 +305,30 @@ func _try_fire(player: bool) -> bool:
 	else:
 		Combat.fire_hitscan(self, muzzle, muzzle - _pitch_pivot.global_basis.z * 100.0, 0.035, AI_DAMAGE, team, 0.3, [get_rid()])
 		Combat.spawn_muzzle_flash(self, muzzle, -_pitch_pivot.global_basis.z, 1.4)
+	return true
+
+
+## The cannon's round: a hit where the aim is, and a burst there that hurts what stands round it.
+func _fire_cannon(player: bool) -> bool:
+	_fire_cd = CANNON_PLAYER_INTERVAL if player else CANNON_INTERVAL
+	heat += CANNON_HEAT
+	if heat >= 1.0:
+		overheated = true
+	var muzzle := _muzzle.global_position
+	var hit: Dictionary
+	if player:
+		var from := _camera.global_position
+		hit = Combat.fire_hitscan(self, from, from - _camera.global_basis.z * 100.0, 0.006, CANNON_PLAYER_DAMAGE, team, 1.0,
+				[get_rid()], muzzle, 0.09)
+		Combat.spawn_muzzle_blast(self, muzzle, -_camera.global_basis.z, 1.3)
+		_shake = maxf(_shake, 0.35)
+	else:
+		hit = Combat.fire_hitscan(self, muzzle, muzzle - _pitch_pivot.global_basis.z * 100.0, 0.02, CANNON_DAMAGE, team, 1.0,
+				[get_rid()], null, 0.09)
+		Combat.spawn_muzzle_blast(self, muzzle, -_pitch_pivot.global_basis.z, 1.3)
+	var at: Vector3 = hit.position
+	if at.distance_to(muzzle) < 250.0:
+		Combat.explode(self, at, CANNON_BLAST, CANNON_SPLASH, team)
 	return true
 
 

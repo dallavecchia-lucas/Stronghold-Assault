@@ -1171,6 +1171,9 @@ func _ready() -> void:
 	_agent.path_changed.connect(func(): _wp = 0)
 	if fits_inside():
 		_agent.navigation_layers |= LevelBuilder.NAV_INFILTRATORS
+		# Raiders find their way through the stronghold's dense interior (seven bays a face) to the far decks and roofs:
+		# a deeper search than the agent's default 4096 polygons, which hands back a path that stops short.
+		_agent.path_search_max_polygons = 16384
 	if swims():
 		_agent.navigation_layers |= RiverCrossing.NAV_SWIMMERS
 	if fits_inside() or swims():

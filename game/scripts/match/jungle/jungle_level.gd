@@ -91,7 +91,7 @@ func _build_all() -> void:
 	# Grass standing in the clearings round the camera (GrassField).
 	GrassField.build(self, ground)
 	_build_spawns()
-	_build_mounts(_build_stations() + _build_aa_turrets())
+	_build_mounts(_build_stations())
 	rebake_navigation()
 
 

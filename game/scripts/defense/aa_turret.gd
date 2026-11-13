@@ -1,6 +1,6 @@
 class_name AATurret
 extends StaticBody3D
-## Autonomous anti-aircraft launcher on a roof mount (LevelBuilder.AA_TURRETS). Nobody crews it or
+## Autonomous anti-aircraft launcher on a roof mount (the Sentinel Spire, LevelBuilder._build_mounts). Nobody crews it or
 ## takes it over: it turns to the nearest enemy aircraft it can see within RANGE, locks on
 ## (LOCK_TIME) and fires a homing missile at it every RELOAD while it keeps it. Sky Talons on a
 ## strafe run or a bomb strike are fair game. It can be destroyed (a bomb, a bison's shell or a

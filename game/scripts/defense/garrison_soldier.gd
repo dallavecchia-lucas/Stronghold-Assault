@@ -4,7 +4,8 @@ extends DefenderSoldier
 ## run by the CPU only. The garrison hands it a job and it walks there on the navmesh: up the stair shafts to the gun
 ## decks (the climbing links' routes, like the infiltrating attackers'), through the gates (the door opens for it, as
 ## for the squads: Structure.hold_open) and out round the base. There it holds:
-##   GUN    it stands at a gun's handles (MountedGun.crew_spot, the mortar's too) and the gun fires; it doesn't.
+##   GUN    it sits in the gun's seat (MountedGun.crew_spot: the sentry gun's and the cannon's side seats, the mortar's
+##          too), seated by its SeatRig with its rifle put away, turning with the gun; the gun fires, it doesn't.
 ##   DECK   it holds its spot on a gun deck, behind the parapet, and fights with its rifle.
 ##   FIELD  it holds its spot in the perimeter round the base and fights with its rifle.
 ## It fights like a Bear Rifleman (DefenderSoldier.AI_SIGHT / AI_RANGE): an attacker in reach on its way stops it
@@ -26,6 +27,10 @@ const TURN_RATE := 8.0
 ## Ledges it steps up onto (m), and higher ones where the navmesh says the ground ahead is higher (SquadTrooper).
 const STEP_HEIGHT := 0.45
 const TALL_STEP := 0.75
+## Seated in a gun: the soldier's feet origin this far under the seat pan's top (its hips 0.9 m up, sat on the pan), and
+## this far back from the pan's middle toward the backrest.
+const SEAT_DROP := 0.8
+const SEAT_BACK := 0.1
 ## Within this (flat, m) of a standing gate it holds the door open.
 const GATE_REACH := 5.0
 ## Within this of its spot (flat, m; and this high) it has arrived; the last bit it glides into the exact spot.
@@ -67,6 +72,8 @@ var _check_reach := false
 var _stuck_t := 0.0
 var _stuck_at := Vector3.ZERO
 var _fighting := false
+var _seat_rig: SeatRig
+var _rifle: Node3D
 
 
 func _init() -> void:
@@ -91,11 +98,23 @@ func _ready() -> void:
 	_agent.target_desired_distance = 0.5
 	_agent.path_height_offset = 0.4
 	_agent.avoidance_enabled = false
+	# The whole way, however many polygons it crosses: the agent's default search gives up after 4096 and hands back a
+	# path that stops short (the stronghold's dense interior, out to the far side's roof).
+	_agent.path_search_max_polygons = 0
 	# The ground, the climbing links (stairs and ladders, and a fallen gate's breach) and the squads' links through the gates.
 	_agent.navigation_layers = 1 | LevelBuilder.NAV_INFILTRATORS | LevelBuilder.NAV_SQUAD
 	_agent.link_reached.connect(_on_link_reached)
 	add_child(_agent)
 	_stuck_at = global_position
+	# Seated at a gun: the legs bent by the rig, the rifle (hung on the `rifle` bone, HeldGun) put away.
+	var skels := _body.find_children("*", "Skeleton3D", true, false)
+	if not skels.is_empty():
+		_seat_rig = SeatRig.new()
+		_seat_rig.active = false
+		skels[0].add_child(_seat_rig)
+	for a in _body.find_children("*", "BoneAttachment3D", true, false):
+		if (a as BoneAttachment3D).bone_name == "rifle":
+			_rifle = a
 
 
 ## Sends it to `to` (world), to face `face` there, for `new_job` (the garrison's call).
@@ -106,12 +125,13 @@ func send(new_job: Job, to: Vector3, face: Vector3, now: float) -> void:
 	arrived = false
 	arrived_at = -1.0
 	assigned_at = now
-	_route.clear()
+	# Halfway up a stair or a ladder it climbs on to the end first (the route), then makes for the new spot.
 	_agent.target_position = to
 	_check_reach = true
 	_stuck_t = 0.0
 	_stuck_at = global_position
 	_body.visible = true
+	_sit(false)
 
 
 func is_walking() -> bool:
@@ -195,14 +215,28 @@ func _physics_process(delta: float) -> void:
 		_walk(delta)
 
 
-## At a gun's handles: it stands where the gun puts it, turned with the gun, and leaves the shooting to the gun.
+## At its gun: sat in the gun's seat (or, a gun with none, stood behind it), turned with the gun; the gun does the
+## shooting.
 func _crew(_delta: float) -> void:
 	velocity = Vector3.ZERO
 	if not is_instance_valid(gun):
 		return
-	global_transform = gun.crew_spot()
-	# Taken over, the player's view sits right behind the machine gun's swivel: the crew steps out of it.
+	var spot: Transform3D = gun.crew_spot()
+	if gun.has_method("has_seat") and gun.has_seat():
+		_sit(true)
+		global_transform = Transform3D(spot.basis, spot.origin + spot.basis.z * SEAT_BACK - Vector3.UP * SEAT_DROP)
+	else:
+		global_transform = spot
+	# Taken over, the player's view sits on the machine gun: the crew is out of it.
 	_body.visible = not (gun.possessed and gun.station_kind == "mg")
+
+
+## Seated (the SeatRig bends it into the seat, the rifle put away) or on its feet.
+func _sit(on: bool) -> void:
+	if _seat_rig:
+		_seat_rig.active = on
+	if _rifle:
+		_rifle.visible = not on
 
 
 ## On its spot (or stopped to fight): it fights like a post (DefenderSoldier._ai_update), and otherwise turns to face out.
