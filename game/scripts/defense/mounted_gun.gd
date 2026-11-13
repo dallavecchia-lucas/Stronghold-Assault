@@ -7,8 +7,15 @@ extends StaticBody3D
 ##   "bastion" the Sentinel Bastion on the roofs: a gatling that runs itself (no seat, no crew, not a post).
 ## Crew-operated by AI unless the defending player takes it over. In a match with a garrison (Garrison) the sentries and
 ## cannons need a crew: one fires on its own only once a garrison soldier has walked up to it and sits in its seat
-## (crew_spot: the model's own side seat, Props.SEATS, turning with the gun), and falls silent again if that soldier
+## (crew_spot: the model's own side seat, riding the turret as it turns), and falls silent again if that soldier
 ## dies; the player can still take it over, crewed or not.
+##
+## The gun's logic holds the aim (a traverse and an elevation); its model is shown by a TurretRig, which moves the
+## model's parts each on its own: the turret on its ring, the gun on its trunnion, the barrels, the sensors. The gun
+## is laid by servos (TurretRig.slew): it runs up, runs and brakes onto the aim rather than stopping dead. With a crew
+## and nothing to shoot at it sweeps its arc; without one it is parked, straight ahead and a little up. A gatling's
+## barrels are run up as soon as it has a target, and it fires once they are turning (GatlingRig); the cannon's barrel
+## recoils round by round (CannonRig). Knocked out, the rig lets the barrel drop.
 
 signal became_unavailable(station)
 
@@ -33,6 +40,17 @@ const CANNON_HEAT := 0.16
 const REPAIR_TIME := 360.0  # 6 minutes
 ## How far behind the swivel a garrison crew stands (m), clear of the gun's navmesh plug.
 const CREW_BACK := 1.45
+## The laying servos: the most the gun traverses and elevates (rad/s) and how fast it picks up speed (rad/s²).
+const TRAVERSE := 1.8
+const TRAVERSE_ACCEL := 9.0
+## Crewed with nothing to shoot at, it sweeps this far either way (rad) in SWEEP_TIME s, looking a little down.
+const SWEEP_ARC := deg_to_rad(48.0)
+const SWEEP_TIME := 13.0
+const SWEEP_PITCH := deg_to_rad(-7.0)
+const SWEEP_RATE := 0.45
+## Uncrewed, it is parked: straight ahead, the barrel this far up (rad).
+const PARK_PITCH := deg_to_rad(9.0)
+const PARK_RATE := 0.6
 
 ## Turret model shown while the AI crews the gun (empty = sandbags + gunner capsule).
 ## The player always sees the simple first-person gun instead, so the model never blocks the view.
@@ -62,6 +80,10 @@ var crew_stand := Vector3.INF
 
 var _yaw := 0.0
 var _pitch := 0.0
+## The servos' rates (rad/s), and the sweep's clock.
+var _yaw_rate := 0.0
+var _pitch_rate := 0.0
+var _sweep := 0.0
 var _fire_cd := 0.0
 var _retarget_cd := 0.0
 var _repair_cd := 0.0
@@ -75,6 +97,8 @@ var _muzzle: Node3D
 var _gunner: Node3D
 var _viewmodel: Node3D
 var _turret: Node3D
+## The model's rig (null: no model, or one no rig knows, turned whole).
+var _rig: TurretRig
 var _smoke: WreckSmoke
 
 
@@ -139,11 +163,20 @@ func _ready() -> void:
 		gm.position.y = -0.45
 		_gunner.add_child(gm)
 	else:
-		# The turret swivels with the yaw pivot; its base sits on the walkway.
-		_turret = Props.instance(model_path, model_height)
-		_turret.position.y = -_yaw_pivot.position.y
-		_yaw_pivot.add_child(_turret)
+		_rig = TurretRig.create(model_path, model_height)
+		if _rig:
+			# The rig turns its own turret on its base: it stands on the walkway under the gun, not on the swivel.
+			_turret = _rig
+			_pitch = PARK_PITCH if needs_crew else 0.0
+			_rig.set_aim(_yaw, _pitch)
+			add_child(_rig)
+		else:
+			# Any other model swivels whole with the yaw pivot; its base sits on the walkway.
+			_turret = Props.instance(model_path, model_height)
+			_turret.position.y = -_yaw_pivot.position.y
+			_yaw_pivot.add_child(_turret)
 		_viewmodel.visible = false
+	_sweep = randf() * SWEEP_TIME
 
 	# Knocked out, it smokes and smoulders until it is repaired.
 	_smoke = WreckSmoke.new()
@@ -169,6 +202,8 @@ func unpossess() -> void:
 	_camera.current = false
 	_camera.fov = 70.0
 	_gunner.visible = hp > 0.0
+	_yaw_rate = 0.0
+	_pitch_rate = 0.0
 	_show_turret(true)
 
 
@@ -202,14 +237,19 @@ func is_manned() -> bool:
 
 ## Whether its crew sits (the model has a seat) or stands behind it.
 func has_seat() -> bool:
-	return _turret != null and Props.has_seat(model_path)
+	return _rig != null and _rig.has_seat()
 
 
-## Where the crew goes: the model's seat (the middle of the seat pan's top, -Z the way the one in it faces), turning with
-## the gun; with no seat, standing behind the swivel turned with the gun's aim.
+## The model's rig (null without one): for whoever wants to watch its parts.
+func rig() -> TurretRig:
+	return _rig
+
+
+## Where the crew goes: the model's seat (the middle of the seat pan's top, -Z the way the one in it faces), riding the
+## turret as it turns; with no seat, standing behind the swivel turned with the gun's aim.
 func crew_spot() -> Transform3D:
 	if has_seat():
-		return _turret.global_transform * Props.seat(model_path, model_height)
+		return _rig.seat()
 	var yaw := global_rotation.y + _yaw
 	var back := Vector3(sin(yaw), 0.0, cos(yaw))
 	return Transform3D(Basis(Vector3.UP, yaw), global_position + back * CREW_BACK + Vector3.UP * 0.05)
@@ -247,6 +287,13 @@ func take_damage(amount: float, from_team: int) -> void:
 		_repair_cd = REPAIR_TIME
 		_gunner.visible = false
 		_smoke.emitting = true
+		_yaw_rate = 0.0
+		_pitch_rate = 0.0
+		if _rig:
+			_rig.wrecked = true
+			_rig.watch = Vector3.INF
+			if _rig is GatlingRig:
+				(_rig as GatlingRig).spinning = false
 		Combat.spawn_explosion(self, global_position + Vector3.UP, 2.0)
 		became_unavailable.emit(self)
 
@@ -262,16 +309,26 @@ func _physics_process(delta: float) -> void:
 			overheated = false
 			_smoke.emitting = false
 			_gunner.visible = not possessed
+			if _rig:
+				_rig.wrecked = false
 		return
 	_fire_cd -= delta
 	var firing := false
+	var manned := is_manned()
 	if possessed:
 		var zoom := Input.is_action_pressed("aim")
 		_camera.fov = lerpf(_camera.fov, 40.0 if zoom else 70.0, delta * 10.0)
-		if Input.is_action_pressed("fire"):
+		var trigger := Input.is_action_pressed("fire")
+		_spin_up(trigger and not overheated)
+		if trigger:
 			firing = _try_fire(true)
-	elif is_manned():
+	elif manned:
 		firing = _ai_update(delta)
+	else:
+		_park(delta)
+	if _rig:
+		_rig.powered = manned
+		_rig.heat = heat
 	heat = maxf(heat - delta * (0.22 if firing else 0.4), 0.0)
 	if overheated and heat < 0.35:
 		overheated = false
@@ -293,6 +350,41 @@ func _unhandled_input(event: InputEvent) -> void:
 func _apply_aim() -> void:
 	_yaw_pivot.rotation.y = _yaw
 	_pitch_pivot.rotation.x = _pitch
+	if _rig:
+		_rig.set_aim(_yaw, _pitch)
+
+
+## Lays the gun toward (yaw, pitch) with its servos, no faster than `top` rad/s.
+func _lay(to_yaw: float, to_pitch: float, top: float, delta: float) -> void:
+	var y := TurretRig.slew(_yaw, _yaw_rate, to_yaw, top, TRAVERSE_ACCEL, delta)
+	_yaw = y.x
+	_yaw_rate = y.y
+	var p := TurretRig.slew(_pitch, _pitch_rate, to_pitch, top, TRAVERSE_ACCEL, delta)
+	_pitch = p.x
+	_pitch_rate = p.y
+
+
+## Nobody at it: it is turned straight ahead and left with its barrel up a little, the gatling run down.
+func _park(delta: float) -> void:
+	_target = null
+	_spin_up(false)
+	if _rig:
+		_rig.watch = Vector3.INF
+		_lay(0.0, PARK_PITCH, PARK_RATE, delta)
+
+
+## A gatling's motor: on, its barrels are run up; off, they coast down.
+func _spin_up(on: bool) -> void:
+	if _rig is GatlingRig:
+		(_rig as GatlingRig).spinning = on
+
+
+## Where the round is seen to leave and the way it goes (+Z): the model's own muzzle while the model is shown, the
+## simple gun's otherwise.
+func _shown_muzzle() -> Transform3D:
+	if _rig and _rig.visible:
+		return _rig.muzzle()
+	return Transform3D(Basis.looking_at(_pitch_pivot.global_basis.z, Vector3.UP), _muzzle.global_position)
 
 
 func _try_fire(player: bool) -> bool:
@@ -300,10 +392,15 @@ func _try_fire(player: bool) -> bool:
 		return false
 	if kind == "cannon":
 		return _fire_cannon(player)
+	var gatling := _rig as GatlingRig
+	if gatling and not player and not gatling.ready_to_fire():
+		return false  # the barrels are still running up
 	_fire_cd = PLAYER_FIRE_INTERVAL if player else AI_FIRE_INTERVAL
 	heat += HEAT_PER_SHOT
 	if heat >= 1.0:
 		overheated = true
+	if gatling:
+		gatling.fire_round()
 	var muzzle := _muzzle.global_position
 	if player:
 		var from := _camera.global_position
@@ -311,8 +408,11 @@ func _try_fire(player: bool) -> bool:
 		Combat.spawn_muzzle_flash(self, muzzle, -_camera.global_basis.z, 1.4, true)
 		_shake = maxf(_shake, 0.12)
 	else:
-		Combat.fire_hitscan(self, muzzle, muzzle - _pitch_pivot.global_basis.z * 100.0, 0.035, AI_DAMAGE, team, 0.3, [get_rid()])
-		Combat.spawn_muzzle_flash(self, muzzle, -_pitch_pivot.global_basis.z, 1.4)
+		# The round is worked out from the gun's own swivel; it is seen to leave the model's muzzle.
+		var shown := _shown_muzzle()
+		Combat.fire_hitscan(self, muzzle, muzzle - _pitch_pivot.global_basis.z * 100.0, 0.035, AI_DAMAGE, team, 0.3, [get_rid()],
+				shown.origin)
+		Combat.spawn_muzzle_flash(self, shown.origin, shown.basis.z, 1.4)
 	return true
 
 
@@ -322,6 +422,8 @@ func _fire_cannon(player: bool) -> bool:
 	heat += CANNON_HEAT
 	if heat >= 1.0:
 		overheated = true
+	if _rig is CannonRig:
+		(_rig as CannonRig).fire()
 	var muzzle := _muzzle.global_position
 	var hit: Dictionary
 	if player:
@@ -331,28 +433,42 @@ func _fire_cannon(player: bool) -> bool:
 		Combat.spawn_muzzle_blast(self, muzzle, -_camera.global_basis.z, 1.3)
 		_shake = maxf(_shake, 0.35)
 	else:
+		var shown := _shown_muzzle()
 		hit = Combat.fire_hitscan(self, muzzle, muzzle - _pitch_pivot.global_basis.z * 100.0, 0.02, CANNON_DAMAGE, team, 1.0,
-				[get_rid()], null, 0.09)
-		Combat.spawn_muzzle_blast(self, muzzle, -_pitch_pivot.global_basis.z, 1.3)
+				[get_rid()], shown.origin, 0.09)
+		Combat.spawn_muzzle_blast(self, shown.origin, shown.basis.z, 1.3)
 	var at: Vector3 = hit.position
 	if at.distance_to(muzzle) < 250.0:
 		Combat.explode(self, at, CANNON_BLAST, CANNON_SPLASH, team)
 	return true
 
 
-## AI crew: track the nearest attacker in the firing arc and shoot in bursts.
+## AI crew: track the nearest attacker in the firing arc and shoot in bursts; with none, sweep the arc.
 func _ai_update(delta: float) -> bool:
 	if FlashGrenade.is_blind(self):
+		_spin_up(false)
+		_yaw_rate = 0.0
+		_pitch_rate = 0.0
 		return false  # flashed: the crew can't see to shoot
 	_retarget_cd -= delta
 	if _retarget_cd <= 0.0:
 		_retarget_cd = 0.4
 		_target = _find_target()
 	if not Combat.is_valid_target(_target):
+		_spin_up(false)
+		if _rig:
+			# Nothing in the arc: the sensors scan, and the gun is swept slowly from side to side.
+			_rig.watch = Vector3.INF
+			_sweep += delta
+			_lay(sin(_sweep * TAU / SWEEP_TIME) * SWEEP_ARC, SWEEP_PITCH, SWEEP_RATE, delta)
 		return false
-	var ang := _angles_to(Combat.aim_point(_target))
-	_yaw = move_toward(_yaw, clampf(ang.x, -YAW_LIMIT, YAW_LIMIT), delta * 1.8)
-	_pitch = move_toward(_pitch, clampf(ang.y, PITCH_MIN, PITCH_MAX), delta * 1.8)
+	var aim := Combat.aim_point(_target)
+	var ang := _angles_to(aim)
+	_lay(clampf(ang.x, -YAW_LIMIT, YAW_LIMIT), clampf(ang.y, PITCH_MIN, PITCH_MAX), TRAVERSE, delta)
+	if _rig:
+		_rig.watch = aim
+	# A gatling's barrels are run up while it comes onto its target (and left turning through a burst's pauses).
+	_spin_up(not overheated)
 	if absf(ang.x - _yaw) < 0.06 and absf(ang.y - _pitch) < 0.06 and heat < 0.8:
 		return _try_fire(false)
 	return false

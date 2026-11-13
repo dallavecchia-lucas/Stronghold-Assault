@@ -2,6 +2,11 @@ class_name ArtilleryStation
 extends StaticBody3D
 ## Courtyard mortar. When possessed the player gets a spotter view over the battlefield,
 ## moves it with WASD and clicks on the ground to call in shells.
+##
+## Its model is the Arctic Sentinel Cannon, shown by a CannonRig and laid like a mortar: the turret is traversed onto
+## the target and the barrel raised to the angle the shell leaves at (_elevation: what Shell's arc starts with), both by
+## servos (TurretRig.slew). The crew lays the gun before it fires (LAY_TIME at most), the barrel recoils into its
+## mantlet and runs out again, and the shell leaves from the model's own muzzle. Knocked out, the barrel drops.
 
 signal became_unavailable(station)
 
@@ -15,6 +20,17 @@ const AI_ERROR := 5.0
 const REPAIR_TIME := 360.0  # 6 minutes
 ## How tall the mortar's model (the Arctic Sentinel Cannon) stands (m); its crew sits in its side seat.
 const CANNON_HEIGHT := 1.9
+## The slab it stands on (m).
+const SLAB := 0.35
+## The laying servos: traverse and elevation (rad/s), how fast they pick up speed (rad/s²).
+const TRAVERSE := 1.6
+const ELEVATE := 1.2
+const LAY_ACCEL := 7.0
+## The crew lays the gun on its target before it fires: this long at most (s), and this close is laid (rad).
+const LAY_TIME := 1.6
+const LAID := deg_to_rad(2.0)
+## Where the barrel rests between fire missions (rad).
+const REST_PITCH := deg_to_rad(50.0)
 
 ## Where the spotter view starts (and returns to), looking away from the map center.
 var spotter_home := Vector3(0, 0, 45)
@@ -32,10 +48,16 @@ var crew: Node3D = null
 
 var _reload := 0.0
 var _repair_cd := 0.0
-var _barrel_pivot: Node3D
-## The Arctic Sentinel Cannon's model (it turns with the barrel pivot), whose side seat the crew sits in.
-var _cannon: Node3D
-var _muzzle: Node3D
+## The Arctic Sentinel Cannon's rig, in whose side seat the crew sits.
+var _cannon: CannonRig
+## The aim: the traverse and the barrel's elevation (rad), with the servos' rates.
+var _yaw := 0.0
+var _yaw_rate := 0.0
+var _pitch := REST_PITCH
+var _pitch_rate := 0.0
+## The crew's fire mission: where the next shell goes (INF: none) and how long they have had to lay on it.
+var _mission := Vector3.INF
+var _laying := 0.0
 var _spotter: Node3D
 var _camera: Camera3D
 var _spot_zoom := 70.0
@@ -57,21 +79,12 @@ func _ready() -> void:
 	shape.position.y = 0.8
 	add_child(shape)
 
-	add_child(Mats.cylinder_mesh(1.9, 0.35, Vector3(0, 0.17, 0), Mats.dark_stone(), 16))
-	_barrel_pivot = Node3D.new()
-	_barrel_pivot.position.y = 0.7
-	add_child(_barrel_pivot)
-	# The whole cannon turns toward the target; shells still leave from the muzzle below.
-	var cannon := Props.instance(Props.ARCTIC_SENTINEL_CANNON, CANNON_HEIGHT)
-	_cannon = cannon
-	cannon.position.y = 0.35 - _barrel_pivot.position.y
-	_barrel_pivot.add_child(cannon)
-	var tilt := Node3D.new()
-	tilt.rotation.x = deg_to_rad(50.0)
-	_barrel_pivot.add_child(tilt)
-	_muzzle = Node3D.new()
-	_muzzle.position = Vector3(0, 2.2, 0)
-	tilt.add_child(_muzzle)
+	add_child(Mats.cylinder_mesh(1.9, SLAB, Vector3(0, SLAB * 0.5, 0), Mats.dark_stone(), 16))
+	# The cannon stands on the slab: its hull and legs stay put, its turret traverses and its barrel is raised.
+	_cannon = TurretRig.create(Props.ARCTIC_SENTINEL_CANNON, CANNON_HEIGHT) as CannonRig
+	_cannon.position.y = SLAB
+	_cannon.set_aim(_yaw, _pitch)
+	add_child(_cannon)
 
 	# Spotter camera rig lives at the top level so it can roam the map.
 	_spotter = Node3D.new()
@@ -152,9 +165,14 @@ func has_seat() -> bool:
 	return _cannon != null
 
 
-## Where the crew sits: the cannon's side seat (Props.SEATS), turning with it as it lays the barrel.
+## Where the crew sits: the cannon's side seat, riding its turret as it lays the barrel.
 func crew_spot() -> Transform3D:
-	return _cannon.global_transform * Props.seat(Props.ARCTIC_SENTINEL_CANNON, CANNON_HEIGHT)
+	return _cannon.seat()
+
+
+## The model's rig: for whoever wants to watch its parts.
+func rig() -> TurretRig:
+	return _cannon
 
 
 func get_hud_info() -> Dictionary:
@@ -186,6 +204,10 @@ func take_damage(amount: float, from_team: int) -> void:
 	if hp <= 0.0:
 		hp = 0.0
 		_repair_cd = REPAIR_TIME
+		_mission = Vector3.INF
+		_yaw_rate = 0.0
+		_pitch_rate = 0.0
+		_cannon.wrecked = true
 		Combat.spawn_explosion(self, global_position + Vector3.UP, 3.0)
 		became_unavailable.emit(self)
 
@@ -197,12 +219,30 @@ func _physics_process(delta: float) -> void:
 		_repair_cd -= delta
 		if _repair_cd <= 0.0:
 			hp = max_hp
+			_cannon.wrecked = false
 		return
 	_reload -= delta
+	var manned := is_manned()
+	_cannon.powered = manned
 	if possessed:
+		_mission = Vector3.INF
 		_player_update(delta)
-	elif _reload <= 0.0 and is_manned() and not FlashGrenade.is_blind(self):
+	elif not manned or FlashGrenade.is_blind(self):
+		_mission = Vector3.INF
+		_yaw_rate = 0.0
+		_pitch_rate = 0.0
+	elif _mission.is_finite():
+		# A fire mission: the crew lays the gun on it, then lets the shell go.
+		_laying += delta
+		if _aim_barrel(_mission, delta) or _laying >= LAY_TIME:
+			var point := _mission
+			_mission = Vector3.INF
+			_launch(point, AI_RELOAD_TIME)
+	elif _reload <= 0.0:
 		_ai_fire()
+	else:
+		_lay(_yaw, REST_PITCH, delta)
+	_cannon.set_aim(_yaw, _pitch)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -243,9 +283,36 @@ func _player_update(delta: float) -> void:
 	_aim_barrel(_aim_point, delta)
 
 
-func _aim_barrel(point: Vector3, delta: float) -> void:
-	var d := point - global_position
-	_barrel_pivot.rotation.y = lerp_angle(_barrel_pivot.rotation.y, atan2(-d.x, -d.z), delta * 4.0)
+## Lays the gun on `point` (world) with its servos. True once it is laid.
+func _aim_barrel(point: Vector3, delta: float) -> bool:
+	var to := _bearing(point)
+	var want_yaw := _yaw + wrapf(to - _yaw, -PI, PI)
+	var want_pitch := _elevation(point)
+	_lay(want_yaw, want_pitch, delta)
+	return absf(want_yaw - _yaw) < LAID and absf(want_pitch - _pitch) < LAID
+
+
+func _lay(to_yaw: float, to_pitch: float, delta: float) -> void:
+	var y := TurretRig.slew(_yaw, _yaw_rate, to_yaw, TRAVERSE, LAY_ACCEL, delta)
+	_yaw = wrapf(y.x, -PI, PI)
+	_yaw_rate = y.y
+	var p := TurretRig.slew(_pitch, _pitch_rate, to_pitch, ELEVATE, LAY_ACCEL, delta)
+	_pitch = p.x
+	_pitch_rate = p.y
+
+
+## The traverse (rad, in the station's own frame) that faces `point`.
+func _bearing(point: Vector3) -> float:
+	var local := to_local(point)
+	return atan2(-local.x, -local.z)
+
+
+## The elevation (rad) a shell for `point` leaves at: the start of Shell's arc (it climbs 1.2 m for every metre out,
+## less the drop from the muzzle to where it lands).
+func _elevation(point: Vector3) -> float:
+	var from := _cannon.muzzle().origin
+	var flat := Vector2(point.x - from.x, point.z - from.z).length()
+	return clampf(atan2(1.2 * from.distance_to(point) + (point.y - from.y), maxf(flat, 0.1)), deg_to_rad(20.0), _cannon.max_pitch())
 
 
 func _player_fire() -> void:
@@ -256,15 +323,22 @@ func _player_fire() -> void:
 
 func _launch(point: Vector3, reload: float) -> void:
 	_reload = reload
-	var d := point - global_position
-	_barrel_pivot.rotation.y = atan2(-d.x, -d.z)
+	# Whatever the servos still had to go is taken up as it fires (the player's shell goes the moment it is called).
+	_yaw = _bearing(point)
+	_pitch = _elevation(point)
+	_yaw_rate = 0.0
+	_pitch_rate = 0.0
+	_cannon.set_aim(_yaw, _pitch)
+	_cannon.snap()
+	var muzzle := _cannon.muzzle()
 	var shell := Shell.new()
 	shell.team = team
 	shell.damage = SHELL_DAMAGE
 	shell.radius = SHELL_RADIUS
 	get_tree().current_scene.add_child(shell)
-	shell.launch(_muzzle.global_position, point)
-	Combat.spawn_muzzle_blast(self, _muzzle.global_position, (point - _muzzle.global_position).normalized() + Vector3.UP * 1.2, 0.9)
+	shell.launch(muzzle.origin, point)
+	_cannon.fire()
+	Combat.spawn_muzzle_blast(self, muzzle.origin, muzzle.basis.z, 0.9)
 
 
 ## AI: drop a shell on the densest group of attackers in range.
@@ -289,4 +363,5 @@ func _ai_fire() -> void:
 		_reload = 1.0
 		return
 	var err := Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)) * AI_ERROR
-	_launch(best.global_position + err, AI_RELOAD_TIME)
+	_mission = best.global_position + err
+	_laying = 0.0
