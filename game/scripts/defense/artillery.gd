@@ -1,11 +1,13 @@
 class_name ArtilleryStation
 extends StaticBody3D
-## Courtyard mortar. When possessed the player gets a spotter view over the battlefield,
-## moves it with WASD and clicks on the ground to call in shells.
+## The cannon on the south roof: an Arctic Sentinel Cannon like the gun decks', fired from a spotter's view. When
+## possessed the player gets that view over the battlefield, moves it with WASD and clicks on the ground to call a
+## shell onto it; its crew does the same on its own.
 ##
-## Its model is the Arctic Sentinel Cannon, shown by a CannonRig and laid like a mortar: the turret is traversed onto
-## the target and the barrel raised to the angle the shell leaves at (_elevation: what Shell's arc starts with), both by
-## servos (TurretRig.slew). The crew lays the gun before it fires (LAY_TIME at most), the barrel recoils into its
+## It is the same gun firing the same round (CannonShell): flat at first, then falling, so the further the target the
+## higher the barrel is raised, up to the longest shot near 45 degrees. The crew works the elevation out for the point
+## called (CannonShell.elevation_for) and lays the gun on it with its servos (TurretRig.slew) before it fires
+## (LAY_TIME at most); its model is shown by a CannonRig: the turret traverses, the barrel is raised, recoils into its
 ## mantlet and runs out again, and the shell leaves from the model's own muzzle. Knocked out, the barrel drops.
 
 signal became_unavailable(station)
@@ -18,7 +20,7 @@ const SHELL_DAMAGE := 150.0
 const SHELL_RADIUS := 7.0
 const AI_ERROR := 5.0
 const REPAIR_TIME := 360.0  # 6 minutes
-## How tall the mortar's model (the Arctic Sentinel Cannon) stands (m); its crew sits in its side seat.
+## How tall its model (the Arctic Sentinel Cannon) stands (m); its crew sits in its side seat.
 const CANNON_HEIGHT := 1.9
 ## The slab it stands on (m).
 const SLAB := 0.35
@@ -30,7 +32,7 @@ const LAY_ACCEL := 7.0
 const LAY_TIME := 1.6
 const LAID := deg_to_rad(2.0)
 ## Where the barrel rests between fire missions (rad).
-const REST_PITCH := deg_to_rad(50.0)
+const REST_PITCH := deg_to_rad(12.0)
 
 ## Where the spotter view starts (and returns to), looking away from the map center.
 var spotter_home := Vector3(0, 0, 45)
@@ -179,7 +181,7 @@ func get_hud_info() -> Dictionary:
 	var status := "READY" if _reload <= 0.0 else "RELOADING %.1fs" % _reload
 	if possessed and not _aim_valid:
 		status += "  ·  OUT OF RANGE"
-	return {"weapon": "Mortar", "status": status, "hp": hp / max_hp,
+	return {"weapon": "Roof Cannon", "status": status, "hp": hp / max_hp,
 			"hint": "WASD move view · Q/E rotate · Wheel zoom · LMB fire on target (range %d-%d m)" % [MIN_RANGE, MAX_RANGE]}
 
 
@@ -307,12 +309,14 @@ func _bearing(point: Vector3) -> float:
 	return atan2(-local.x, -local.z)
 
 
-## The elevation (rad) a shell for `point` leaves at: the start of Shell's arc (it climbs 1.2 m for every metre out,
-## less the drop from the muzzle to where it lands).
+## The elevation (rad) that drops a shell on `point` from where the barrel is (CannonShell.elevation_for): flat for a
+## near one, raised for a far one.
 func _elevation(point: Vector3) -> float:
-	var from := _cannon.muzzle().origin
+	var from := to_global(Vector3(0.0, SLAB + 1.0, 0.0))
+	if _cannon.is_inside_tree():
+		from = _cannon.muzzle().origin
 	var flat := Vector2(point.x - from.x, point.z - from.z).length()
-	return clampf(atan2(1.2 * from.distance_to(point) + (point.y - from.y), maxf(flat, 0.1)), deg_to_rad(20.0), _cannon.max_pitch())
+	return CannonShell.elevation_for(flat, point.y - from.y)
 
 
 func _player_fire() -> void:
@@ -330,13 +334,22 @@ func _launch(point: Vector3, reload: float) -> void:
 	_pitch_rate = 0.0
 	_cannon.set_aim(_yaw, _pitch)
 	_cannon.snap()
+	# Laid, the muzzle is where the shell starts from: the elevation is worked out again from there, exactly.
+	_pitch = _elevation(point)
+	_cannon.set_aim(_yaw, _pitch)
+	_cannon.snap()
 	var muzzle := _cannon.muzzle()
-	var shell := Shell.new()
+	var flat := Vector3(point.x - muzzle.origin.x, 0.0, point.z - muzzle.origin.z).normalized()
+	var shell := CannonShell.new()
 	shell.team = team
-	shell.damage = SHELL_DAMAGE
+	shell.damage = 0.0  # (all of it in the burst, as ever)
+	shell.splash = SHELL_DAMAGE
 	shell.radius = SHELL_RADIUS
+	shell.structure_mult = 0.5
+	shell.size = 0.25
+	shell.exclude = [get_rid()]
 	get_tree().current_scene.add_child(shell)
-	shell.launch(muzzle.origin, point)
+	shell.launch(muzzle.origin, flat * cos(_pitch) + Vector3.UP * sin(_pitch))
 	_cannon.fire()
 	Combat.spawn_muzzle_blast(self, muzzle.origin, muzzle.basis.z, 0.9)
 

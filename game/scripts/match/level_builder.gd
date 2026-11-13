@@ -83,7 +83,7 @@ const DECK_RAMP_WIDTH := 2.0
 ## Where a crew stands on the ramp before stepping into its seat: this far toward the parapet from the mounts' line (m).
 const DECK_CREW_STAND := 0.3
 const DECK_GUN_OUT := {"sentry": 0.3, "cannon": 0.5}
-## The roofs' turrets, which run themselves (nobody sits in them): a Sentinel Bastion (a gatling, MountedGun "bastion")
+## The roofs' turrets, which run themselves (nobody sits in them): a Sentinel Bastion (a flak gun, MountedGun "bastion")
 ## on each bay's first roof mount and a Sentinel Spire (AA missiles, AATurret) on its second.
 const ROOF_BASTION_HEIGHT := 2.0
 ## Navigation layer bit for the links only infiltrators may take.
@@ -789,7 +789,7 @@ func _build_stations() -> Array:
 	used.append(String(mortar.name))
 	var art := ArtilleryStation.new()
 	art.name = "Artillery"
-	art.station_name = "Mortar · South Roof"
+	art.station_name = "Cannon · South Roof"
 	art.map_half = map_half
 	art.spotter_home = SIDES.south.dir * (FACE_DIST + 30.0)
 	art.position = mortar.global_position

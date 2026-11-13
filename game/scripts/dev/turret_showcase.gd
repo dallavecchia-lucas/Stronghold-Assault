@@ -8,11 +8,13 @@ extends Node3D
 ##            barrels up and fires, cases flying; a long fight heats the barrels till they glow and smoke. It is
 ##            knocked out (the barrel drops), and repaired.
 ##   cannon   the Arctic Sentinel Cannon, the same way: its sensor head finds the target before the gun gets there,
-##            every round drives the barrel back into the mantlet and throws a case; a target over one of its own legs
-##            shows the barrel held clear of it.
-##   bastion  the Sentinel Bastion, which runs itself: sensor head and camera scanning, then both on the target.
+##            every round drives the barrel back into the mantlet and throws a case, and its shells fly out and burst
+##            where they land; a target over one of its own legs shows the barrel held clear of it.
+##   bastion  the Sentinel Bastion, a flak gun that runs itself: sensor head and camera scanning, then both on the
+##            target; its four barrels fire in turn, shells bursting by a drone overhead and by targets on the ground.
 ##   spire    the Sentinel Spire: searching, then onto a drone, a missile out of each cell in turn, the cells reloaded.
-##   mortar   the mortar (the cannon's model): its crew lays it on a group and drops shells on it.
+##   roof     the cannon on the south roof (the same gun, fired from a spotter's view): its crew lays it on a group far
+##            out, the barrel raised for the range, and drops shells on it, then on a nearer one, the barrel lower.
 ##
 ##   godot --path game res://scenes/dev/turret_showcase.tscn [-- --gun=sentry]         # to watch it (all five in a row)
 ##   godot --path game --headless --fixed-fps 30 res://scenes/dev/turret_showcase.tscn -- --test
@@ -23,12 +25,12 @@ extends Node3D
 ##       res://scenes/dev/turret_showcase.tscn -- --gun=sentry --video                  # its clip, then quits
 ##   python3 tools/video/cut_showcase.py ...   (or ffmpeg -i sentry.avi -c:v libx264 -crf 20 -pix_fmt yuv420p sentry.mp4)
 
-const GUNS := ["sentry", "cannon", "bastion", "spire", "mortar"]
+const GUNS := ["sentry", "cannon", "bastion", "spire", "roof"]
 ## How far apart the stages stand (m), how high a deck and a roof are, and how long each gun's show runs (s).
 const SPACING := 60.0
 const DECK := 8.05
 const ROOF := 15.05
-const LENGTH := {"sentry": 44.0, "cannon": 42.0, "bastion": 36.0, "spire": 36.0, "mortar": 28.0}
+const LENGTH := {"sentry": 44.0, "cannon": 42.0, "bastion": 36.0, "spire": 36.0, "roof": 28.0}
 
 ## A target on the field: a walking crate of a machine the guns take for an attacker.
 class Dummy extends StaticBody3D:
@@ -326,9 +328,9 @@ func _drone(set: Dictionary, radius: float, height: float, speed: float, angle: 
 const BEATS := {
 	"sentry": [[1.5, "board"], [7.5, "walker"], [14.0, "close"], [20.5, "pack"], [33.0, "wreck"], [38.0, "repair"]],
 	"cannon": [[1.5, "board"], [7.5, "walker"], [15.5, "over_leg"], [23.5, "pair"], [32.0, "wreck"], [37.0, "repair"]],
-	"bastion": [[5.0, "walker"], [11.5, "close"], [17.0, "pack"], [27.0, "wreck"], [31.5, "repair"]],
+	"bastion": [[5.0, "drone"], [12.0, "walker"], [17.0, "pack"], [27.0, "wreck"], [31.5, "repair"]],
 	"spire": [[5.0, "drone"], [17.0, "drone2"], [27.5, "wreck"], [32.0, "repair"]],
-	"mortar": [[1.5, "board"], [6.0, "group"], [17.0, "group2"]],
+	"roof": [[1.5, "board"], [6.0, "group"], [17.0, "group2"]],
 }
 
 
@@ -348,20 +350,22 @@ func _do(set: Dictionary, what: String) -> void:
 			# Near, and off to the side one of the cannon's front legs lies on.
 			_dummy(set, 9.5, 21.0, 150.0)
 		"pair":
-			_dummy(set, -22.0, 38.0, 150.0, Vector3(1.5, 0, 0))
-			_dummy(set, 14.0, 44.0, 150.0, Vector3(-1.0, 0, -0.5))
+			_dummy(set, -22.0, 38.0, 110.0, Vector3(1.5, 0, 0))
+			_dummy(set, 14.0, 44.0, 110.0, Vector3(-1.0, 0, -0.5))
 		"pack":
 			# A crowd of them: a long fight, the barrels heat.
 			for k in 5:
 				_dummy(set, -18.0 + k * 9.0, 34.0 + (k % 2) * 8.0, 75.0, Vector3(0.4 - 0.2 * k, 0, -0.6))
 		"drone":
-			_drone(set, 26.0, 13.0, 9.0, 2.2, 50.0)
+			_drone(set, 26.0, 13.0, 9.0, 2.2, 50.0 if gun == "spire" else 130.0)
 		"drone2":
 			_drone(set, 20.0, 20.0, -11.0, 5.2, 50.0)
 		"group", "group2":
-			var x := -30.0 if what == "group" else 34.0
+			# The first far out (the barrel raised for the range), the second nearer (the barrel lower).
+			var x := -60.0 if what == "group" else 30.0
+			var z := 125.0 if what == "group" else 50.0
 			for k in 4:
-				_dummy(set, x + (k % 2) * 2.4, 60.0 + (k / 2) * 2.4, 160.0)
+				_dummy(set, x + (k % 2) * 2.4, z + (k / 2) * 2.4, 160.0)
 		"wreck":
 			set.station.take_damage(100000.0, GameConfig.TEAM_ATTACKER)
 		"repair":
@@ -429,7 +433,7 @@ const SHOTS := {
 		[17.0, 27.5, [7.4, 200.0, 4.2, 2.0], [6.4, 132.0, 3.2, 1.9], 54.0],
 		[27.5, 36.0, [7.2, 42.0, 2.9, 1.6], [6.4, 20.0, 2.6, 1.6], 46.0],
 	],
-	"mortar": [
+	"roof": [
 		[0.0, 6.0, [7.6, 44.0, 2.6, 1.2], [6.6, 62.0, 2.3, 1.2], 46.0],
 		[6.0, 17.0, [6.4, 40.0, 2.0, 1.5], [6.0, 16.0, 1.8, 1.6], 48.0],
 		[17.0, 28.0, [8.6, 205.0, 4.2, 1.6], [8.0, 170.0, 3.8, 1.6], 56.0],
@@ -500,7 +504,7 @@ func _observe(set: Dictionary) -> void:
 				"body_moved": 0.0, "seat_moved": 0.0, "spin": 0.0, "first_round_spin": -1.0, "recoil": 0.0, "droop": 0.0,
 				"watch_from": -1.0, "sensor_lag": -1.0, "dome": 0.0, "low_over_leg": 0.0, "powered_at": -1.0,
 				"wrecked": false, "back_up": false, "error": 0.0, "cells_empty": 0, "on_stop": INF, "spin_wrecked": INF,
-				"heat": 0.0}
+				"heat": 0.0, "flak_recoil": 0.0, "flak_barrels": {}}
 		if rig.has_seat():
 			w.seat = rig.seat().origin
 		_watch[set.name] = w
@@ -530,6 +534,11 @@ func _observe(set: Dictionary) -> void:
 		w.heat = maxf(w.heat, g.barrel_heat)
 		if g.rounds > 0 and w.first_round_spin < 0.0:
 			w.first_round_spin = g.spin_rate
+	if rig is BastionRig:
+		var b := rig as BastionRig
+		w.flak_recoil = maxf(w.flak_recoil, rig.part("barrels").position.distance_to(rig.rest_of("barrels").origin))
+		w.flak_barrels[b.get("_barrel")] = true
+		w.heat = maxf(w.heat, b.barrel_heat)
 	if rig is CannonRig:
 		w.recoil = maxf(w.recoil, rig.part("barrel").position.distance_to(rig.rest_of("barrel").origin))
 		# How low the barrel was shown while the turret stood over a front leg.
@@ -573,6 +582,12 @@ func _finish_test() -> void:
 					"%s: no round left before the barrels were turning (%.0f rev/s at the first)" % [gun, w.first_round_spin / TAU])
 			_check(w.spin_wrecked < 1.0, "%s: knocked out, the barrels ran down and stopped" % gun)
 			_check(w.heat > 0.3, "%s: the barrels heated as they fired (%.2f at their hottest)" % [gun, w.heat])
+		if rig is BastionRig:
+			var b := rig as BastionRig
+			_check(b.rounds > 20, "bastion: fired (%d shells)" % b.rounds)
+			_check(w.flak_recoil > BastionRig.RECOIL * 0.8, "bastion: its barrels recoiled in their collar (%.2f m)" % w.flak_recoil)
+			_check(w.flak_barrels.size() == 4, "bastion: all four barrels fired in turn")
+			_check(w.pitch_hi > deg_to_rad(10.0), "bastion: it elevated onto the drone (%.0f deg)" % rad_to_deg(w.pitch_hi))
 		if rig is CannonRig:
 			var c := rig as CannonRig
 			_check(c.rounds >= 2, "%s: fired (%d rounds)" % [gun, c.rounds])
@@ -585,7 +600,7 @@ func _finish_test() -> void:
 			_check(w.pitch_lo < CannonRig.OVER_LEG - 0.05, "cannon: between its legs it went lower (%.0f deg)" % rad_to_deg(w.pitch_lo))
 		if rig.has_part("dome"):
 			_check(w.dome > TurretRig.DOME_RATE * 0.9, "%s: the radar dome turned" % gun)
-		if rig.has_part("sensor") and gun != "mortar":
+		if rig.has_part("sensor") and gun != "roof":
 			_check(w.sensor_lag >= 0.0 and w.sensor_lag < 1.0, "%s: the sensor head was on its target %.2f s after it showed" % [gun,
 					w.sensor_lag])
 		if rig is SpireRig:
@@ -593,12 +608,14 @@ func _finish_test() -> void:
 			_check(s.launched >= 4, "spire: launched (%d missiles)" % s.launched)
 			_check(w.cells_empty >= 2, "spire: cells stood empty after their launches (%d at once)" % w.cells_empty)
 			_check(set.station.fired == s.launched, "spire: every missile left from a cell")
-		if gun == "mortar":
+		if gun == "roof":
 			var hit := 0
 			for d in set.dummies:
 				if not is_instance_valid(d) or d.hp < 160.0:
 					hit += 1
-			_check(hit >= 4, "mortar: its shells landed on the groups (%d of %d hit)" % [hit, set.dummies.size()])
+			_check(hit >= 6, "roof cannon: its shells landed on the groups (%d of %d hit)" % [hit, set.dummies.size()])
+			_check(w.pitch_hi - w.pitch_lo > deg_to_rad(8.0), "roof cannon: the far group took a higher barrel than the near one (%.0f..%.0f deg)"
+					% [rad_to_deg(w.pitch_lo), rad_to_deg(w.pitch_hi)])
 		else:
 			_check(w.wrecked and w.droop > deg_to_rad(3.0) and w.on_stop < deg_to_rad(1.0),
 					"%s: knocked out, the barrel dropped onto its stop (%.0f deg down)" % [gun, rad_to_deg(w.droop)])
