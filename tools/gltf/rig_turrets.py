@@ -53,6 +53,8 @@ from split_raft import gather  # noqa: E402
 HEIGHT = {"sentry": 2.2, "cannon": 2.2, "bastion": 2.0, "spire": 3.0}
 ## The yaw (about +Y) that turns each Meshy export's front to +Z.
 SOURCE_YAW = {"sentry": math.pi / 2, "cannon": math.pi / 2, "bastion": 0.0, "spire": 0.0}
+## How far the cannon's crew station is raised (m), to ride clear of its legs.
+SEAT_LIFT = 0.2
 NAMES = {"sentry": "OrbitalSentryGun", "cannon": "ArcticSentinelCannon", "bastion": "SentinelBastion",
          "spire": "SentinelSpire"}
 
@@ -104,6 +106,16 @@ class Turret(Model):
     def centre(self, comps):
         lo, hi = self.bounds(comps)
         return (lo + hi) * 0.5
+
+    def shift(self, comps, offset):
+        """Moves pieces `comps` by `offset` (m)."""
+        seen = set()
+        for tri, c in zip(self.tris, self.tri_comp):
+            if c in comps:
+                for i in tri:
+                    if i not in seen:
+                        seen.add(i)
+                        self.pos[i] = self.pos[i] + offset
 
 
 def near(c, x, y, z, r):
@@ -171,6 +183,10 @@ def cannon(m):
     m.take("optic", head)
     # What stays put: the hull, its four legs and feet, and the power unit beside the left legs.
     base = m.pick(lambda lo, hi, c, sz: (c[1] < 0.5 and c[0] > -0.8) or c[0] > 1.0)
+    # The crew's station out on the turret's right (the seat on its arm, the console, the cables) was modelled hanging
+    # as low as the legs' tops: riding the turret round it would pass through them. It is raised clear of them.
+    station = m.free(m.pick(lambda lo, hi, c, sz: c[0] < -0.55)) - base
+    m.shift(station, Y * SEAT_LIFT)
     m.take("turret", m.free(set(m.info) - base))
     m.level({"gun", "barrel"}, trunnion, elevation)
     b = m.part_points("barrel")
@@ -188,7 +204,7 @@ def cannon(m):
               # The spent case drops out under the mantlet's front, forward and to the right.
               ("eject", "gun", np.array([trunnion[0] - 0.1, g.min(0)[1] + 0.12, g.max(0)[2] - 0.2]), unit([-0.55, -0.2, 0.8])),
               ("lens", "optic", np.array([pan[0], tilt[1], o.max(0)[2]]), Z),
-              ("seat", "turret", np.array([-1.155, 0.451, -0.473]), X)]
+              ("seat", "turret", np.array([-1.155, 0.451 + SEAT_LIFT, -0.473]), X)]
     print(f"  the barrel was modelled raised {math.degrees(elevation):.1f} deg; levelled")
     return nodes, marks
 
