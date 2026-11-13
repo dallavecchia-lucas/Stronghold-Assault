@@ -33,12 +33,20 @@ const CANNON_HEAT := 0.16
 const REPAIR_TIME := 360.0  # 6 minutes
 ## How far behind the swivel a garrison crew stands (m), clear of the gun's navmesh plug.
 const CREW_BACK := 1.45
+## The pedestal: the column's and the turntable's radii (m), and how far behind the column its ladder's foot is.
+const PEDESTAL_R := 0.6
+const TURNTABLE_R := 0.95
+const LADDER_OUT := 0.45
 
 ## Turret model shown while the AI crews the gun (empty = sandbags + gunner capsule).
 ## The player always sees the simple first-person gun instead, so the model never blocks the view.
 var model_path := ""
 ## How tall the turret model stands (m).
 var model_height := 2.0
+## The pedestal the turret stands on (m; 0: none, it stands on the floor). The gun decks' guns stand on one so their
+## line of fire clears the parapet and the rock sloping away under the deck down to their lowest aim (PITCH_MIN): a
+## concrete column with a steel turntable on top and a ladder up its back for the crew (boarding()).
+var base_height := 0.0
 ## "sentry", "cannon" or "bastion" (see the top).
 var kind := "sentry"
 ## Height of the gun's swivel above the node; raised to fire over a tall parapet.
@@ -83,10 +91,12 @@ func _ready() -> void:
 
 	var shape := CollisionShape3D.new()
 	var box := BoxShape3D.new()
-	box.size = Vector3(1.4, 1.6, 1.4)
+	box.size = Vector3(1.4, 1.6 + base_height, 1.4)
 	shape.shape = box
-	shape.position.y = 0.8
+	shape.position.y = (1.6 + base_height) * 0.5
 	add_child(shape)
+	if base_height > 0.0:
+		_build_pedestal()
 
 	var metal := Mats.flat(Color(0.16, 0.17, 0.18), 0.8, 0.35)
 	if model_path == "":
@@ -138,13 +148,13 @@ func _ready() -> void:
 	else:
 		# The turret swivels with the yaw pivot; its base sits on the walkway.
 		_turret = Props.instance(model_path, model_height)
-		_turret.position.y = -_yaw_pivot.position.y
+		_turret.position.y = -_yaw_pivot.position.y + base_height
 		_yaw_pivot.add_child(_turret)
 		_viewmodel.visible = false
 
 	# Knocked out, it smokes and smoulders until it is repaired.
 	_smoke = WreckSmoke.new()
-	_smoke.position.y = 1.0
+	_smoke.position.y = base_height + 1.0
 	add_child(_smoke)
 
 
@@ -189,7 +199,56 @@ func get_camera() -> Camera3D:
 
 ## True if it can fire on its own: it needs no crew, or one stands at it (the player at it counts too).
 func is_manned() -> bool:
-	return not needs_crew or possessed or (crew != null and is_instance_valid(crew) and crew.is_alive())
+	if not needs_crew or possessed:
+		return true
+	if crew == null or not is_instance_valid(crew) or not crew.is_alive():
+		return false
+	# A garrison soldier mans it once it is in the seat (not while it climbs up to it).
+	return not crew.has_method("at_post") or crew.at_post()
+
+
+## The pedestal under the turret (base_height): a concrete column, a steel base plate and turntable, a hazard band under
+## the turntable and a steel ladder up the back (the side toward the bunker, +Z) for the crew. It doesn't turn.
+func _build_pedestal() -> void:
+	var jungle := LevelBuilder.jungle
+	var concrete: Material = StrongholdLook.material("Concrete", jungle)
+	var steel: Material = StrongholdLook.material("Metal", jungle)
+	var stripes: Material = StrongholdLook.material("HatchStripes", jungle)
+	if concrete == null:
+		concrete = Mats.flat(Color(0.46, 0.45, 0.43), 0.0, 0.95)
+	if steel == null:
+		steel = Mats.flat(Color(0.2, 0.21, 0.22), 0.8, 0.4)
+	if stripes == null:
+		stripes = Mats.flat(Color(0.8, 0.35, 0.08), 0.3, 0.6)
+	var h := base_height
+	add_child(Mats.cylinder_mesh(PEDESTAL_R + 0.15, 0.12, Vector3(0, 0.06, 0), steel, 8))
+	add_child(Mats.cylinder_mesh(PEDESTAL_R, h - 0.3, Vector3(0, 0.12 + (h - 0.3) * 0.5, 0), concrete, 8))
+	add_child(Mats.cylinder_mesh(PEDESTAL_R + 0.04, 0.18, Vector3(0, h - 0.27, 0), stripes, 8))
+	add_child(Mats.cylinder_mesh(TURNTABLE_R, 0.14, Vector3(0, h - 0.07, 0), steel, 16))
+	# The ladder: two rails and a rung every 0.3 m, standing off the column's back.
+	var z := PEDESTAL_R + 0.12
+	for x in [-0.22, 0.22]:
+		add_child(Mats.box_mesh(Vector3(0.05, h + 0.9, 0.05), Vector3(x, (h + 0.9) * 0.5, z), steel))
+	var y := 0.3
+	while y < h + 0.05:
+		add_child(Mats.box_mesh(Vector3(0.44, 0.04, 0.04), Vector3(0, y, z), steel))
+		y += 0.3
+	for c in get_children():
+		if c is MeshInstance3D:
+			(c as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+
+
+## The crew's way up a pedestal, in world space: the ladder's foot on the floor, the same spot up at the turntable's
+## height, and the turntable's back edge. Empty with no pedestal.
+func boarding() -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	if base_height <= 0.0:
+		return out
+	var foot := Vector3(0.0, 0.0, PEDESTAL_R + LADDER_OUT)
+	out.append(to_global(foot))
+	out.append(to_global(foot + Vector3.UP * base_height))
+	out.append(to_global(Vector3(0.0, base_height, PEDESTAL_R * 0.6)))
+	return out
 
 
 ## Whether its crew sits (the model has a seat) or stands behind it.
@@ -225,7 +284,7 @@ func get_approach_point() -> Vector3:
 
 
 func get_aim_point() -> Vector3:
-	return global_position + Vector3.UP * 1.2
+	return global_position + Vector3.UP * (base_height + 1.2)
 
 
 func take_damage(amount: float, from_team: int) -> void:
@@ -239,7 +298,7 @@ func take_damage(amount: float, from_team: int) -> void:
 		_repair_cd = REPAIR_TIME
 		_gunner.visible = false
 		_smoke.emitting = true
-		Combat.spawn_explosion(self, global_position + Vector3.UP, 2.0)
+		Combat.spawn_explosion(self, global_position + Vector3.UP * (base_height + 1.0), 2.0)
 		became_unavailable.emit(self)
 
 

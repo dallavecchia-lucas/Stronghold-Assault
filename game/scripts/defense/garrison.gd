@@ -358,6 +358,11 @@ func _gun_goal(g) -> Vector3:
 ## Where a gun's crew walks to: the floor beside its seat, out past the box that keeps the navmesh off the gun (whose
 ## top the bake makes a little platform of, right under a seat): from there it sits down (GarrisonSoldier._crew).
 func _beside_seat(g) -> Vector3:
+	# Up on a pedestal: the foot of its ladder.
+	if g.has_method("boarding"):
+		var way: Array[Vector3] = g.boarding()
+		if not way.is_empty():
+			return LevelBuilder.nav_closest(_map, way[0] + Vector3.UP * 0.3)
 	var seat: Vector3 = (g.crew_spot() as Transform3D).origin
 	var base: Vector3 = g.global_position
 	var out := Vector3(seat.x - base.x, 0.0, seat.z - base.z)
@@ -407,18 +412,26 @@ func _holds(slot: Dictionary) -> GarrisonSoldier:
 	return s
 
 
-## Got where it was sent (GarrisonSoldier._arrive).
+## Got where it was sent (GarrisonSoldier._arrive). At a gun it takes it (the gun fires once it is in the seat: seated()).
 func arrived(s: GarrisonSoldier) -> void:
 	s.arrived_at = clock
 	var to_side := ""
 	if s.job == GarrisonSoldier.Job.GUN and is_instance_valid(s.gun):
 		s.gun.crew = s
-		to_side = gun_side[s.gun]
+		return
 	elif s.job == GarrisonSoldier.Job.DECK:
 		to_side = deck_slots[s.slot].side
 	elif s.job == GarrisonSoldier.Job.FIELD:
 		to_side = side_of(s.global_position)
 	arrivals.append({"side": s.spawn_side, "job": s.job, "to_side": to_side, "travel": clock - s.assigned_at,
+			"at": clock, "spawned": s.spawned_at, "fresh": is_equal_approx(s.assigned_at, s.spawned_at)})
+
+
+## In its gun's seat (GarrisonSoldier._climb_to_seat): the gun is manned.
+func seated(s: GarrisonSoldier) -> void:
+	if not is_instance_valid(s.gun):
+		return
+	arrivals.append({"side": s.spawn_side, "job": s.job, "to_side": gun_side[s.gun], "travel": clock - s.assigned_at,
 			"at": clock, "spawned": s.spawned_at, "fresh": is_equal_approx(s.assigned_at, s.spawned_at)})
 
 
@@ -509,7 +522,7 @@ func _stat_tick() -> void:
 		side_total[side] = side_total.get(side, 0) + 1
 		if _claimant(g) != null:
 			claimed += 1
-		if g.crew != null and is_instance_valid(g.crew) and g.crew.is_alive() and g.crew.arrived:
+		if g.crew != null and is_instance_valid(g.crew) and g.crew.is_alive() and g.crew.at_post():
 			manned += 1
 			side_manned[side] = side_manned.get(side, 0) + 1
 			if not stats.gun_manned.has(g.name):
@@ -537,7 +550,7 @@ func summary() -> Dictionary:
 	for g in guns:
 		if g.is_alive():
 			out.guns_alive += 1
-			if g.crew != null and is_instance_valid(g.crew) and g.crew.is_alive() and g.crew.arrived:
+			if g.crew != null and is_instance_valid(g.crew) and g.crew.is_alive() and g.crew.at_post():
 				out.guns += 1
 	for s in soldiers:
 		if not s.arrived:

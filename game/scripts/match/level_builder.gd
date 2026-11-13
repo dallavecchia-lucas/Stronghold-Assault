@@ -68,9 +68,18 @@ const MORTAR_MOUNT := "MOUNT_AA_S4_1"
 ## The gun decks' manned guns, on every gun mount: an Orbital Sentry Gun (a gatling) on each bay's first mount and an
 ## Arctic Sentinel Cannon on its second, this tall (m). Both have a side seat for their crew (Props.SEATS).
 const DECK_GUN_HEIGHT := 2.2
-## How far toward the parapet (+) from its mount each kind stands (m): the deck is 5.25 m deep, the parapet's inside
-## face 1.25 m in front of the mounts.
-const DECK_GUN_OUT := {"sentry": 0.1, "cannon": -0.9}
+## The deck guns stand on pedestals this tall (m; MountedGun.base_height), their swivel DECK_GUN_PIVOT over the turret's
+## foot: 4.8 m over the deck, 7.3 m in from the face's front (DECK_GUN_OUT). From there the line of fire clears the
+## parapet (1.1 m) and the rock that bulges out under the deck, straight out and 20 degrees either side, at every aim
+## down to the guns' lowest (MountedGun.PITCH_MIN, 40 degrees), and lands on the field about 5 m past the face (the
+## rock's foot is 2.2 m past it). Standing on the deck, 500 of those 672 lines (every gun, 0-40 degrees down every 10)
+## hit the parapet or the rock, every one at 40 degrees; a 3.1 m pedestal is the lowest that clears them all
+## (GarrisonShowcase checks it). The cannon's legs, up there, reach out over the parapet instead of through it.
+const DECK_GUN_BASE := 3.3
+const DECK_GUN_PIVOT := 1.5
+## How far toward the parapet (+) from its mount each gun stands (m): the deck is 5.25 m deep, the parapet's inside face
+## 1.25 m in front of the mounts; the pedestal's column (0.6 m round) stays clear of it.
+const DECK_GUN_OUT := {"sentry": 0.4, "cannon": 0.4}
 ## The roofs' turrets, which run themselves (nobody sits in them): a Sentinel Bastion (a gatling, MountedGun "bastion")
 ## on each bay's first roof mount and a Sentinel Spire (AA missiles, AATurret) on its second.
 const ROOF_BASTION_HEIGHT := 2.0
@@ -853,17 +862,16 @@ func _build_mounts(used: Array) -> void:
 				aa_turrets.append(t)
 
 
-## A manned gun on a gun-deck mount: the bay's first mount an Orbital Sentry Gun, its second an Arctic Sentinel Cannon.
-## Each stands as near the parapet as its body allows (DECK_GUN_OUT): the cannon's legs reach 2.1 m out from its middle
-## and so it stands back from the mount, clear of the parapet in front and the wall behind however it turns. Raiders on
-## the deck walk round it.
+## A manned gun on a gun-deck mount: the bay's first mount an Orbital Sentry Gun, its second an Arctic Sentinel Cannon,
+## up on a pedestal (DECK_GUN_BASE) near the parapet (DECK_GUN_OUT). Raiders on the deck walk round the pedestal.
 func _deck_gun(mount: Node3D, side: String, title: String) -> MountedGun:
 	var mg := MountedGun.new()
 	var sentry := String(mount.name).ends_with("_1")
 	mg.kind = "sentry" if sentry else "cannon"
 	mg.model_path = Props.ORBITAL_SENTRY_GUN if sentry else Props.ARCTIC_SENTINEL_CANNON
 	mg.model_height = DECK_GUN_HEIGHT
-	mg.pivot_height = 1.5
+	mg.base_height = DECK_GUN_BASE
+	mg.pivot_height = DECK_GUN_BASE + DECK_GUN_PIVOT
 	mg.station_name = title
 	var out: float = DECK_GUN_OUT[mg.kind]
 	_place_facing_out(mg, side, mount.global_position + mount.global_basis.z * out)

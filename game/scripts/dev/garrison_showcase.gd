@@ -33,6 +33,9 @@ var _last_print := -1.0
 var _snapping := false
 var _started := false
 var _fails := 0
+## A line of fire that meets something within this of the face's front (m, out from it) hit the stronghold: the rock's foot
+## is 2.2 m out.
+const WALL_ZONE := 3.0
 ## --attack=t: at t, ATTACK_WAVE Bear Riflemen come at the south gate (attack-move), to see the garrison fight.
 const ATTACK_WAVE := 16
 var attack_at := -1.0
@@ -162,28 +165,52 @@ func _plen(p: PackedVector3Array) -> float:
 	return l
 
 
+## --probe: every deck gun's lines of fire (_fire_lines), and where the worst one lands.
 func _probe() -> void:
-	var map := get_world_3d().navigation_map
-	var L := Garrison.NAV_LAYERS
-	var core := level.marker("CORE").global_position + Vector3.UP * 0.5
-	var pts := {"core": core}
-	for f in ["S", "E", "N", "W"]:
-		pts["spawn_" + f] = level.marker("SPAWN_%s%d" % [f, LevelBuilder.GATE_BAY]).global_position + Vector3.UP * 0.5
-		pts["junction_" + f] = level.marker("EXIT_B_%s%d" % [f, LevelBuilder.GATE_BAY]).global_position + Vector3.UP * 0.5
-	pts["spawn_S1"] = level.marker("SPAWN_S1").global_position + Vector3.UP * 0.5
-	pts["spawn_S7"] = level.marker("SPAWN_S7").global_position + Vector3.UP * 0.5
-	for k in pts:
-		var a: Vector3 = pts[k]
-		var n := LevelBuilder.nav_closest(map, a)
-		var p := NavigationServer3D.map_get_path(map, LevelBuilder.nav_closest(map, core), n, true, L)
-		print("PROBE %-12s at %s nav %s (off %.2f) path-from-core end %s gap %.2f" % [k, a, n, n.distance_to(a),
-				p[-1] if p.size() else Vector3.INF, p[-1].distance_to(n) if p.size() else INF])
-	# along the south corridor, every 2 m from the core to the hall
-	for z in range(10, 62, 2):
-		var q := Vector3(0, 0.5, z)
-		var n := LevelBuilder.nav_closest(map, q)
-		var p := NavigationServer3D.map_get_path(map, LevelBuilder.nav_closest(map, core), n, true, 1)
-		print("PROBE corridor z=%d nav %s reach %s" % [z, n, str(p.size() > 0 and p[-1].distance_to(n) < 0.5)])
+	var worst := {}
+	for r in _fire_lines():
+		var key: String = r.gun
+		if not worst.has(key) or r.out < worst[key].out:
+			worst[key] = r
+	for r in _fire_lines():
+		if not r.clear:
+			print("PROBE blocked %-10s yaw %+3d pitch -%d: %.1f m past the face, %.1f m up, %.1f m along it" % [r.gun, r.yaw,
+					r.pitch, r.out, r.y, r.along])
+	for k in worst:
+		var r: Dictionary = worst[k]
+		print("PROBE %-10s yaw %+3d pitch -%d: %s %.1f m past the face, %.1f m up" % [k, r.yaw, r.pitch,
+				"clear" if r.clear else "STRONGHOLD", r.out, r.y])
+
+
+## For every gun on the gun decks (on a pedestal), the line of fire from its muzzle straight out and 20 degrees either
+## side, level and at every 10 degrees down to its lowest aim (MountedGun.PITCH_MIN): where it first meets the world.
+## clear: it gets past the stronghold, rather than meeting the parapet, the deck or the rock under it (anything within
+## WALL_ZONE of the face's front; further out it is the field, or the scenery out on it: a tree, a rock).
+func _fire_lines() -> Array:
+	var out := []
+	var space := get_world_3d().direct_space_state
+	for g in garrison.guns:
+		if not (g is MountedGun) or g.base_height <= 0.0:
+			continue
+		var side := Garrison.side_of(g.global_position)
+		var face_dir: Vector3 = LevelBuilder.SIDES[side].dir
+		var pivot: Vector3 = g.to_global(Vector3(0.0, g.pivot_height, 0.0))
+		var reach := 2.0 if g.kind == "cannon" else 1.42
+		for yaw in [-20, 0, 20]:
+			var pitch := 0
+			while pitch <= int(rad_to_deg(-MountedGun.PITCH_MIN)):
+				var dir: Vector3 = g.global_basis * (Basis(Vector3.UP, deg_to_rad(yaw)) * Basis(Vector3.RIGHT, deg_to_rad(-pitch)) * Vector3.FORWARD)
+				var from: Vector3 = pivot + dir * reach
+				var q := PhysicsRayQueryParameters3D.create(from, from + dir * 200.0, GameConfig.LAYER_WORLD)
+				var hit := space.intersect_ray(q)
+				if not hit.is_empty():
+					var p: Vector3 = hit.position
+					var past := p.dot(face_dir) - LevelBuilder.FACE_DIST
+					var on_field := past > WALL_ZONE
+					out.append({"gun": String(g.name), "yaw": yaw, "pitch": pitch, "clear": on_field, "out": past, "y": p.y,
+							"along": p.dot(face_dir.cross(Vector3.UP)), "from": from, "to": p})
+				pitch += 10
+	return out
 
 func _physics_process(_delta: float) -> void:
 	if not _started or _snapping:
@@ -311,6 +338,16 @@ func _checks() -> void:
 		if g.is_manned() and g.crew != null and g.has_method("has_seat") and g.has_seat():
 			var gap: float = g.crew.global_position.distance_to((g.crew_spot() as Transform3D).origin)
 			_check(gap < 1.2, "%s's crew sits in its seat" % g.name)
+	var lines := _fire_lines()
+	var blocked := lines.filter(func(r): return not r.clear)
+	var nearest := 1e9
+	for r in lines:
+		if r.clear:
+			nearest = minf(nearest, r.out)
+	_check(not lines.is_empty() and blocked.is_empty(), "every deck gun fires clear of the stronghold, level to %d degrees down (%d lines, %d blocked%s)" % [
+			int(rad_to_deg(-MountedGun.PITCH_MIN)), lines.size(), blocked.size(),
+			"" if blocked.is_empty() else ": %s yaw %d pitch -%d" % [blocked[0].gun, blocked[0].yaw, blocked[0].pitch]])
+	print("GARRISON   deck guns: the steepest shot lands %.1f m past the face's front" % nearest)
 	var on_deck := garrison.soldiers.filter(func(s): return s.job == GarrisonSoldier.Job.DECK)
 	_check(on_deck.size() <= garrison.deck_slots.size(), "the decks hold no more than %d" % garrison.deck_slots.size())
 	var field := garrison.soldiers.filter(func(s): return s.job == GarrisonSoldier.Job.FIELD and s.arrived)
@@ -343,6 +380,10 @@ func _snap_set(at: float) -> void:
 	get_tree().paused = true
 	for name in _plan.get(at, view_names):
 		var v: Array = _view(name)
+		if v.is_empty():
+			print("GARRISON shot %s: nothing to see" % name)
+			continue
+		_show_fire(name == "fire_lines")
 		_look(v[0], v[1])
 		await get_tree().process_frame
 		await RenderingServer.frame_post_draw
@@ -352,6 +393,25 @@ func _snap_set(at: float) -> void:
 	RenderingServer.render_loop_enabled = false
 	get_tree().paused = false
 	_snapping = false
+
+
+## The south deck guns' lines of fire straight out at 20 and 40 degrees down, from the muzzle to where each lands, drawn
+## as thin bright rods for the fire_lines still (green: clear of the stronghold; red: it hits it).
+var _fire_rods: Array[Node3D] = []
+
+
+func _show_fire(on: bool) -> void:
+	if on and _fire_rods.is_empty():
+		for r in _fire_lines():
+			if r.yaw != 0 or not (r.pitch in [20, 40]) or not String(r.gun).begins_with("MG_S"):
+				continue
+			var rod := Mats.box_mesh(Vector3(0.09, 0.09, r.from.distance_to(r.to)), Vector3.ZERO,
+					Mats.unshaded(Color(0.25, 1.0, 0.35) if r.clear else Color(1.0, 0.2, 0.15)))
+			add_child(rod)
+			rod.look_at_from_position((r.from + r.to) * 0.5, r.to)
+			_fire_rods.append(rod)
+	for rod in _fire_rods:
+		rod.visible = on
 
 
 func _look(from: Vector3, at: Vector3) -> void:
@@ -364,6 +424,19 @@ func _look(from: Vector3, at: Vector3) -> void:
 ## x = -4. The other faces are the same turned round the middle.
 func _view(name: String) -> Array:
 	match name:
+		"fire_lines":
+			# The south deck's lines of fire (_show_fire), seen from out in front and to the east, the face in profile.
+			return [Vector3(34, 17, 100), Vector3(-8, 6.5, 76)]
+		"climber":
+			# A soldier on its way up a gun's pedestal (empty if none is).
+			for c in garrison.soldiers:
+				if c.get("_up") and not c.get("_seated") and is_instance_valid(c.gun):
+					# From along the deck (the ladder is up the pedestal's back, toward the bunker), a little toward the wall.
+					var g: Node3D = c.gun
+					var back: Vector3 = g.global_basis.z
+					return [g.global_position + g.global_basis.x * 6.5 + back * 2.2 + Vector3.UP * 3.6,
+							g.global_position + back * 0.7 + Vector3.UP * 2.2]
+			return []
 		"overview":
 			return [Vector3(175, 120, 250), Vector3(-5, 0, 45)]
 		"overview_high":

@@ -141,7 +141,11 @@ func get_camera() -> Camera3D:
 
 ## True if it can fire on its own: it needs no crew, or one stands at it.
 func is_manned() -> bool:
-	return not needs_crew or possessed or (crew != null and is_instance_valid(crew) and crew.is_alive())
+	if not needs_crew or possessed:
+		return true
+	if crew == null or not is_instance_valid(crew) or not crew.is_alive():
+		return false
+	return not crew.has_method("at_post") or crew.at_post()
 
 
 func has_seat() -> bool:
