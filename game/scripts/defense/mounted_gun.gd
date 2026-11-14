@@ -40,6 +40,10 @@ const CANNON_PLAYER_DAMAGE := 80.0
 const CANNON_SPLASH := 30.0
 const CANNON_BLAST := 3.0
 const CANNON_HEAT := 0.16
+## The cannon is the stronghold's long gun too (there is none on the roofs): past AI_RANGE and out to CANNON_RANGE its
+## crew lobs a shell every CANNON_LONG_INTERVAL, the barrel raised for the range.
+const CANNON_RANGE := 150.0
+const CANNON_LONG_INTERVAL := 6.0
 ## The bastion's flak: a shell every FLAK_INTERVAL, FLAK_DAMAGE where it bursts; how high it elevates (rad).
 const FLAK_INTERVAL := 0.42
 const FLAK_DAMAGE := 20.0
@@ -500,8 +504,13 @@ func _ai_update(delta: float) -> bool:
 		_rig.watch = aim
 	# A gatling's barrels are run up while it comes onto its target (and left turning through a burst's pauses).
 	_spin_up(not overheated)
-	if absf(ang.x - _yaw) < 0.06 and absf(ang.y - _pitch) < 0.06 and heat < 0.8:
-		return _try_fire(false)
+	# (A shell that has to fall onto its mark wants the barrel laid closer than a round that flies straight.)
+	var close := 0.012 if kind == "cannon" else 0.06
+	if absf(ang.x - _yaw) < close and absf(ang.y - _pitch) < close and heat < 0.8:
+		var fired := _try_fire(false)
+		if fired and kind == "cannon" and global_position.distance_to(_target.global_position) > AI_RANGE:
+			_fire_cd = CANNON_LONG_INTERVAL  # a long shot: laid with care, one at a time
+		return fired
 	return false
 
 
@@ -515,8 +524,13 @@ func _cannon_solution(aim: Vector3) -> Vector2:
 		var e := CannonShell.elevation_for(flat, aim.y - pivot.y)
 		if v is Vector3:
 			aim = Combat.aim_point(_target) + (v as Vector3) * CannonShell.flight_time(flat, e)
+	# The shell starts at the muzzle, a barrel's length out along the shot: the elevation is worked out from there.
+	var reach := absf(_muzzle.position.z)
 	var flat := Vector2(aim.x - pivot.x, aim.z - pivot.z).length()
-	return Vector2(_angles_to(aim).x, CannonShell.elevation_for(flat, aim.y - pivot.y))
+	var e := CannonShell.elevation_for(flat, aim.y - pivot.y)
+	for _i in 2:
+		e = CannonShell.elevation_for(flat - reach * cos(e), aim.y - pivot.y - reach * sin(e))
+	return Vector2(_angles_to(aim).x, e)
 
 
 ## Returns (yaw, pitch) needed to point the barrel at a world position.
@@ -529,7 +543,7 @@ func _angles_to(point: Vector3) -> Vector2:
 
 func _find_target() -> Node3D:
 	var best: Node3D = null
-	var best_d := AI_RANGE
+	var best_d := CANNON_RANGE if kind == "cannon" else AI_RANGE
 	if kind == "bastion":
 		# Flak: an aircraft before anything on the ground.
 		for a in get_tree().get_nodes_in_group("air_units"):

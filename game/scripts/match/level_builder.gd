@@ -64,7 +64,6 @@ const SIDES := {
 }
 ## Rifle posts on the gun decks: [side, bay] (the bays either side of the gate bay, and the north's middle one).
 const RIFLE_POSTS := [["south", 3], ["south", 5], ["east", 3], ["west", 5], ["north", 4], ["east", 5]]
-const MORTAR_MOUNT := "MOUNT_AA_S4_1"
 ## The gun decks' manned guns, on every gun mount: an Orbital Sentry Gun (a gatling) on each bay's first mount and an
 ## Arctic Sentinel Cannon on its second, this tall (m). Both have a side seat for their crew (Props.SEATS).
 const DECK_GUN_HEIGHT := 2.2
@@ -784,18 +783,6 @@ func _build_stations() -> Array:
 		var mg := _deck_gun(mount, side, "Sentry · %s Gate" % side.capitalize())
 		mg.name = "MG_%s" % side
 		stations.append(mg)
-
-	var mortar := _marker(MORTAR_MOUNT)
-	used.append(String(mortar.name))
-	var art := ArtilleryStation.new()
-	art.name = "Artillery"
-	art.station_name = "Cannon · South Roof"
-	art.map_half = map_half
-	art.spotter_home = SIDES.south.dir * (FACE_DIST + 30.0)
-	art.position = mortar.global_position
-	add_child(art)
-	stations.append(art)
-	_nav_plug(art.transform.translated_local(Vector3.UP * 0.8), Vector3(2.6, 1.6, 2.6))
 
 	# Riflemen on the gun decks, between a bay's two gun mounts and up against the parapet.
 	for i in RIFLE_POSTS.size():

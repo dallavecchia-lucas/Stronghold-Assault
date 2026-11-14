@@ -66,7 +66,6 @@ const AUDIT_EVERY := 0.5
 ## How far from a gun's middle its crew walks to beside the seat (m): clear of the navmesh block round a deck gun or a
 ## roof turret (1.4 m across), round the mortar (2.6 m).
 const SEAT_CLEAR_GUN := 1.4
-const SEAT_CLEAR_MORTAR := 2.0
 const DECK_TO_GUN := 45.0
 const NAV_LAYERS := 1 | LevelBuilder.NAV_INFILTRATORS | LevelBuilder.NAV_SQUAD
 
@@ -112,7 +111,7 @@ func _ready() -> void:
 		controls.append({"player": k, "side": SIDE_ORDER[k], "priority": Priority.BASE, "cd": 0.0})
 	# The guns fall silent at once: they fire on their own again as the crews get to them.
 	for s in level.stations:
-		if s.station_kind in ["mg", "artillery"]:
+		if s.station_kind == "mg":
 			guns.append(s)
 			gun_side[s] = side_of(s.global_position)
 			s.needs_crew = true
@@ -366,7 +365,7 @@ func _beside_seat(g) -> Vector3:
 	var seat: Vector3 = (g.crew_spot() as Transform3D).origin
 	var base: Vector3 = g.global_position
 	var out := Vector3(seat.x - base.x, 0.0, seat.z - base.z)
-	var clear := SEAT_CLEAR_MORTAR if g.station_kind == "artillery" else SEAT_CLEAR_GUN
+	var clear := SEAT_CLEAR_GUN
 	if out.length() < 0.01:
 		out = g.global_basis.z
 	var beside := base + out.normalized() * maxf(out.length(), clear) + Vector3.UP * 0.3
