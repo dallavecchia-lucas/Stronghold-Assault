@@ -38,6 +38,8 @@ const BUSH_TALLEST := 2.2
 ## destroying all of them. Each one's health, and the box that takes hits round its hood.
 const VENT_HP := 2500.0
 const VENT_SIZE := Vector3(3.6, 2.4, 3.0)
+## The hot-air vent model standing over every objective vent.
+const VENT_MODEL := "res://assets/structures/hot_air_vent/hot_air_vent.glb"
 ## Blast door filling an exit C tunnel portal (between the concrete jambs, under the lintel).
 const DOOR_SIZE := Vector3(3.0, 2.8, 0.4)
 ## Bay whose ground tunnel is the side's gate (the middle one of the face's seven); every other tunnel is welded shut.
@@ -540,15 +542,13 @@ func _build_vents() -> void:
 		vent.add_child(visual)
 		nav_region.add_child(vent)
 		if hood:
-			# The vent's own box takes the hits now, not the hood's trimesh.
-			for c in hood.get_children():
-				if c is StaticBody3D:
-					c.free()
-			hood.reparent(visual)
+			# The stronghold's own hood is replaced by the hot-air vent model (the vent's box takes the hits).
+			hood.free()
+		visual.add_child(_vent_model())
 		vent.visual = visual
 		vent.visual_half_height = VENT_SIZE.y * 0.5
 		var plume := VentPlume.new()
-		plume.position.y = 0.4
+		plume.position.y = 0.8
 		vent.add_child(plume)
 		var smoke := WreckSmoke.new()
 		smoke.size = 1.6
@@ -556,6 +556,17 @@ func _build_vents() -> void:
 		vent.add_child(smoke)
 		vent.destroyed.connect(func(v): _on_vent_destroyed(v, plume, smoke))
 		vents.append(vent)
+
+
+## The hot-air vent model, scaled to fill the vent's box with its base on the roof (VENT_SIZE).
+func _vent_model() -> Node3D:
+	var root := Props.instance(VENT_MODEL, VENT_SIZE.y + 0.4)
+	var m := root.get_child(0) as Node3D
+	var box := Props.local_aabb(root)
+	# Centre it over the marker and stand it on the roof (the box's bottom, 2 m under the marker).
+	m.position -= Vector3(box.get_center().x, box.position.y, box.get_center().z)
+	root.position.y = -VENT_SIZE.y + 0.4
+	return root
 
 
 func _on_vent_destroyed(_v: Structure, plume: VentPlume, smoke: WreckSmoke) -> void:
