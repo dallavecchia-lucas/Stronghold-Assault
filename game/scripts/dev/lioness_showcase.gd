@@ -389,7 +389,7 @@ func _line_step() -> void:
 		_say("Firing lines off", "T (or the toggle on the panel) turns them off: sent on, they go as a pack")
 		_check(not commander.line_formation, "line: T turns firing lines off")
 	if _phase_at(18.3, "key_off2"):
-		_check(controller.get("_line_button").visible and controller.get("_line_button").text.contains("OFF"), "line: the panel's toggle says OFF")
+		_check(controller.hud.skill_shown("lines") and controller.mode_state("lines") == "OFF", "line: the panel's toggle says OFF")
 		_keycap.visible = false
 		_move_cursor(_screen(PACK_TO), 18.3, 19.0)
 	if _phase_at(19.2, "pack"):

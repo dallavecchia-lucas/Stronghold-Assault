@@ -71,5 +71,5 @@ func _draw() -> void:
 	var lit := talking and fmod(_t * 2.5, 1.0) < 0.5
 	draw_circle(ear + Vector2(-s * 0.06, s * 0.14), s * 0.022, UIKit.DANGER if lit else Color(0.3, 0.1, 0.1))
 	var font := get_theme_default_font()
-	var fs := clampi(int(s * 0.11), 8, 13)
+	var fs := clampi(int(s * 0.11), AttackerHUD.FONT, 13)
 	draw_string(font, Vector2(0, size.y - 5.0), "COMMAND", HORIZONTAL_ALIGNMENT_CENTER, size.x, fs, Color(0.85, 0.8, 0.95))

@@ -2,7 +2,7 @@ class_name HudSlot
 extends Control
 ## One square tile of the attacker's HUD (AttackerHUD): a unit's portrait (UnitPortraits; its initials until the portrait
 ## is in), or a skill's glyph (HudGlyph), with
-##   key_text      a key badge at the bottom (the hotkey)
+##   key_text      a key badge at the bottom (the hotkey); key_lit false greys it (the key fires another skill first)
 ##   corner_text   a count at the top right
 ##   center_text   big in the middle, over everything (a cooldown's seconds)
 ##   cooldown      the share of a cooldown still to run: a dark sweep, clockwise from twelve o'clock
@@ -26,6 +26,7 @@ var glyph_color := Color(0.92, 0.96, 1.0)
 var initials := ""
 var tint := BG
 var key_text := ""
+var key_lit := true
 var corner_text := ""
 var center_text := ""
 var cooldown := 0.0
@@ -73,7 +74,7 @@ func _draw() -> void:
 			_text(font, Vector2(0.0, size.y * 0.5), initials, int(size.y * 0.34), Color(1, 1, 1, 0.8), HORIZONTAL_ALIGNMENT_CENTER, true)
 	if disabled:
 		draw_rect(r, Color(0, 0, 0, 0.55))
-	if cooldown > 0.0:
+	if cooldown > 0.02:
 		_sweep(r.get_center(), r.size.length() * 0.5, clampf(cooldown, 0.0, 1.0))
 	if progress >= 0.0:
 		var bar := Rect2(inner.position.x, inner.end.y - 5.0, inner.size.x, 5.0)
@@ -83,25 +84,29 @@ func _draw() -> void:
 	if empty:
 		border = Color(BORDER, 0.35)
 	draw_rect(r.grow(-0.5), border, false, 2.0 if active else 1.0)
-	var fs := clampi(int(size.y * 0.24), 9, 15)
+	var fs := clampi(int(size.y * 0.24), AttackerHUD.FONT, 15)
 	if corner_text != "":
 		_text(font, Vector2(size.x - 3.0, 2.0), corner_text, fs, Color.WHITE, HORIZONTAL_ALIGNMENT_RIGHT)
 	if center_text != "":
-		_text(font, Vector2(0.0, size.y * 0.5), center_text, clampi(int(size.y * 0.3), 10, 22), Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, true)
+		_text(font, Vector2(0.0, size.y * 0.5), center_text, clampi(int(size.y * 0.3), AttackerHUD.FONT, 22), Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, true)
 	if key_text != "":
-		var ks := clampi(int(size.y * 0.26), 9, 14)
+		var ks := clampi(int(size.y * 0.24), AttackerHUD.FONT, 14)
 		var tw := font.get_string_size(key_text, HORIZONTAL_ALIGNMENT_LEFT, -1, ks).x
 		var badge := Rect2(Vector2((size.x - tw) * 0.5 - 3.0, size.y - ks - 4.0), Vector2(tw + 6.0, ks + 3.0))
 		if progress >= 0.0:
 			badge.position.y -= 5.0
 		draw_rect(badge, Color(0.02, 0.03, 0.05, 0.85))
-		draw_rect(badge, Color(accent, 0.6), false, 1.0)
-		_text(font, Vector2(badge.position.x, badge.position.y + 1.0), key_text, ks, UIKit.WARN if not disabled else Color(0.7, 0.7, 0.7),
-				HORIZONTAL_ALIGNMENT_CENTER, false, badge.size.x)
+		draw_rect(badge, Color(accent, 0.6 if key_lit else 0.2), false, 1.0)
+		var key_col := UIKit.WARN if key_lit and not disabled else Color(0.62, 0.64, 0.68)
+		_text(font, Vector2(badge.position.x, badge.position.y + 1.0), key_text, ks, key_col, HORIZONTAL_ALIGNMENT_CENTER, false, badge.size.x)
 
 
 ## The remaining share `frac` of a cooldown: a dark pie from twelve o'clock round clockwise (the tile clips it square).
 func _sweep(c: Vector2, radius: float, frac: float) -> void:
+	if frac >= 0.99:
+		# All of it (the pie would close on itself).
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, 0.62))
+		return
 	var pts := PackedVector2Array([c])
 	var steps := maxi(int(48 * frac), 2)
 	for k in steps + 1:
