@@ -16,6 +16,11 @@ extends Node3D
 ##   mixed    the defaults, but the east spawn's player sets FIELD and a second player moves onto the south, set to
 ##            FIELD, while the south's own stays on BASE.
 ## --until=t runs that long (s of game time) and quits; --test checks the order of things and prints PASS / FAIL.
+## --film=view:from:to films one view (see _view) from `from` to `to` s of game time, for --write-movie: nothing is
+## drawn before `from` (the run up to it goes at the simulation's pace), and it prints the frames to keep for
+## tools/video/cut_showcase.py (VIDEO START / END). With --attack= before it, that is the gun decks at work:
+##   godot --path game --resolution 960x540 --write-movie decks.avi --fixed-fps 30 res://scenes/dev/garrison_showcase.tscn \
+##       -- --attack=78 --film=south_deck_front:80:90 --lighting=standard > decks.log
 
 var level: LevelBuilder
 var garrison: Garrison
@@ -41,6 +46,12 @@ const CLEAR_TO := 30
 ## --attack=t: at t, ATTACK_WAVE Bear Riflemen come at the south gate (attack-move), to see the garrison fight.
 const ATTACK_WAVE := 16
 var attack_at := -1.0
+## --film: the view filmed, from when to when (s of game time), and the movie's frame count as it goes.
+var _film := ""
+var _film_from := 0.0
+var _film_to := 0.0
+var _film_on := false
+var _frame := 0
 var _attackers: Node3D
 var _wave: Array = []
 var _deaths_before := 0
@@ -69,6 +80,12 @@ func _ready() -> void:
 				_plan[t] = Array(part.get_slice(":", 1).split("+"))
 		elif arg.begins_with("--attack="):
 			attack_at = arg.get_slice("=", 1).to_float()
+		elif arg.begins_with("--film="):
+			var parts := arg.get_slice("=", 1).split(":")
+			_film = parts[0]
+			_film_from = parts[1].to_float()
+			_film_to = parts[2].to_float()
+			until = _film_to
 		elif arg == "--test":
 			test = true
 	if shots_dir != "":
@@ -95,6 +112,11 @@ func _ready() -> void:
 	_plain_sky()
 	if shots_dir != "":
 		_stills_setup()
+	if _film != "":
+		RenderingServer.render_loop_enabled = false  # nothing to see until the film starts
+		_stills_setup()
+		var v: Array = _view(_film)
+		_look(v[0], v[1])
 	print("GARRISON map=%s scenario=%s until=%.0f" % [GameConfig.map, scenario, until])
 	level.navigation_ready.connect(_start, CONNECT_ONE_SHOT)
 
@@ -232,6 +254,10 @@ func _physics_process(_delta: float) -> void:
 	_last_print = t
 	if attack_at >= 0.0 and t >= attack_at and _wave.is_empty():
 		_send_wave()
+	if _film != "" and not _film_on and t >= _film_from:
+		_film_on = true
+		RenderingServer.render_loop_enabled = true
+		print("VIDEO START frame %d" % (_frame + 1))  # (this tick's frame is the first drawn; the next is sure to be)
 	if shots_dir != "" and not shot_times.is_empty():
 		RenderingServer.render_loop_enabled = t >= shot_times[0] - 0.1
 		if t >= shot_times[0] and not _snapping:
@@ -240,8 +266,14 @@ func _physics_process(_delta: float) -> void:
 		_finish()
 
 
+func _process(_delta: float) -> void:
+	_frame += 1
+
+
 func _finish() -> void:
 	_started = false
+	if _film != "":
+		print("VIDEO END frame %d" % (_frame - 1))
 	print("GARRISON report (t=%.1f)" % garrison.clock)
 	if not _wave.is_empty():
 		var left := _wave.filter(func(u): return is_instance_valid(u) and u.is_alive()).size()

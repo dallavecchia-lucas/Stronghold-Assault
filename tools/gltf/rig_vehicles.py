@@ -79,6 +79,10 @@ class Model:
         lo, hi = pos.min(0), pos.max(0)
         self.scale = length / (hi[2] - lo[2])
         pos = (pos - np.array([(lo[0] + hi[0]) * 0.5, lo[1], (lo[2] + hi[2]) * 0.5])) * self.scale
+        self._index(pos, nrm, uv, tris)
+
+    def _index(self, pos, nrm, uv, tris):
+        """Takes the mesh in the game's frame: finds its connected pieces and their bounds."""
         self.pos, self.nrm, self.uv = list(pos), list(nrm), list(uv)
         self.comp = components(pos, tris)
         self.tris = [list(t) for t in tris]
@@ -331,7 +335,7 @@ BUILD = {"fighter_jet": fighter_jet, "drone": drone, "hover_tank": hover_tank, "
 
 # ----------------------------------------------------------------------------------------------- output
 
-def write(js, binary, m, nodes, marks, root_name, size, out):
+def write(js, binary, m, nodes, marks, root_name, size, out, generator="tools/gltf/rig_vehicles.py"):
     pos, nrm, uv = np.array(m.pos), np.array(m.nrm), np.array(m.uv)
     world = {"": np.eye(4)}
     for name, parent, pivot, rot in nodes:
@@ -349,6 +353,8 @@ def write(js, binary, m, nodes, marks, root_name, size, out):
 
     def add_mesh(name):
         sel = [t for t, o in zip(m.tris, m.owner) if o == name]
+        if not sel:
+            return None  # a pivot with no mesh of its own
         t = np.array(sel, dtype=np.int64)
         used = np.unique(t)
         remap = -np.ones(len(pos), dtype=np.int64)
@@ -375,8 +381,11 @@ def write(js, binary, m, nodes, marks, root_name, size, out):
     add_node("Body", "", {"name": "Body", "mesh": add_mesh("")})
     for name, parent, _, _ in nodes:
         lm = local(name, parent)
-        add_node(name, parent, {"name": name, "mesh": add_mesh(name), "translation": [float(v) for v in lm[:3, 3]],
-                                "rotation": [float(v) for v in mat_to_quat(lm[:3, :3])]})
+        node = {"name": name, "translation": [float(v) for v in lm[:3, 3]], "rotation": [float(v) for v in mat_to_quat(lm[:3, :3])]}
+        mesh = add_mesh(name)
+        if mesh is not None:
+            node["mesh"] = mesh
+        add_node(name, parent, node)
     for name, parent, p, d in marks:
         w = np.eye(4)
         w[:3, :3] = marker_rotation(d)
@@ -393,7 +402,7 @@ def write(js, binary, m, nodes, marks, root_name, size, out):
         js.pop(k, None)
     binary = compact(js, binary)
     binary = shrink_images(js, binary, size, 85)
-    js.setdefault("asset", {})["generator"] = "tools/gltf/rig_vehicles.py"
+    js.setdefault("asset", {})["generator"] = generator
     write_glb(out, js, binary)
 
 
