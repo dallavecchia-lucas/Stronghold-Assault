@@ -27,8 +27,12 @@ func _ready() -> void:
 	GameConfig.player_side = GameConfig.PlayerSide.ATTACKER
 	game = (load("res://scenes/match.tscn") as PackedScene).instantiate()
 	add_child(game)
+	var frames := 0
 	while not game.started:
 		await get_tree().process_frame
+		frames += 1
+		if frames % 20 == 0:
+			print("HUD SHOTS waiting for the navmesh, frame %d (%.1f s a frame)" % [frames, get_process_delta_time()])
 	print("HUD SHOTS match started")
 	await _shots()
 	print("HUD SHOTS done -> %s" % out_dir)
@@ -60,6 +64,8 @@ func _shots() -> void:
 	while UnitPortraits.get_texture(UnitTypes.ORDER[-1], "mug") == null and waited < PORTRAIT_WAIT:
 		await get_tree().process_frame
 		waited += 1
+		if waited % 20 == 0:
+			print("HUD SHOTS rendering the portraits, frame %d" % waited)
 	print("HUD SHOTS portraits after %d frames" % waited)
 
 	# A mixed selection, the production line, a warning.
