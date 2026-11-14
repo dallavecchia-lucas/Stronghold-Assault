@@ -1,7 +1,8 @@
 class_name MatchUI
 extends CanvasLayer
 ## HUD shared by both sides: vent/gate status, match timer, alert feed, pause menu
-## and the end-of-match screen.
+## and the end-of-match screen. The attacking player's own HUD (AttackerHUD) shows the vents, gates and clock itself and
+## takes the alerts on its warnings panel (attach_attacker_hud).
 
 signal resumed
 
@@ -9,6 +10,9 @@ var level: LevelBuilder
 var match_node: Node
 
 var _timer_label: Label
+var _top: Control
+## Where the alerts go instead of the feed at the top (the attacker's warnings panel): (text, colour, place).
+var _alert_sink := Callable()
 var _vent_bar: ProgressBar
 var _vent_label: Label
 var _gate_bars := {}
@@ -26,6 +30,7 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 
 	var top := UIKit.panel()
+	_top = top
 	top.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
 	top.position.y = 8
 	top.grow_horizontal = Control.GROW_DIRECTION_BOTH
@@ -49,18 +54,18 @@ func _ready() -> void:
 		row.add_child(gb)
 		_gate_bars[side] = bar
 		var gate: Structure = level.gates[side]
-		gate.damaged.connect(func(_g): _alert_once("gate_" + side, "%s Gate under attack!" % side.capitalize(), UIKit.WARN))
-		gate.destroyed.connect(func(_g): alert("%s Gate has been breached! Rebuilt in %d min" % [side.capitalize(), int(gate.rebuild_time / 60.0)], UIKit.DANGER))
-		gate.rebuilt.connect(func(_g): alert("%s Gate rebuilt" % side.capitalize(), UIKit.GOOD))
+		gate.damaged.connect(func(_g): _alert_once("gate_" + side, "%s Gate under attack!" % side.capitalize(), UIKit.WARN, gate.global_position))
+		gate.destroyed.connect(func(_g): alert("%s Gate has been breached! Rebuilt in %d min" % [side.capitalize(), int(gate.rebuild_time / 60.0)], UIKit.DANGER, gate.global_position))
+		gate.rebuilt.connect(func(_g): alert("%s Gate rebuilt" % side.capitalize(), UIKit.GOOD, gate.global_position))
 	for v in level.vents:
-		v.damaged.connect(func(_v): _alert_once("vents", "The air vents are under attack!", UIKit.DANGER))
-		v.destroyed.connect(func(_v): alert("%s destroyed! %d left" % [v.display_name, level.vents_left()], UIKit.DANGER))
+		v.damaged.connect(func(_v): _alert_once("vents", "The air vents are under attack!", UIKit.DANGER, v.global_position))
+		v.destroyed.connect(func(_v): alert("%s destroyed! %d left" % [v.display_name, level.vents_left()], UIKit.DANGER, v.global_position))
 	# The helipads: good news for one side is bad news for the other.
 	var defending := GameConfig.player_side == GameConfig.PlayerSide.DEFENDER
 	for b in level.bases:
 		b.sabotaged.connect(func(_b): alert("%s sabotaged!%s" % [b.display_name, "" if defending else " Retake it"],
-				UIKit.GOOD if defending else UIKit.DANGER))
-		b.retaken.connect(func(_b): alert("%s retaken by the attackers" % b.display_name, UIKit.WARN if defending else UIKit.GOOD))
+				UIKit.GOOD if defending else UIKit.DANGER, b.global_position))
+		b.retaken.connect(func(_b): alert("%s retaken by the attackers" % b.display_name, UIKit.WARN if defending else UIKit.GOOD, b.global_position))
 
 	_timer_label = UIKit.label("10:00", 26)
 	_timer_label.custom_minimum_size.x = 90
@@ -97,7 +102,18 @@ func _process(delta: float) -> void:
 	_timer_label.text = "%d:%02d" % [int(t) / 60, int(t) % 60]
 
 
-func alert(text: String, color := Color.WHITE) -> void:
+## The attacking player's HUD takes over: the status bar at the top goes (it shows the vents, the gates and the clock
+## itself) and the alerts go to `sink` (text, colour, place) instead of the feed.
+func attach_attacker_hud(sink: Callable) -> void:
+	_alert_sink = sink
+	_top.visible = false
+
+
+## An alert in the feed at the top; `at`: where it happened (the attacker's warnings panel rings it on the minimap).
+func alert(text: String, color := Color.WHITE, at := Vector3.INF) -> void:
+	if _alert_sink.is_valid():
+		_alert_sink.call(text, color, at)
+		return
 	var l := UIKit.label(text, 20, color)
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_alerts.add_child(l)
@@ -109,11 +125,11 @@ func alert(text: String, color := Color.WHITE) -> void:
 	tw.tween_callback(l.queue_free)
 
 
-func _alert_once(key: String, text: String, color: Color) -> void:
+func _alert_once(key: String, text: String, color: Color, at := Vector3.INF) -> void:
 	if _clock - float(_alert_cooldowns.get(key, -100.0)) < 10.0:
 		return
 	_alert_cooldowns[key] = _clock
-	alert(text, color)
+	alert(text, color, at)
 
 
 # ---------------------------------------------------------------- pause / end

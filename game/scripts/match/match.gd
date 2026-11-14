@@ -88,6 +88,7 @@ func _ready() -> void:
 		var ac := AttackerController.new()
 		ac.level = level
 		ac.commander = commander
+		ac.match_ui = ui
 		player_controller = ac
 	ui.resumed.connect(player_controller.restore_mouse)
 
@@ -118,7 +119,7 @@ func _start() -> void:
 	add_child(player_controller)
 	if ai_attacker:
 		add_child(ai_attacker)
-	var side_text := "Hold the stronghold!" if GameConfig.player_side == GameConfig.PlayerSide.DEFENDER else "Break through and destroy the Keep!"
+	var side_text := "Hold the stronghold!" if GameConfig.player_side == GameConfig.PlayerSide.DEFENDER else "Break through and destroy the air vents on the roofs!"
 	ui.alert(side_text, UIKit.ACCENT)
 	if GameConfig.autotest != "":
 		_autotest_setup()

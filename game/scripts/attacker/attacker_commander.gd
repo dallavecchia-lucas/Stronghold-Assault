@@ -7,7 +7,11 @@ extends Node
 ## send these over the network to whoever runs the match.
 ##
 ##   {"type": "spawn", "unit": "rifleman", "spawn": 0}   a forward helipad's spawn point only while
-##               the attackers hold it (spawn_open)
+##               the attackers hold it (spawn_open); the unit is there at once (the CPU attacker)
+##   {"type": "produce", "unit": "rifleman", "spawn": 0}   the attacking player's production line: paid for now, it
+##               waits its turn and is built in UnitTypes.build_time, one at a time, then comes out at that spawn point (at
+##               the main one if the helipad has been lost meanwhile). Returns 1 if it went on the line.
+##   {"type": "cancel", "index": 3}   takes entry 3 off the production line and gives its credits back
 ##   {"type": "move", "units": [ids], "pos": Vector3, "attack": bool}
 ##   {"type": "attack", "units": [ids], "target": NodePath}   rams ramming at a ground gate charge
 ##               it, as many as fit in front of its doorway; the rest call their ram off (RamCharge)
@@ -101,6 +105,11 @@ const SKILL_COMMANDS := ["cluster", "bombard", "setup", "strafe", "bomb", "smoke
 
 var supply := 250.0
 var income := BASE_INCOME
+## The production line ("produce"): [{"unit": type_id, "spawn": spawn point}], the front one being built; build_left of
+## build_total seconds to go on it. Units on the line count toward UNIT_CAP; with the army at its cap the front one waits.
+var production: Array = []
+var build_left := 0.0
+var build_total := 0.0
 var units := {}  # id -> AttackerUnit
 var spawn_points: Array[Vector3] = []
 ## Per spawn point: the AttackerBase it belongs to, or null (always open). LevelBuilder.spawn_bases;
@@ -133,6 +142,7 @@ func _physics_process(delta: float) -> void:
 
 func _process(delta: float) -> void:
 	supply += income_rate() * delta
+	_production_tick(delta)
 	_scout_cd -= delta
 	if _scout_cd <= 0.0:
 		_scout_cd = 0.5
@@ -164,6 +174,18 @@ func can_afford(type_id: String) -> bool:
 	return supply >= UnitTypes.DATA[type_id].cost and units.size() < UNIT_CAP
 
 
+## True if `type_id` can go on the production line now: the credits for it, and room in the army counting the line.
+func can_queue(type_id: String) -> bool:
+	return supply >= UnitTypes.DATA[type_id].cost and units.size() + production.size() < UNIT_CAP
+
+
+## How far along the front of the production line is (0 to 1; 0 with nothing on it).
+func build_progress() -> float:
+	if production.is_empty() or build_total <= 0.0:
+		return 0.0
+	return clampf(1.0 - build_left / build_total, 0.0, 1.0)
+
+
 ## Applies a command. Returns the new unit id for spawns, 0 otherwise / on failure.
 func submit(cmd: Dictionary) -> int:
 	if cmd.get("type", "") in SKILL_COMMANDS and cmd.has("units"):
@@ -172,6 +194,10 @@ func submit(cmd: Dictionary) -> int:
 	match cmd.get("type", ""):
 		"spawn":
 			return _spawn(cmd.unit, cmd.get("spawn", 0))
+		"produce":
+			return _produce(cmd.unit, cmd.get("spawn", 0))
+		"cancel":
+			return _cancel(cmd.get("index", -1))
 		"move":
 			_move(cmd.units, cmd.pos, cmd.get("attack", true))
 		"attack":
@@ -241,6 +267,53 @@ func _spawn(type_id: String, spawn_idx: int) -> int:
 	if not UnitTypes.DATA.has(type_id) or not can_afford(type_id) or not spawn_open(spawn_idx):
 		return 0
 	supply -= UnitTypes.DATA[type_id].cost
+	return _place(type_id, spawn_idx)
+
+
+func _produce(type_id: String, spawn_idx: int) -> int:
+	spawn_idx = clampi(spawn_idx, 0, spawn_points.size() - 1)
+	if not UnitTypes.DATA.has(type_id) or not can_queue(type_id) or not spawn_open(spawn_idx):
+		return 0
+	supply -= UnitTypes.DATA[type_id].cost
+	production.append({"unit": type_id, "spawn": spawn_idx})
+	if production.size() == 1:
+		build_total = UnitTypes.build_time(type_id)
+		build_left = build_total
+	return 1
+
+
+## Takes entry `index` off the production line, its credits back. Returns 1 if there was one.
+func _cancel(index: int) -> int:
+	if index < 0 or index >= production.size():
+		return 0
+	var e: Dictionary = production[index]
+	production.remove_at(index)
+	supply += UnitTypes.DATA[e.unit].cost
+	if index == 0:
+		_start_next()
+	return 1
+
+
+## The next unit on the line starts from nothing.
+func _start_next() -> void:
+	build_total = UnitTypes.build_time(production[0].unit) if not production.is_empty() else 0.0
+	build_left = build_total
+
+
+## The front of the production line builds; done, it comes out (once the army has room for it).
+func _production_tick(delta: float) -> void:
+	if production.is_empty():
+		return
+	build_left = maxf(build_left - delta, 0.0)
+	if build_left > 0.0 or units.size() >= UNIT_CAP:
+		return
+	var e: Dictionary = production.pop_front()
+	_place(e.unit, e.spawn if spawn_open(e.spawn) else 0)
+	_start_next()
+
+
+## Puts a new `type_id` down at spawn point `spawn_idx` (paid for already). Returns its id.
+func _place(type_id: String, spawn_idx: int) -> int:
 	var id := _next_id
 	_next_id += 1
 	var u := AttackerUnit.new()
