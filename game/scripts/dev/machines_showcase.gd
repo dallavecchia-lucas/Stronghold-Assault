@@ -97,7 +97,6 @@ func _ready() -> void:
 		# Stills on a machine with no GPU (software GL): a lighter picture, or each takes minutes.
 		RenderingServer.directional_shadow_atlas_set_size(2048, true)
 		get_viewport().msaa_3d = Viewport.MSAA_DISABLED
-	GameConfig.map = "jungle"
 	GameConfig.player_side = GameConfig.PlayerSide.DEFENDER
 	level = JungleLevel.new()
 	level.name = "Level"

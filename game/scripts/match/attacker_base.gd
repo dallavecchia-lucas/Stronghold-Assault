@@ -1,9 +1,9 @@
 class_name AttackerBase
 extends StaticBody3D
-## A Forward Helipad Base: an attacker building out in the field, one by each attack lane
-## (LevelBuilder.BASES), a deck on stilts with a helipad and the camp round it. While the attackers
-## hold it, it is a forward spawn point (AttackerCommander.spawn_bases: its button on the RTS spawn
-## row) and brings in INCOME supply a second on top of the commander's own. It can't be shot down:
+## A Forward Helipad Base: an attacker outpost out in the field (LevelBuilder.BASES; the Jungle Keep's Quarry and Outpost),
+## a deck on stilts with a helipad and the camp round it. The army has one base, the Mobile Command Citadel: nothing spawns
+## here and it brings in nothing. While the attackers hold it, it sees round its deck (AttackerVision) and the transport
+## helicopters fly units to it (AttackerCommander.spawn_bases, TransportHelo). It can't be shot down:
 ## a defender Infiltrator Squad sabotages it (InfiltratorSquad, SABOTAGE_TIME with its leader within
 ## SABOTAGE_REACH of the deck), and the attackers lose control of it until they retake it: ground
 ## units within CAPTURE_REACH of the deck for CAPTURE_TIME (sooner the more of them there are), with
@@ -25,8 +25,6 @@ const DECK_HEIGHT := 4.28
 const SIZE := Vector2(39.15, 30.3)
 const PAD_SIZE := Vector2(13.4, 12.2)
 const PAD_CENTRE := Vector2(-5.05, 0.1)
-## Supply a second it brings in while the attackers hold it.
-const INCOME := 1.5
 ## Retaking it: ground units within CAPTURE_REACH of the deck's edge, for CAPTURE_TIME; every unit
 ## past the first speeds it up by CAPTURE_BOOST, up to CAPTURE_CROWD of them. With nobody there it
 ## slips back at CAPTURE_DECAY times the rate.
@@ -66,7 +64,7 @@ var deck_size: Vector2:
 var pad_size: Vector2:
 	get: return PAD_SIZE * scale_factor
 var team := GameConfig.TEAM_ATTACKER
-## The attackers hold it: it spawns their units and brings in supply.
+## The attackers hold it: it sees for them and the transport helicopters land on it.
 var controlled := true
 ## Retaking it: seconds of capture built up (CAPTURE_TIME: retaken), and whether a defender close by
 ## holds it up.

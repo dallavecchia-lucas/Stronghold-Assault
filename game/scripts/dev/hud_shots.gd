@@ -1,5 +1,5 @@
 extends Node
-## Stills of the attacking player's HUD (AttackerHUD) in a real match (the Jungle Keep, or --map=classic), so a change to it
+## Stills of the attacking player's HUD (AttackerHUD) in a real match on the Jungle Keep, so a change to it
 ## can be looked at without playing: an army in front of the south gate with a mixed selection (its skills on the card),
 ## units on the production line, groups saved and a warning up; then the base selected (Backspace) with its production;
 ## then nothing selected, the HUD at its leanest.

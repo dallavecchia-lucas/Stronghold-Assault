@@ -6,11 +6,11 @@ extends Node
 ## plain Dictionary. Keeping commands serializable means online play can later just
 ## send these over the network to whoever runs the match.
 ##
-##   {"type": "spawn", "unit": "rifleman", "spawn": 0}   a forward helipad's spawn point only while
-##               the attackers hold it (spawn_open); the unit is there at once (the CPU attacker)
-##   {"type": "produce", "unit": "rifleman", "spawn": 0}   the attacking player's production line: paid for now, it
-##               waits its turn and is built in UnitTypes.build_time, one at a time, then comes out at that spawn point (at
-##               the main one if the helipad has been lost meanwhile). Returns 1 if it went on the line.
+##   {"type": "spawn", "unit": "rifleman"}   a unit at the army's one base, the main spawn (spawn_points[0]: the Mobile
+##               Command Citadel), there at once (the CPU attacker). The Forward Helipads are outposts: nothing spawns there
+##   {"type": "produce", "unit": "rifleman"}   the attacking player's production line: paid for now, it waits its turn
+##               and is built in UnitTypes.build_time, one at a time, then comes out at the base. Returns 1 if it went on the
+##               line.
 ##   {"type": "cancel", "index": 3}   takes entry 3 off the production line and gives its credits back
 ##   {"type": "move", "units": [ids], "pos": Vector3, "attack": bool}
 ##   {"type": "attack", "units": [ids], "target": NodePath}   rams ramming at a ground gate charge
@@ -79,8 +79,8 @@ extends Node
 ## to heal_units hurt units near it, keeps them until they are full or out of its reach, and no unit
 ## takes two dogs' healing (_update_heal).
 ##
-## Every Forward Helipad Base the attackers hold (AttackerBase) adds AttackerBase.INCOME to the
-## supply coming in (income_rate).
+## The Forward Helipad Bases (AttackerBase) are outposts: held, they see round themselves (AttackerVision) and the transport
+## helicopters land there; they bring in nothing and spawn nothing.
 
 signal unit_spawned(unit: AttackerUnit)
 signal unit_died(unit: AttackerUnit)
@@ -105,15 +105,17 @@ const SKILL_COMMANDS := ["cluster", "bombard", "setup", "strafe", "bomb", "smoke
 
 var supply := 250.0
 var income := BASE_INCOME
-## The production line ("produce"): [{"unit": type_id, "spawn": spawn point}], the front one being built; build_left of
+## The production line ("produce"): [{"unit": type_id}], the front one being built; build_left of
 ## build_total seconds to go on it. Units on the line count toward UNIT_CAP; with the army at its cap the front one waits.
 var production: Array = []
 var build_left := 0.0
 var build_total := 0.0
 var units := {}  # id -> AttackerUnit
+## The base's spawn point first (where every unit comes out), then each Forward Helipad's (where the transport helicopters
+## put their units down): LevelBuilder.spawn_points.
 var spawn_points: Array[Vector3] = []
-## Per spawn point: the AttackerBase it belongs to, or null (always open). LevelBuilder.spawn_bases;
-## left empty, every spawn point is open.
+## Per spawn point: the AttackerBase it belongs to, or null (the base). LevelBuilder.spawn_bases: the helicopters' destinations
+## ("helo_fly").
 var spawn_bases: Array = []
 var units_root: Node3D
 ## The level (bridges go into it); without one no bridges.
@@ -154,20 +156,9 @@ func _process(delta: float) -> void:
 		_update_heal()
 
 
-## Supply a second: the commander's own income and every helipad the attackers hold.
+## Supply a second (the outposts bring in nothing).
 func income_rate() -> float:
-	var rate := income
-	for b in spawn_bases:
-		if b != null and b.controlled:
-			rate += AttackerBase.INCOME
-	return rate
-
-
-## False for a forward helipad's spawn point while the attackers don't hold it.
-func spawn_open(idx: int) -> bool:
-	if idx < 0 or idx >= spawn_bases.size() or spawn_bases[idx] == null:
-		return true
-	return spawn_bases[idx].controlled
+	return income
 
 
 func can_afford(type_id: String) -> bool:
@@ -193,9 +184,9 @@ func submit(cmd: Dictionary) -> int:
 		cmd.units = cmd.units.filter(func(id): return units.has(id) and is_instance_valid(units[id]) and not units[id].is_crossing())
 	match cmd.get("type", ""):
 		"spawn":
-			return _spawn(cmd.unit, cmd.get("spawn", 0))
+			return _spawn(cmd.unit)
 		"produce":
-			return _produce(cmd.unit, cmd.get("spawn", 0))
+			return _produce(cmd.unit)
 		"cancel":
 			return _cancel(cmd.get("index", -1))
 		"move":
@@ -262,20 +253,18 @@ func submit(cmd: Dictionary) -> int:
 	return 0
 
 
-func _spawn(type_id: String, spawn_idx: int) -> int:
-	spawn_idx = clampi(spawn_idx, 0, spawn_points.size() - 1)
-	if not UnitTypes.DATA.has(type_id) or not can_afford(type_id) or not spawn_open(spawn_idx):
+func _spawn(type_id: String) -> int:
+	if not UnitTypes.DATA.has(type_id) or not can_afford(type_id):
 		return 0
 	supply -= UnitTypes.DATA[type_id].cost
-	return _place(type_id, spawn_idx)
+	return _place(type_id)
 
 
-func _produce(type_id: String, spawn_idx: int) -> int:
-	spawn_idx = clampi(spawn_idx, 0, spawn_points.size() - 1)
-	if not UnitTypes.DATA.has(type_id) or not can_queue(type_id) or not spawn_open(spawn_idx):
+func _produce(type_id: String) -> int:
+	if not UnitTypes.DATA.has(type_id) or not can_queue(type_id):
 		return 0
 	supply -= UnitTypes.DATA[type_id].cost
-	production.append({"unit": type_id, "spawn": spawn_idx})
+	production.append({"unit": type_id})
 	if production.size() == 1:
 		build_total = UnitTypes.build_time(type_id)
 		build_left = build_total
@@ -308,17 +297,17 @@ func _production_tick(delta: float) -> void:
 	if build_left > 0.0 or units.size() >= UNIT_CAP:
 		return
 	var e: Dictionary = production.pop_front()
-	_place(e.unit, e.spawn if spawn_open(e.spawn) else 0)
+	_place(e.unit)
 	_start_next()
 
 
-## Puts a new `type_id` down at spawn point `spawn_idx` (paid for already). Returns its id.
-func _place(type_id: String, spawn_idx: int) -> int:
+## Puts a new `type_id` down at the base (paid for already). Returns its id.
+func _place(type_id: String) -> int:
 	var id := _next_id
 	_next_id += 1
 	var u := AttackerUnit.new()
 	u.setup(type_id, id)
-	var base: Vector3 = spawn_points[spawn_idx]
+	var base: Vector3 = spawn_points[0]
 	u.position = base + Vector3(randf_range(-6, 6), 0.2, randf_range(-6, 6))
 	# Face the stronghold.
 	u.rotation.y = atan2(base.x, base.z)

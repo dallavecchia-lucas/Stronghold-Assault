@@ -7,8 +7,8 @@ extends Control
 ## its groves (LevelBuilder.FORESTS). Over it, live:
 ##   the fog of war   dark beyond what the army sees (AttackerVision's viewers), redrawn a few times a second
 ##   the stronghold   the mountain, its air vents (destroyed ones crossed out) and its gates (by health; open when down)
-##   the helipads     held (green), sabotaged (red, blinking) or being retaken (amber), and the spawn point the HUD's
-##                    production comes out at (a ring)
+##   the base         where every unit comes out (a ring), and the outposts (the helipads): held (green), sabotaged (red,
+##                    blinking) or being retaken (amber)
 ##   bridges          cyan across the rivers, red while their alarm goes off
 ##   units            the army (green; white when selected, the transport helicopters as white squares), and the
 ##                    defenders it sees (red)
@@ -238,14 +238,9 @@ func _draw_bridges(px: float, blink: bool) -> void:
 func _draw_spawn() -> void:
 	if controller == null:
 		return
-	var points := controller.commander.spawn_points
-	for k in points.size():
-		if not controller.commander.spawn_open(k):
-			continue
-		var at := to_map(points[k])
-		if k == controller.spawn_index:
-			draw_arc(at, 7.0, 0.0, TAU, 20, Color.WHITE, 2.0, true)
-		draw_circle(at, 2.0, Color(1, 1, 1, 0.8))
+	var at := to_map(controller.commander.spawn_points[0])
+	draw_arc(at, 7.0, 0.0, TAU, 20, Color.WHITE if controller.base_selected else Color(1, 1, 1, 0.6), 2.0, true)
+	draw_circle(at, 2.0, Color(1, 1, 1, 0.8))
 
 
 func _draw_units() -> void:

@@ -27,7 +27,8 @@ var _autotest_t := 0.0
 
 
 func _ready() -> void:
-	level = JungleLevel.new() if GameConfig.map == "jungle" else LevelBuilder.new()
+	# The one map: the Jungle Keep (its stronghold, rivers and forest: JungleLevel).
+	level = JungleLevel.new()
 	level.name = "Level"
 	add_child(level)
 	level.build()
@@ -240,7 +241,6 @@ func _autotest_step(delta: float) -> void:
 				Input.action_release("fire")
 		elif player_controller is AttackerController:
 			var ac: AttackerController = player_controller
-			ac.set_spawn_point(step % 3)
 			for t in [UnitTypes.ORDER[step % UnitTypes.ORDER.size()], "rifleman", "kangaroo", "medic", "giraffe"]:
 				ac.spawn(t)
 			var ids := commander.units.keys()

@@ -1,9 +1,9 @@
 class_name AIAttacker
 extends Node
-## CPU commander for the attacking army. Builds up waves at a spawn point (the side's Forward
-## Helipad while it holds it, else the map's edge), then sends them at the gate on that side; once a
+## CPU commander for the attacking army. Builds up waves at its one base (the Mobile Command Citadel: nothing spawns at
+## the Forward Helipads, its outposts), then sends them at the gate on a side it picks; once a
 ## gate falls everyone pushes for the air vents on the roofs. A helipad the defenders sabotaged is retaken by the
-## ground units nearest it (_retake_bases). It never goes after the defenders' infiltrators: it
+## ground units nearest it (_retake_bases): it sees for the army. It never goes after the defenders' infiltrators: it
 ## doesn't know they are there (their low profile, Combat.low_profile), unless its giraffes' pings
 ## reveal them (_giraffe_pings). Its bears dive when they are shot at out swimming (_bear_dives). Its lionesses
 ## hunt the defenders out on the field (_lioness_hunts). Its dogs heal; it can't see the defenders' mines any more
@@ -29,11 +29,11 @@ var _think_cd := 2.0
 var _wave := 0
 var _pending: Array[String] = []
 var _staging: Array[int] = []
-var _wave_spawn := 0
 var _wave_side := "south"
 var _first_wave_delay := 15.0
 
-const SPAWN_SIDES := ["south", "east", "west"]
+## The gates a wave can go for (the stronghold's south, east and west faces).
+const GATE_SIDES := ["south", "east", "west"]
 ## A flash grenade lands where it is thrown: kangaroos throw with little of their reach to spare (the
 ## infantry's stand in front of a gun deck is just inside it).
 const FLASH_SPARE := 0.97
@@ -110,14 +110,13 @@ func _think() -> void:
 		_plan_wave()
 
 	while not _pending.is_empty() and commander.can_afford(_pending[0]):
-		var at := _spawn_for(_wave_spawn)
-		var id := commander.submit({"type": "spawn", "unit": _pending[0], "spawn": at})
+		var id := commander.submit({"type": "spawn", "unit": _pending[0]})
 		if id == 0:
 			break
 		_pending.pop_front()
 		_staging.append(id)
-		# Off the map's edge the wave gathers a way down its lane; at a helipad, right there.
-		commander.submit({"type": "move", "units": [id], "pos": level.rally_point(at), "attack": true})
+		# The wave gathers a way out in front of the base.
+		commander.submit({"type": "move", "units": [id], "pos": level.rally_point(0), "attack": true})
 
 	if _pending.is_empty() and not _staging.is_empty():
 		_launch_wave()
@@ -177,8 +176,7 @@ func _bridge_alarms() -> void:
 
 func _plan_wave() -> void:
 	_wave += 1
-	_wave_spawn = randi() % SPAWN_SIDES.size()
-	_wave_side = SPAWN_SIDES[_wave_spawn]
+	_wave_side = GATE_SIDES[randi() % GATE_SIDES.size()]
 	# Wave mix grows over time: infantry core, then flyers, heavies and artillery.
 	var counts := {
 		"breacher": 1 if _wave >= 2 and (_wave % 2 == 0 or _wave > 5) else 0,
@@ -542,17 +540,6 @@ func _in_reach(u: AttackerUnit, reach: float, pick: Callable, spare := 0.85) -> 
 			best_d = dist
 			best = d
 	return best
-
-
-## Where a wave from spawn point `edge` (0-2, the map's edge) spawns: the helipad on its side while
-## the attackers hold it.
-func _spawn_for(edge: int) -> int:
-	var side: String = SPAWN_SIDES[edge]
-	for k in commander.spawn_bases.size():
-		var b = commander.spawn_bases[k]
-		if b != null and b.side == side and commander.spawn_open(k):
-			return k
-	return level.edge_spawns.get(side, 0)
 
 
 ## Sabotaged helipads: the ground units nearest each (not raiding, not a wave about to set off) go

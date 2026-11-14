@@ -6,7 +6,7 @@ extends Node3D
 ##   godot --path game --headless --fixed-fps 30 res://scenes/dev/garrison_showcase.tscn -- --until=240
 ##   godot --path game --headless --fixed-fps 30 res://scenes/dev/garrison_showcase.tscn -- --scenario=south --until=300
 ##   godot --path game --rendering-driver opengl3 --resolution 1600x900 --fixed-fps 30 \
-##       res://scenes/dev/garrison_showcase.tscn -- --shots=/tmp/garrison --at=20,60,120,240 [--map=classic]
+##       res://scenes/dev/garrison_showcase.tscn -- --shots=/tmp/garrison --at=20,60,120,240
 ##       [--views=overview,south_deck,...] (see _view), or --plan=11:spawn_corridor+south_deck,75:north_deck,...
 ##
 ## Scenarios (--scenario=):
@@ -93,7 +93,7 @@ func _ready() -> void:
 		RenderingServer.render_loop_enabled = false  # nothing to see while the level loads
 		if not shot_times.is_empty():
 			until = maxf(until, shot_times.max() + 0.5) if until_set else shot_times.max() + 0.5
-	level = JungleLevel.new() if GameConfig.map == "jungle" else LevelBuilder.new()
+	level = JungleLevel.new()
 	level.name = "Level"
 	add_child(level)
 	level.build()
@@ -117,7 +117,7 @@ func _ready() -> void:
 		_stills_setup()
 		var v: Array = _view(_film)
 		_look(v[0], v[1])
-	print("GARRISON map=%s scenario=%s until=%.0f" % [GameConfig.map, scenario, until])
+	print("GARRISON scenario=%s until=%.0f" % [scenario, until])
 	level.navigation_ready.connect(_start, CONNECT_ONE_SHOT)
 
 

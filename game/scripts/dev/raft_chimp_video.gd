@@ -38,7 +38,6 @@ var _snap := true
 func _ready() -> void:
 	seed(3)
 	RenderingServer.render_loop_enabled = false  # nothing to see while the map loads
-	GameConfig.map = "jungle"
 	GameConfig.player_side = GameConfig.PlayerSide.ATTACKER
 	level = JungleLevel.new()
 	add_child(level)

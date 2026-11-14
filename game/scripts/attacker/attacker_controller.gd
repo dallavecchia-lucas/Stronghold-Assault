@@ -5,11 +5,10 @@ extends CanvasLayer
 ##
 ## LMB click/drag: select · Shift adds · RMB: attack-move / attack target
 ## Ctrl+RMB: move without stopping to fight · Ctrl+1-9 assign group · 1-9 recall (twice quickly: the camera goes to it)
-## Backspace: select the base (the spawn point picked: the main base, or a Forward Helipad while the attackers hold it:
-##    AttackerBase) and look at it; again: the next base. Clicking a helipad you hold selects it too. With the base selected
-##    the HUD's card shows the units to build there, and
+## Backspace: select the base (the army's one base, the Mobile Command Citadel; the Forward Helipads are outposts:
+##    AttackerBase) and look at it. With the base selected the HUD's card shows the units to build, and
 ## Z X C V B N M H J K L Y U I put one on the production line (AttackerCommander "produce": paid for now, built one at a
-##    time, out at that base); PRODUCE_ANYWHERE lets them work without the base selected · Tab: the next base
+##    time, out at the base); PRODUCE_ANYWHERE lets them work without the base selected
 ## F1: the keys (HELP)
 ## The HUD (AttackerHUD): small islands, each on screen only while it has something to show: credits and vents top centre,
 ## the production line top left, the minimap top right (LMB looks, RMB orders), the command card bottom left (the selected
@@ -63,7 +62,7 @@ const SMOKE_FILL := Color(0.2, 0.9, 0.6, 0.35)
 const SMOKE_LINE := Color(0.3, 1.0, 0.7)
 const MISSILE_LINE := Color(1.0, 0.35, 0.3)
 const HELP_KEY := KEY_F1
-## Selects the base (AttackerController.select_base); the unit keys build there.
+## Selects the base (select_base); the unit keys build there.
 const BASE_KEY := KEY_BACKSPACE
 ## The unit keys build only with the base selected (Backspace) when false; any time when true.
 const PRODUCE_ANYWHERE := false
@@ -72,8 +71,8 @@ const GROUPS := 9
 const GROUP_DOUBLE_TAP := 0.35
 ## The same warning (not enough credits, the army full) no more often than this (s).
 const WARN_REPEAT := 3.0
-## The keys, on the F1 panel (%.1f: AttackerBase.INCOME).
-const HELP := "LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-9 group, 1-9 select it (twice: look) · WASD/Q/E/wheel camera\nBackspace: select your base (again: the next one; or click a helipad you hold) · with it selected, a unit's key (or its tile) puts one on the production line, paid for now · click one on the line to take it off · Tab: the next base\nMinimap: LMB look there (drag to pan) · RMB send the selection there (Ctrl: move)\nSkills: the selected units' skills, a tile each (click to use that one); a key's badge is lit on the tile the key uses now · T switches modes\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nBisons: G bombardment (LMB fire, RMB cancel), onto the gun decks and roofs too\nMule Artillery: T sets the gun up / disarms it (it can't move unless disarmed) · armed, G bombardment (LMB fire): further, harder and wider than the bisons'\nTalons: F strafe run (press LMB on the target, drag the way to fly, let go) · G bomb strike (LMB fire) · RMB cancels\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nGiraffes: see furthest through the fog · P ping: marks every defender it reaches, even under camo, and reveals infiltrators out of camo\nKangaroos: R flash grenade (LMB fire, RMB cancel) when no hippo's smoke is ready · they resupply units nearby\nLionesses: F sneak (then RMB a defender: they pounce) · G fire blast · T firing lines on/off when moved together\nSerpent Snipers: F sniper nest (LMB a tree: up it they see and shoot further; any move order climbs them down) · G bush trap (LMB a bush: coiled, they strike and crush a defender who comes close)\nWolf Medics: T healing (2 units each) / minesweeping (they find the hidden mines and dig them out; RMB sweeps on the way, Ctrl+RMB doesn't)\nChimps / Rams / Kangaroos: RMB next to a broken gate to send them in\nRivers: Shift+B drop a bridge (LMB, RMB cancel; 30 a match) · bears, snakes, hippos, elephants swim · the rest but mules and bisons ride the rafts hippos/elephants tow, 2 each or a rhino or giraffe alone (RMB one, or send them across with it; Space lets them off)\nBears: swimming, F dives under the water for 10 s, out of the defenders' sight (rounds that go in where it is still hit it)\nHelipads (outposts): spawn there and +%.1f credits/s each while you hold them · sabotaged, stand ground units by one to retake it\nTransport helos (under the minimap): RMB one with units selected to board them (50 spaces; elephant/giraffe 5, rhino/hippo 2, bison 10, mule 15, rest 1) · LMB one, then RMB a helipad you hold to fly there · they land on the pad, put a unit down beside it every 0.25 s and fly home (helipad lost on the way: they bring them back)\nF1 closes this"
+## The keys, on the F1 panel.
+const HELP := "LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-9 group, 1-9 select it (twice: look) · WASD/Q/E/wheel camera\nBackspace: select your base, the citadel · with it selected, a unit's key (or its tile) puts one on the production line, paid for now · click one on the line to take it off\nMinimap: LMB look there (drag to pan) · RMB send the selection there (Ctrl: move)\nSkills: the selected units' skills, a tile each (click to use that one); a key's badge is lit on the tile the key uses now · T switches modes\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nBisons: G bombardment (LMB fire, RMB cancel), onto the gun decks and roofs too\nMule Artillery: T sets the gun up / disarms it (it can't move unless disarmed) · armed, G bombardment (LMB fire): further, harder and wider than the bisons'\nTalons: F strafe run (press LMB on the target, drag the way to fly, let go) · G bomb strike (LMB fire) · RMB cancels\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nGiraffes: see furthest through the fog · P ping: marks every defender it reaches, even under camo, and reveals infiltrators out of camo\nKangaroos: R flash grenade (LMB fire, RMB cancel) when no hippo's smoke is ready · they resupply units nearby\nLionesses: F sneak (then RMB a defender: they pounce) · G fire blast · T firing lines on/off when moved together\nSerpent Snipers: F sniper nest (LMB a tree: up it they see and shoot further; any move order climbs them down) · G bush trap (LMB a bush: coiled, they strike and crush a defender who comes close)\nWolf Medics: T healing (2 units each) / minesweeping (they find the hidden mines and dig them out; RMB sweeps on the way, Ctrl+RMB doesn't)\nChimps / Rams / Kangaroos: RMB next to a broken gate to send them in\nRivers: Shift+B drop a bridge (LMB, RMB cancel; 30 a match) · bears, snakes, hippos, elephants swim · the rest but mules and bisons ride the rafts hippos/elephants tow, 2 each or a rhino or giraffe alone (RMB one, or send them across with it; Space lets them off)\nBears: swimming, F dives under the water for 10 s, out of the defenders' sight (rounds that go in where it is still hit it)\nOutposts (the helipads): held, they see round themselves and the transport helicopters land there · sabotaged, stand ground units by one to retake it\nTransport helos (under the minimap): RMB one with units selected to board them (50 spaces; elephant/giraffe 5, rhino/hippo 2, bison 10, mule 15, rest 1) · LMB one, then RMB a helipad you hold to fly there · they land on the pad, put a unit down beside it every 0.25 s and fly home (helipad lost on the way: they bring them back)\nF1 closes this"
 
 var level: LevelBuilder
 var commander: AttackerCommander
@@ -83,8 +82,7 @@ var match_ui: MatchUI
 var hud: AttackerHUD
 var selected: Array = []
 var groups := {}
-var spawn_index := 0
-## The base (the spawn point spawn_index) is selected: the HUD's card shows its production, the unit keys build there.
+## The base is selected: the HUD's card shows its production, the unit keys build there.
 var base_selected := false
 
 var _drag_start := Vector2.ZERO
@@ -92,7 +90,6 @@ var _mouse_down := false
 var _dragging := false
 var _select_rect: Panel
 var _selection_label: Label
-var _spawn_point_buttons: Array[Button] = []
 ## The group key pressed last and when (Time msec), for the double tap.
 var _last_group := -1
 var _last_group_at := 0
@@ -230,7 +227,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			hud.help_panel.visible = not hud.help_panel.visible
 			return
 		if event.physical_keycode == BASE_KEY:
-			select_base(_next_open_spawn(spawn_index) if base_selected else spawn_index, true)
+			select_base()
 			return
 		if event.physical_keycode == BRIDGE_KEY and event.shift_pressed:
 			toggle_bridge()
@@ -245,12 +242,6 @@ func _unhandled_input(event: InputEvent) -> void:
 				else:
 					warn_once("base", "Backspace: select the base to build units", UIKit.ACCENT)
 				return
-		if event.is_action_pressed("spawn_cycle"):
-			if base_selected:
-				select_base(_next_open_spawn(spawn_index), true)
-			else:
-				set_spawn_point(_next_open_spawn(spawn_index))
-			return
 		for i in GROUPS:
 			if event.is_action_pressed("slot_%d" % (i + 1)):
 				if event.ctrl_pressed:
@@ -446,29 +437,14 @@ func mode_state(id: String) -> String:
 
 # ---------------------------------------------------------------- the base
 
-## Selects base `i` (a spawn point: the main base, or a helipad the attackers hold; a lost one gives the next open one):
-## the units are deselected, the HUD's card shows its production and the unit keys build there. `look`: the camera goes to it.
-func select_base(i: int, look := true) -> void:
-	if not commander.spawn_open(i):
-		i = _next_open_spawn(i)
+## Selects the base (the army's one: the Mobile Command Citadel): the units are deselected, the HUD's card shows its
+## production and the unit keys build there. `look`: the camera goes to it.
+func select_base(look := true) -> void:
 	_set_selection([])
 	_select_helo(null)
-	set_spawn_point(i)
 	base_selected = true
 	if look:
-		camera_rig.focus(commander.spawn_points[i])
-
-
-## The spawn point of the helipad under the cursor, if the attackers hold it; -1 if none.
-func _base_under(screen_pos: Vector2) -> int:
-	var hit := _ray(screen_pos, GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES)
-	if hit.is_empty():
-		return -1
-	var n := hit.collider as Node
-	while n != null and not (n is AttackerBase):
-		n = n.get_parent()
-	var k := commander.spawn_bases.find(n) if n != null else -1
-	return k if k >= 0 and commander.spawn_open(k) else -1
+		camera_rig.focus(commander.spawn_points[0])
 
 
 # ---------------------------------------------------------------- groups
@@ -540,11 +516,6 @@ func _click_select(pos: Vector2, add: bool) -> void:
 			list.append(u)
 	_set_selection(list)
 	_select_helo(u if u is TransportHelo and u.is_alive() else null)
-	# Nothing of the army's there: a helipad you hold is a base to select.
-	if list.is_empty() and selected_helo == null:
-		var k := _base_under(pos)
-		if k >= 0:
-			select_base(k, false)
 
 
 func _box_select(rect: Rect2, add: bool) -> void:
@@ -1231,7 +1202,7 @@ func _look_at_alarm() -> void:
 
 ## A unit's key (or its thumbnail): one on the production line, out at the spawn point picked now. Says why when it can't.
 func spawn(type_id: String) -> void:
-	if commander.submit({"type": "produce", "unit": type_id, "spawn": spawn_index}) > 0:
+	if commander.submit({"type": "produce", "unit": type_id}) > 0:
 		return
 	if commander.units.size() + commander.production.size() >= AttackerCommander.UNIT_CAP:
 		warn_once("cap", "The army is at its cap (%d, the production line included)" % AttackerCommander.UNIT_CAP, UIKit.DANGER)
@@ -1267,21 +1238,6 @@ func warn_once(key: String, text: String, col := UIKit.WARN, at := Vector3.INF) 
 		return
 	_warned[key] = now
 	warn(text, col, at)
-
-
-func set_spawn_point(i: int) -> void:
-	spawn_index = i
-	for k in _spawn_point_buttons.size():
-		_spawn_point_buttons[k].button_pressed = k == i
-
-
-## The spawn point after `i` that is open (a helipad only while the attackers hold it).
-func _next_open_spawn(i: int) -> int:
-	var n := commander.spawn_points.size()
-	for k in range(1, n + 1):
-		if commander.spawn_open((i + k) % n):
-			return (i + k) % n
-	return 0
 
 
 # ---------------------------------------------------------------- visuals / HUD
@@ -1321,8 +1277,6 @@ func _build_hud() -> void:
 	_aim_label = hud.aim_label
 	_alarm_banner = hud.alarm_banner
 	_alarm_banner.pressed.connect(_look_at_alarm)
-	_spawn_point_buttons = hud.spawn_buttons
-	set_spawn_point(0)
 	_alarm_beep = AudioStreamPlayer.new()
 	_alarm_beep.stream = FoldingBridge._siren_stream()
 	_alarm_beep.volume_db = -14.0
@@ -1376,11 +1330,6 @@ func _process(_delta: float) -> void:
 	elif _aiming == "bridge":
 		_update_bridge_preview()
 	_update_alarm_banner()
-	# A sabotaged helipad spawns nothing until it is retaken.
-	for k in _spawn_point_buttons.size():
-		_spawn_point_buttons[k].disabled = not commander.spawn_open(k)
-	if not commander.spawn_open(spawn_index):
-		set_spawn_point(_next_open_spawn(spawn_index))
 
 
 ## What the selection is doing, for the HUD's mugshot: states only (crossing, tagged, sneaking, guns heat...), the skills'

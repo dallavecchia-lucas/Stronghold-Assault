@@ -119,7 +119,6 @@ func _ready() -> void:
 		test = DisplayServer.get_name() == "headless"
 	if video or shots_dir != "":
 		RenderingServer.render_loop_enabled = false  # nothing to see while the map loads (the bake goes faster)
-	GameConfig.map = "jungle"
 	GameConfig.player_side = GameConfig.PlayerSide.ATTACKER
 	level = JungleLevel.new()
 	add_child(level)

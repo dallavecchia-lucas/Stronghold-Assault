@@ -10,8 +10,8 @@ extends Node3D
 ##   bow       she looses silent arrows at a rifleman
 ##   op        an Infiltrator Squad is bought and sent on a sabotage operation against the South
 ##             Helipad, past four riflemen standing on the straight way there: it walks round them,
-##             sabotages the helipad (45 s; the attackers can't spawn there any more and lose its
-##             supply) and comes home, restocking its kit in the fortress
+##             sabotages the helipad (45 s; the attackers lose the outpost and its
+##             vision) and comes home, restocking its kit in the fortress
 ##   view      the player takes command of it and puts the camo on: the camera's vignette, the
 ##             troopers as ever on the defender's side, not shown at all on the attacker's
 ##   retake    three riflemen stand by the helipad and retake it
@@ -54,7 +54,6 @@ var _flags := {}
 var _route_clear := INF
 var _line_clear := INF
 var _plans: Array[String] = []
-var _income_held := 0.0
 
 
 func _ready() -> void:
@@ -210,8 +209,7 @@ func _leave(p: String) -> void:
 			GameConfig.player_side = GameConfig.PlayerSide.DEFENDER
 			leader.set_camo(true, false)
 		"retake":
-			_check(pad.controlled, "riflemen standing by it retook the helipad")
-			_check(commander.spawn_open(level.spawn_bases.find(pad)), "the attackers spawn there again")
+			_check(pad.controlled, "riflemen standing by it retook the helipad: it sees for them again")
 
 
 func _ids(units: Array) -> Array:
@@ -244,7 +242,6 @@ func _start_op() -> void:
 			break
 		squad.cycle_order()
 	_log("%s deployed, order %s" % [squad.station_name, squad.order_name()])
-	_income_held = commander.income_rate()
 	# How close the straight way from the gate to the helipad passes the riflemen.
 	var gate: Vector3 = level.gates["south"].global_position
 	var exit := Vector3(gate.x, 0.0, gate.z + InfiltratorSquad.GATE_OUT)
@@ -267,10 +264,7 @@ func _watch_op() -> void:
 	if not pad.controlled and not _flags.get("sabotaged", false):
 		_flags.sabotaged = true
 		_log("helipad sabotaged")
-		var idx := level.spawn_bases.find(pad)
-		_check(not commander.spawn_open(idx), "the attackers can't spawn at the sabotaged helipad")
-		_check(commander.submit({"type": "spawn", "unit": "rifleman", "spawn": idx}) == 0, "a spawn order there is refused")
-		_check(commander.income_rate() < _income_held, "the attackers lost its supply (%.1f/s, was %.1f/s)" % [commander.income_rate(), _income_held])
+		_check(not pad.controlled, "the attackers lost the helipad: it no longer sees for them (AttackerVision)")
 		_check(squad.kits == 0, "the squad used its kit")
 	if _flags.get("sabotaged", false) and squad.kits > 0:
 		_flags.restocked = true

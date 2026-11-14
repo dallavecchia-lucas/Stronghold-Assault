@@ -4,7 +4,7 @@ extends Control
 ## screen only while it has something to show, no text under FONT px.
 ##
 ##   top centre    spawn credits | air vents destroyed / total; under it the clock, the gates, the bridges left (click: drop
-##                 one) and the outposts held (CreditsBanner)
+##                 one) and the outposts held (click: look at the next) (CreditsBanner)
 ##   top left      the production line, while anything is on it: a thumbnail for each run of one type with ×N, the front
 ##                 one's build bar; click one to take a unit off (Shift: the run), credits back
 ##   top right     the minimap (Minimap); the transport helicopters under it (HeloPanel)
@@ -12,8 +12,8 @@ extends Control
 ##                   units        their own skills, a tile each, then the mugshot (portrait, health, how many, what they are
 ##                                doing). Click a tile to use that skill; its key's badge is lit on the tile the key fires now
 ##                                (several skills share a key: AttackerController.skill_key goes down the key's list)
-##                   the base     (Backspace, or click a helipad you hold) the units to build there, with their keys and
-##                                costs, and the bases to switch to
+##                   the base     (Backspace: the army's one base, the Mobile Command Citadel) the units to build, with
+##                                their keys and costs
 ##                   a helicopter its mugshot
 ##                   nothing      a one-line hint
 ##   bottom right  the unit groups there are, and the warnings while they are fresh, central command's squid with them
@@ -40,6 +40,8 @@ const GROUPS := 9
 const SKILL_COLS := 5
 const BASE_COLS := 7
 const CAPTION := Color(0.7, 0.75, 0.85)
+## The army's one base.
+const BASE_NAME := "Mobile Command Citadel"
 
 ## Every skill a unit can have: [id, name, glyph (HudGlyph), key, keycode, has, ready, cooldown (field), cooldown (stat)].
 ## The skills on one key are in the order the key tries them (AttackerController.skill_key). has: a method, or
@@ -80,7 +82,6 @@ var status_label: Label
 var alarm_banner: Button
 var aim_label: Label
 var help_panel: Control
-var spawn_buttons: Array[Button] = []
 var minimap: Minimap
 var portraits: UnitPortraits
 
@@ -227,26 +228,11 @@ func _build_card() -> void:
 		_skills_grid.add_child(slot)
 		_skill_slots.append(slot)
 
-	# The base's production: the bases to switch to, then the units.
+	# The base's production: the units to build.
 	_base_box = VBoxContainer.new()
 	_base_box.add_theme_constant_override("separation", 4)
+	_base_box.size_flags_vertical = Control.SIZE_SHRINK_END
 	row.add_child(_base_box)
-	var bases := HBoxContainer.new()
-	bases.add_theme_constant_override("separation", 3)
-	_base_box.add_child(bases)
-	var group := ButtonGroup.new()
-	for i in level.spawn_names.size():
-		var b := UIKit.button(level.spawn_names[i], FONT)
-		b.toggle_mode = true
-		b.button_group = group
-		b.focus_mode = Control.FOCUS_NONE
-		b.custom_minimum_size = Vector2(0, 22)
-		b.pressed.connect(controller.select_base.bind(i, true))
-		var main: bool = i >= level.spawn_bases.size() or level.spawn_bases[i] == null
-		b.tooltip_text = "%s: your main base" % level.spawn_names[i] if main \
-				else "%s: a forward base while you hold it" % level.spawn_bases[i].display_name
-		bases.add_child(b)
-		spawn_buttons.append(b)
 	var grid := GridContainer.new()
 	grid.columns = BASE_COLS
 	grid.add_theme_constant_override("h_separation", 4)
@@ -369,7 +355,7 @@ func _build_overlays() -> void:
 	help_panel.visible = false
 	help_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(help_panel)
-	help_panel.add_child(UIKit.label(AttackerController.HELP % AttackerBase.INCOME, 13, Color(0.88, 0.88, 0.9)))
+	help_panel.add_child(UIKit.label(AttackerController.HELP, 13, Color(0.88, 0.88, 0.9)))
 
 	aim_label = UIKit.label("", 15, AttackerController.MISSILE_LINE)
 	aim_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -442,7 +428,7 @@ func _on_group_clicked(event: InputEventMouseButton, i: int) -> void:
 
 func _on_mug_clicked(event: InputEventMouseButton) -> void:
 	if controller.base_selected:
-		controller.camera_rig.focus(commander.spawn_points[controller.spawn_index])
+		controller.camera_rig.focus(commander.spawn_points[0])
 		return
 	var sel := _selection()
 	if sel.is_empty():
@@ -536,9 +522,9 @@ func _update_banner() -> void:
 	var held := level.bases.filter(func(b): return b.controlled)
 	_banner.outposts_held = held.size()
 	_banner.outposts_total = level.bases.size()
-	var lines := PackedStringArray(["Outposts (forward helipads): each one you hold is a base to build at and +%.1f credits/s" % AttackerBase.INCOME])
+	var lines := PackedStringArray(["Outposts (the helipads): each one you hold sees round itself, and the transport helicopters land there"])
 	for b in level.bases:
-		lines.append("%s: %s" % [b.display_name, "held" if b.controlled else "SABOTAGED: stand ground units by it to retake it"])
+		lines.append("%s: %s" % [b.display_name, "held" if b.controlled else "SABOTAGED (no vision): stand ground units by it to retake it"])
 	lines.append("Click: look at the next one")
 	_banner.outposts_tip = "\n".join(lines)
 
@@ -551,8 +537,7 @@ func _update_line() -> void:
 	var more := 0
 	for k in range(LINE_SHOWN, runs.size()):
 		more += runs[k][1]
-	var out_at: String = level.spawn_names[commander.production[0].spawn]
-	_line_head.text = "BUILDING > %s" % out_at + ("  +%d" % more if more > 0 else "")
+	_line_head.text = "BUILDING" + ("  +%d" % more if more > 0 else "")
 	for k in LINE_SHOWN:
 		var slot := _line_slots[k]
 		slot.visible = k < runs.size()
@@ -610,18 +595,16 @@ func _update_card(sel: Array) -> void:
 	_mug.queue_redraw()
 
 
-## The base selected: the units to build there and what it is.
+## The base selected: the units to build and what it is.
 func _update_base() -> void:
-	var i := controller.spawn_index
-	var b: AttackerBase = level.spawn_bases[i] if i < level.spawn_bases.size() else null
-	_mug.glyph = "outpost" if b != null else "base"
+	_mug.glyph = "base"
 	_mug.initials = ""
 	_mug.tint = Color(0.12, 0.16, 0.14, 0.95)
 	_mug.tooltip_text = "Click: look at it"
-	_mug_name.text = b.display_name if b != null else "Main base: %s" % level.spawn_names[i]
-	_mug_hp_text.text = ("Held · +%.1f credits/s" % AttackerBase.INCOME) if b != null else "+%.1f credits/s" % commander.income
+	_mug_name.text = BASE_NAME
+	_mug_hp_text.text = "Your base · +%.1f credits/s" % commander.income_rate()
 	var queued := commander.production.size()
-	_base_text.text = "Units come out here · Tab: the next base\n%s" % ("%d on the line" % queued if queued > 0 else "Nothing on the line")
+	_base_text.text = "Every unit comes out here\n%s" % ("%d on the line" % queued if queued > 0 else "Nothing on the line")
 	for type_id in _base_slots:
 		var slot: HudSlot = _base_slots[type_id]
 		slot.texture = _thumb(type_id)
