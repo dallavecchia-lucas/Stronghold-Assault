@@ -1,7 +1,8 @@
 class_name UnitPortraits
 extends Node
-## Portraits of the attacker unit types for the RTS HUD (AttackerHUD), rendered from the units' own models when the match
-## starts, so a new unit type gets its pictures with no art to make:
+## Portraits rendered from the game's own models when the match starts, so a new unit gets its pictures with no art to
+## make: the attacker unit types for the RTS HUD (AttackerHUD; the default subjects), or any `subjects` the owner sets
+## before adding it (the defender's squads and machines for DefenderHUD: DEFENDER_SUBJECTS):
 ##   "thumb"  the whole unit, three-quarters front (the production card, the production line, the groups)
 ##   "mug"    the top of it, round its head (the selected unit's mugshot)
 ## One SubViewport with a world of its own and a studio light renders each unit in its idle clip, one a frame; the picture
@@ -36,7 +37,21 @@ static var _textures := {}  # "type_id:kind" -> Texture2D
 
 var _vp: SubViewport
 var _cam: Camera3D
-var _jobs: Array[String] = []
+## What to render: [[key, model path, idle clip ("": none), hand-held gun ("": none)]]; empty: every attacker unit type
+## (keyed by type id).
+var subjects: Array = []
+var _jobs: Array = []
+
+## The defender's roster (DefenderHUD): an AA Squad's Missile Trooper, a Flame Trooper, an Infiltrator, the Sniper, the
+## Fighter Jet and the Hover Tank.
+const DEFENDER_SUBJECTS := [
+	["d_aa", "res://assets/defenders/armored_sentinel/missile_trooper_rigged.glb", "Idle", ""],
+	["d_flame", "res://assets/defenders/crimson_warden/flame_trooper_rigged.glb", "Idle", ""],
+	["d_infiltrator", "res://assets/defenders/harpy_vanguard/infiltrator_rigged.glb", "Idle", ""],
+	["d_sniper", "res://assets/defenders/grey_veil_warden/sniper_rigged.glb", "Idle", ""],
+	["d_jet", "res://assets/defenders/defender_fighter_jet/defender_fighter_jet.glb", "", ""],
+	["d_tank", "res://assets/defenders/iron_vanguard/iron_vanguard.glb", "", ""],
+]
 
 
 ## The `kind` ("thumb" or "mug") picture of `type_id`; null until it is rendered.
@@ -73,9 +88,14 @@ static func role_tint(type_id: String) -> Color:
 func _ready() -> void:
 	if DisplayServer.get_name() == "headless":
 		return
-	for type_id in UnitTypes.ORDER:
-		if not _textures.has(type_id + ":thumb"):
-			_jobs.append(type_id)
+	if subjects.is_empty():
+		for type_id in UnitTypes.ORDER:
+			var stats: Dictionary = UnitTypes.DATA[type_id]
+			subjects.append([type_id, stats.model, stats.get("anim_idle", "Glide" if stats.get("anim", "") == "flight" else ""),
+					stats.get("gun", "")])
+	for subject in subjects:
+		if not _textures.has(subject[0] + ":thumb"):
+			_jobs.append(subject)
 	if _jobs.is_empty():
 		return
 	_vp = SubViewport.new()
@@ -115,12 +135,13 @@ func _run() -> void:
 	# The match's first frames go to its own shaders: start a moment later.
 	await get_tree().process_frame
 	while not _jobs.is_empty():
-		var type_id: String = _jobs.pop_front()
-		var model := _instance(type_id)
+		var job: Array = _jobs.pop_front()
+		var type_id: String = job[0]
+		var model := _instance(job[1], job[3])
 		if model == null:
 			continue
 		_vp.add_child(model)
-		_pose(model, type_id)
+		_pose(model, job[2])
 		var box := _bounds(model)
 		var at := box.get_center()
 		var radius := maxf(box.size.length() * 0.5 * FIRST_FILL, 0.3)
@@ -212,29 +233,26 @@ static func _square(img: Image, centre: Vector2, side: float) -> ImageTexture:
 	return ImageTexture.create_from_image(out)
 
 
-## The unit's model (and its hand-held gun), or null if it can't be loaded.
-static func _instance(type_id: String) -> Node3D:
-	var stats: Dictionary = UnitTypes.DATA[type_id]
-	if not ResourceLoader.exists(stats.model):
+## The model at `path` (and the hand-held `gun` on its rifle bone), or null if it can't be loaded.
+static func _instance(path: String, gun: String) -> Node3D:
+	if not ResourceLoader.exists(path):
 		return null
-	var scene := load(stats.model) as PackedScene
+	var scene := load(path) as PackedScene
 	if scene == null:
 		return null
 	var m := scene.instantiate() as Node3D
-	if m != null and stats.has("gun") and ResourceLoader.exists(stats.gun):
-		HeldGun.attach(m, stats.gun)
+	if m != null and gun != "" and ResourceLoader.exists(gun):
+		HeldGun.attach(m, gun)
 	return m
 
 
-## Stands it in its idle clip (the talon in its glide), playing: some rigs only take their size once it plays.
-static func _pose(m: Node3D, type_id: String) -> void:
-	var stats: Dictionary = UnitTypes.DATA[type_id]
+## Stands it in its idle `clip` (the talon in its glide), playing: some rigs only take their size once it plays.
+static func _pose(m: Node3D, clip: String) -> void:
 	var players := m.find_children("*", "AnimationPlayer", true, false)
-	if players.is_empty():
+	if players.is_empty() or clip == "":
 		return
 	var anim := players[0] as AnimationPlayer
-	var clip: String = stats.get("anim_idle", "Glide" if stats.get("anim", "") == "flight" else "")
-	if clip != "" and anim.has_animation(clip):
+	if anim.has_animation(clip):
 		anim.play(clip)
 		anim.seek(0.0, true)
 		anim.advance(0.0)

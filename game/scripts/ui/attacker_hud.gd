@@ -4,7 +4,7 @@ extends Control
 ## screen only while it has something to show, no text under FONT px.
 ##
 ##   top centre    spawn credits | air vents destroyed / total; under it the clock, the gates, the bridges left (click: drop
-##                 one) and the outposts held (click: look at the next) (CreditsBanner)
+##                 one) and the outposts held (click: look at the next) (StatusBanner)
 ##   top left      the production line, while anything is on it: a thumbnail for each run of one type with ×N, the front
 ##                 one's build bar; click one to take a unit off (Shift: the run), credits back
 ##   top right     the minimap (Minimap); the transport helicopters under it (HeloPanel)
@@ -85,7 +85,7 @@ var help_panel: Control
 var minimap: Minimap
 var portraits: UnitPortraits
 
-var _banner: CreditsBanner
+var _banner: StatusBanner
 var _line_panel: Control
 var _line_head: Label
 var _line_slots: Array[HudSlot] = []
@@ -162,7 +162,7 @@ func _build_select_rect() -> void:
 
 
 func _build_banner() -> void:
-	_banner = CreditsBanner.new()
+	_banner = StatusBanner.new()
 	_banner.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
 	_banner.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	_banner.bridges_pressed.connect(controller.toggle_bridge)
@@ -194,6 +194,7 @@ func _build_minimap() -> void:
 	frame.add_theme_stylebox_override("panel", sb)
 	minimap = Minimap.new()
 	minimap.controller = controller
+	minimap.commander = commander
 	minimap.level = level
 	minimap.custom_minimum_size = Vector2(MINIMAP, MINIMAP)
 	minimap.tooltip_text = "LMB: look there (drag to pan) · RMB: send the selection there (Ctrl+RMB: move without stopping to fight)"
@@ -343,7 +344,7 @@ func _build_overlays() -> void:
 		alarm_banner.add_theme_stylebox_override(st, alarm_style)
 	alarm_banner.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
 	alarm_banner.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	alarm_banner.position.y += CreditsBanner.HEIGHT + CreditsBanner.STRIP_H + 8.0
+	alarm_banner.position.y += StatusBanner.HEIGHT + StatusBanner.STRIP_H + 8.0
 	alarm_banner.visible = false
 	add_child(alarm_banner)
 
@@ -505,13 +506,19 @@ static func _thumb(type_id: String, kind := "thumb") -> Texture2D:
 
 
 func _update_banner() -> void:
-	_banner.credits = int(commander.supply)
-	_banner.income = commander.income_rate()
-	_banner.army = commander.units.size()
-	_banner.queued = commander.production.size()
-	_banner.army_cap = AttackerCommander.UNIT_CAP
-	_banner.vents_total = level.vents.size()
-	_banner.vents_down = level.vents.size() - level.vents_left()
+	var army := commander.units.size()
+	var queued := commander.production.size()
+	var cap := AttackerCommander.UNIT_CAP
+	var army_text := "ARMY %d/%d" % [army, cap] if queued == 0 else "ARMY %d+%d/%d" % [army, queued, cap]
+	_banner.left = ["SPAWN CREDITS", str(int(commander.supply)), UIKit.WARN, "+%.1f/s  ·  %s" % [commander.income_rate(), army_text],
+			UIKit.DANGER if army + queued >= cap else StatusBanner.CAPTION]
+	_banner.left_tip = "Spawn credits: units are paid for when they go on the production line\n+%.1f a second · army %d of %d (%d on the line)" \
+			% [commander.income_rate(), army, cap, queued]
+	var total := level.vents.size()
+	var down := total - level.vents_left()
+	_banner.right = ["VENTS DESTROYED", "%d / %d" % [down, total], UIKit.GOOD if down >= total and total > 0 else Color.WHITE,
+			"all %d for victory" % total, StatusBanner.CAPTION]
+	_banner.right_tip = "Air vents on the roofs: destroy all %d to win" % total
 	var m: Node = controller.match_ui.match_node if controller.match_ui else null
 	_banner.time_left = maxf(float(m.time_left), 0.0) if m != null else -1.0
 	_banner.gates = []

@@ -153,7 +153,7 @@ func get_hud_info() -> Dictionary:
 			"hint": "WASD move · Shift hustle · Mouse aim · LMB flame (6 m) · hold it on a trunk 8 s to burn a tree · V order (%s)" % ORDER_NAMES[order]}
 
 
-## For the roster (SquadHotbar): its name in a slot, its order, and what it is up to.
+## For the roster (DefenderHUD): its name in a slot, its order, and what it is up to.
 func roster_label() -> String:
 	return "FLAME %d" % number
 

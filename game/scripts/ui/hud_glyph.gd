@@ -14,6 +14,11 @@ extends RefCounted
 ##   lines     firing lines                       cross    the dogs' healing (and minesweeping)
 ##   gun       the mules' guns set up             ring     scout formation
 ##   base      the main base (the command citadel)
+##   reload    a reload                           drone    a drone swarm
+##   mine      mines                              flag     a squad's auto order
+##   camo      adaptive camo                      wrench   sabotage
+##   thermal   thermal sight                      bomb     a bomb
+##   up        a jump                             brake    an airbrake
 
 
 static func draw(ci: CanvasItem, kind: String, r: Rect2, col: Color, w := 2.0) -> void:
@@ -160,6 +165,56 @@ static func draw(ci: CanvasItem, kind: String, r: Rect2, col: Color, w := 2.0) -
 			ci.draw_line(c + Vector2(-0.22, -0.35) * s, c + Vector2(-0.22, -0.9) * s, col, w, true)
 			ci.draw_line(c + Vector2(0.22, -0.35) * s, c + Vector2(0.22, -0.75) * s, col, w, true)
 			ci.draw_line(c + Vector2(-0.9, 0.55) * s, c + Vector2(0.9, 0.55) * s, col, w, true)
+		"reload":
+			ci.draw_arc(c, s * 0.6, -PI * 0.35, PI * 1.45, 28, col, w * 1.3, true)
+			var tip := c + Vector2.from_angle(-PI * 0.35) * s * 0.6
+			_head(ci, tip + Vector2(-0.3, -0.45) * s, tip, s * 0.42, col)
+		"drone":
+			# A quad drone from above: the body and four rotors.
+			for d in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
+				ci.draw_line(c, c + d * s * 0.5, col, w, true)
+				ci.draw_arc(c + d * s * 0.55, s * 0.24, 0.0, TAU, 16, col, w * 0.8, true)
+			ci.draw_rect(Rect2(c - Vector2(0.18, 0.18) * s, Vector2(0.36, 0.36) * s), col)
+		"mine":
+			ci.draw_arc(c + Vector2(0, 0.15) * s, s * 0.5, PI, TAU, 18, col, w, true)
+			ci.draw_line(c + Vector2(-0.75, 0.15) * s, c + Vector2(0.75, 0.15) * s, col, w * 1.2, true)
+			ci.draw_line(c + Vector2(-0.95, 0.55) * s, c + Vector2(0.95, 0.55) * s, Color(col, col.a * 0.5), w, true)
+			ci.draw_circle(c + Vector2(0, -0.45) * s, s * 0.1, UIKit.DANGER)
+		"flag":
+			ci.draw_line(c + Vector2(-0.5, 0.9) * s, c + Vector2(-0.5, -0.85) * s, col, w * 1.2, true)
+			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(-0.5, -0.85) * s, c + Vector2(0.7, -0.5) * s,
+					c + Vector2(-0.5, -0.12) * s]), Color(col, col.a * 0.7))
+		"camo":
+			# An eye struck through: unseen.
+			HudGlyph.draw(ci, "eye", r, Color(col, col.a * 0.7), w)
+			ci.draw_line(c + Vector2(-0.8, 0.7) * s, c + Vector2(0.8, -0.7) * s, col, w * 1.3, true)
+		"wrench":
+			var a := c + Vector2(-0.6, 0.6) * s
+			var b := c + Vector2(0.35, -0.35) * s
+			ci.draw_line(a, b, col, w * 2.0, true)
+			ci.draw_arc(b + Vector2(0.12, -0.12) * s, s * 0.3, -PI * 0.25 + 0.9, -PI * 0.25 + TAU - 0.9, 18, col, w * 1.4, true)
+		"thermal":
+			ci.draw_arc(c + Vector2(0, 0.45) * s, s * 0.28, 0.0, TAU, 18, col, w, true)
+			ci.draw_circle(c + Vector2(0, 0.45) * s, s * 0.16, UIKit.DANGER)
+			ci.draw_line(c + Vector2(0, 0.2) * s, c + Vector2(0, -0.85) * s, col, w * 2.4, true)
+			ci.draw_line(c + Vector2(0, 0.2) * s, c + Vector2(0, -0.35) * s, UIKit.DANGER, w * 1.2, true)
+		"bomb":
+			ci.draw_colored_polygon(PackedVector2Array([c + Vector2(0, 0.85) * s, c + Vector2(0.32, 0.3) * s, c + Vector2(0.28, -0.4) * s,
+					c + Vector2(-0.28, -0.4) * s, c + Vector2(-0.32, 0.3) * s]), Color(col, col.a * 0.6))
+			ci.draw_line(c + Vector2(-0.4, -0.75) * s, c + Vector2(0.4, -0.75) * s, col, w, true)
+			ci.draw_line(c + Vector2(0, -0.4) * s, c + Vector2(0, -0.75) * s, col, w, true)
+		"up":
+			var a := c + Vector2(0, 0.8) * s
+			var b := c + Vector2(0, -0.6) * s
+			ci.draw_arc(c + Vector2(0, 0.8) * s, s * 0.7, PI * 1.15, PI * 1.85, 16, Color(col, col.a * 0.5), w, true)
+			ci.draw_line(a, b, col, w * 1.4, true)
+			_head(ci, a, b, s * 0.45, col)
+		"brake":
+			for k in 2:
+				var x := (0.15 - 0.5 * k) * s
+				ci.draw_polyline(PackedVector2Array([c + Vector2(x + 0.35 * s, -0.55 * s), c + Vector2(x - 0.15 * s, 0.0),
+						c + Vector2(x + 0.35 * s, 0.55 * s)]), col, w * 1.4, true)
+			ci.draw_line(c + Vector2(0.65, -0.7) * s, c + Vector2(0.65, 0.7) * s, col, w * 1.4, true)
 		_:
 			ci.draw_arc(c, s * 0.6, 0.0, TAU, 24, col, w, true)
 

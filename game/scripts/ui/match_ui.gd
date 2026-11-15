@@ -102,6 +102,13 @@ func _process(delta: float) -> void:
 	_timer_label.text = "%d:%02d" % [int(t) / 60, int(t) % 60]
 
 
+## The defending player's HUD takes over the status bar (its banner shows the time, the vents and the gates); the alerts
+## stay, moved down to `top` (under that banner).
+func attach_defender_hud(top: float) -> void:
+	_top.visible = false
+	_alerts.position.y = top
+
+
 ## The attacking player's HUD takes over: the status bar at the top goes (it shows the vents, the gates and the clock
 ## itself) and the alerts go to `sink` (text, colour, place) instead of the feed.
 func attach_attacker_hud(sink: Callable) -> void:

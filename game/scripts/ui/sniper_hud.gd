@@ -1,12 +1,12 @@
 class_name SniperHud
 extends Control
-## The Sniper's panel while the player drives her (Sniper), above the weapon panel: her tags (a slot for
+## The Sniper's panel while the player drives her (Sniper), bottom right: her tags (a slot for
 ## each of the five she can keep out, each running down its 20 s), the thermal sight (on, recharging or
 ## ready) and the scope's zoom; and a line low under the crosshair now and then (a tag, the thermal
 ## sight), clear of what the scope is on.
 
 const BLOCK := Vector2(270, 112)
-const BLOCK_MARGIN := Vector2(16, 150)
+const BLOCK_MARGIN := Vector2(16, 16)
 const EMPTY := Color(0.2, 0.22, 0.26, 0.9)
 const DIM := Color(0.7, 0.75, 0.85)
 const THERMAL := Color(1.0, 0.6, 0.15)

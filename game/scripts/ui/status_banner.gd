@@ -1,9 +1,10 @@
-class_name CreditsBanner
+class_name StatusBanner
 extends Control
-## The trapezoid at the top centre of the attacker's HUD (AttackerHUD): spawn credits on the left (the income and the
-## army's size under them), the air vents destroyed out of the total on the right (every one of them down wins the match),
-## and under it a narrower strip: the match clock (the defenders win when it runs out), the gates' health, the folding
-## bridges left (click: drop one) and the outposts held (click: look at the next). Hover any of them for more.
+## The trapezoid at the top centre of both sides' HUDs: two big readings side by side, each with a caption over it and a
+## line under it (`left`, `right`: the attacker's spawn credits | air vents destroyed, the defender's time to hold | air
+## vents standing), and under them a narrower strip: the match clock (time_left; the attacker's), the gates' health, the
+## folding bridges left (click: drop one) and the outposts held (click: look at the next), and a line of text (strip_text:
+## the defender's credits). Hover any of them for more.
 
 signal bridges_pressed
 signal outposts_pressed
@@ -17,24 +18,25 @@ const EDGE := Color(0.42, 0.48, 0.58, 0.7)
 const CAPTION := Color(0.7, 0.75, 0.85)
 const SMALL := 11
 
-var credits := 0
-var income := 0.0
-var army := 0
-## Units on the production line (they count toward the cap).
-var queued := 0
-var army_cap := 0
-var vents_down := 0
-var vents_total := 0
-## Seconds left in the match (<0: no clock).
+## [caption, value, value colour, line under it, its colour] for each half.
+var left := ["", "", Color.WHITE, "", CAPTION]
+var right := ["", "", Color.WHITE, "", CAPTION]
+var left_tip := ""
+var right_tip := ""
+## Seconds left in the match (<0: no clock in the strip).
 var time_left := -1.0
 ## [[side letter, health 0..1, under attack now]] per gate.
 var gates: Array = []
-## Folding bridges left (<0: none on this map), and the outposts.
+## Folding bridges left (<0: none shown), and the outposts (none shown with no outposts_total).
 var bridges_left := -1
 var outposts_held := 0
 var outposts_total := 0
 var outposts_tip := ""
-## The credits flash red for a moment after a unit couldn't be paid for.
+## A line of text at the end of the strip ("": none), its colour and its tooltip.
+var strip_text := ""
+var strip_color := UIKit.WARN
+var strip_tip := ""
+## The left value flashes red for a moment (a unit couldn't be paid for).
 var short_flash := 0.0
 
 ## [Rect2, tooltip, signal name or ""] for the parts of the strip, as last drawn.
@@ -56,10 +58,7 @@ func _get_tooltip(at_position: Vector2) -> String:
 		if (r[0] as Rect2).has_point(at_position):
 			return r[1]
 	if at_position.y < HEIGHT:
-		if at_position.x < size.x * 0.5:
-			return "Spawn credits: units are paid for when they go on the production line\n+%.1f a second · army %d of %d (%d on the line)" \
-					% [income, army, army_cap, queued]
-		return "Air vents on the roofs: destroy all %d to win" % vents_total
+		return left_tip if at_position.x < size.x * 0.5 else right_tip
 	return ""
 
 
@@ -86,21 +85,13 @@ func _draw() -> void:
 	var mid := w * 0.5
 	draw_line(Vector2(mid, 7), Vector2(mid, HEIGHT - 7), EDGE, 1.0)
 
-	# Spawn credits.
-	_caption(font, Vector2(slant, 3), mid - slant, "SPAWN CREDITS")
-	var col := UIKit.DANGER.lerp(UIKit.WARN, 1.0 - short_flash / 0.6) if short_flash > 0.0 else UIKit.WARN
-	_big(font, Vector2(slant, 34), mid - slant, str(credits), col)
-	var army_text := "ARMY %d/%d" % [army, army_cap] if queued == 0 else "ARMY %d+%d/%d" % [army, queued, army_cap]
-	_caption(font, Vector2(slant, 36), mid - slant, "+%.1f/s  ·  %s" % [income, army_text],
-			UIKit.DANGER if army + queued >= army_cap else CAPTION)
+	var left_col: Color = left[2]
+	if short_flash > 0.0:
+		left_col = UIKit.DANGER.lerp(left_col, 1.0 - short_flash / 0.6)
+	_half(font, slant, mid - slant, left[0], left[1], left_col, left[3], left[4])
+	_half(font, mid, w * 0.5 - slant, right[0], right[1], right[2], right[3], right[4])
 
-	# Vents destroyed / total.
-	_caption(font, Vector2(mid, 3), w * 0.5 - slant, "VENTS DESTROYED")
-	_big(font, Vector2(mid, 34), w * 0.5 - slant, "%d / %d" % [vents_down, vents_total],
-			UIKit.GOOD if vents_down >= vents_total and vents_total > 0 else Color.WHITE)
-	_caption(font, Vector2(mid, 36), w * 0.5 - slant, "all %d for victory" % vents_total)
-
-	# The strip: the clock, the gates, the bridges and the outposts.
+	# The strip: the clock, the gates, the bridges, the outposts and the text.
 	var sx := (w - STRIP_W) * 0.5
 	var strip := PackedVector2Array([Vector2(sx, HEIGHT), Vector2(sx + STRIP_W, HEIGHT),
 			Vector2(sx + STRIP_W - 12, HEIGHT + STRIP_H), Vector2(sx + 12, HEIGHT + STRIP_H)])
@@ -139,12 +130,16 @@ func _draw() -> void:
 		draw_string(font, Vector2(x + 19, y), "%d/%d" % [outposts_held, outposts_total], HORIZONTAL_ALIGNMENT_LEFT, -1, SMALL,
 				Color.WHITE if outposts_held == outposts_total else UIKit.WARN)
 		_regions.append([Rect2(x, HEIGHT, 48, STRIP_H), outposts_tip, "outposts_pressed"])
+		x += 52.0
+	if strip_text != "":
+		var tw := font.get_string_size(strip_text, HORIZONTAL_ALIGNMENT_LEFT, -1, SMALL).x
+		draw_string(font, Vector2(x, y), strip_text, HORIZONTAL_ALIGNMENT_LEFT, -1, SMALL, strip_color)
+		_regions.append([Rect2(x, HEIGHT, tw, STRIP_H), strip_tip, ""])
 
 
-func _caption(font: Font, at: Vector2, width: float, text: String, col := CAPTION) -> void:
-	draw_string(font, Vector2(at.x, at.y + 11), text, HORIZONTAL_ALIGNMENT_CENTER, width, SMALL, col)
-
-
-func _big(font: Font, at: Vector2, width: float, text: String, col: Color) -> void:
-	draw_string_outline(font, at, text, HORIZONTAL_ALIGNMENT_CENTER, width, 20, 4, Color(0, 0, 0, 0.8))
-	draw_string(font, at, text, HORIZONTAL_ALIGNMENT_CENTER, width, 20, col)
+## One reading: `caption` over `value` over `sub`, centred in `width` from `x`.
+func _half(font: Font, x: float, width: float, caption: String, value: String, col: Color, sub: String, sub_col: Color) -> void:
+	draw_string(font, Vector2(x, 14), caption, HORIZONTAL_ALIGNMENT_CENTER, width, SMALL, CAPTION)
+	draw_string_outline(font, Vector2(x, 34), value, HORIZONTAL_ALIGNMENT_CENTER, width, 20, 4, Color(0, 0, 0, 0.8))
+	draw_string(font, Vector2(x, 34), value, HORIZONTAL_ALIGNMENT_CENTER, width, 20, col)
+	draw_string(font, Vector2(x, 47), sub, HORIZONTAL_ALIGNMENT_CENTER, width, SMALL, sub_col)

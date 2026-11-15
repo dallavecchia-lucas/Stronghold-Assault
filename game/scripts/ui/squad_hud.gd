@@ -1,11 +1,13 @@
 class_name SquadHud
 extends Control
-## Squad panel (Gunner Squad, AA Squads, Flame Squads), bottom left while the player drives the
+## Squad panel (Gunner Squad, AA Squads, Flame Squads), bottom right while the player drives the
 ## squad: its formation, each trooper's health, and a small map turned with the camera (up is where
 ## the player looks) showing the troopers, the spot each follower is making for, and attackers close
 ## by.
 
 const SIZE := Vector2(250, 300)
+## How far up from the screen's bottom it sits: over the squads' own panels in the corner (the tallest, AAHud's, 118).
+const ABOVE := 16.0 + 118.0 + 8.0
 const MAP := 120.0  # map radius (px)
 const MAP_RANGE := 16.0  # meters to the map's edge
 const LEADER := Color(0.35, 0.7, 1.0)
@@ -26,14 +28,15 @@ func flash(text: String) -> void:
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	anchor_left = 0.0
-	anchor_right = 0.0
+	# Bottom right, over the squad's own panel (AAHud, FlameHud, InfiltratorHud): the ammo counter has the bottom left.
+	anchor_left = 1.0
+	anchor_right = 1.0
 	anchor_top = 1.0
 	anchor_bottom = 1.0
-	offset_left = 16.0
-	offset_right = 16.0 + SIZE.x
-	offset_top = -16.0 - SIZE.y
-	offset_bottom = -16.0
+	offset_left = -16.0 - SIZE.x
+	offset_right = -16.0
+	offset_top = -ABOVE - SIZE.y
+	offset_bottom = -ABOVE
 
 
 func _process(delta: float) -> void:

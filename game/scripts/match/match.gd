@@ -79,6 +79,8 @@ func _ready() -> void:
 		dc.level = level
 		dc.armory = armory
 		dc.drones = drones
+		dc.match_ui = ui
+		dc.commander = commander
 		player_controller = dc
 		ai_attacker = AIAttacker.new()
 		ai_attacker.commander = commander

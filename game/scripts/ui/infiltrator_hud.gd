@@ -6,7 +6,7 @@ extends Control
 ## themselves look as ever on the defender's side).
 
 const BLOCK := Vector2(270, 112)
-const BLOCK_MARGIN := Vector2(16, 150)
+const BLOCK_MARGIN := Vector2(16, 16)
 const EMPTY := Color(0.2, 0.22, 0.26, 0.9)
 const DIM := Color(0.7, 0.75, 0.85)
 ## The vignette: how far in from the edges it reaches (share of the screen) and its tint.

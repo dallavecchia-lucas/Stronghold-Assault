@@ -1,11 +1,11 @@
 class_name FlameHud
 extends Control
-## The Flame Squad's panel while the player drives it (FlameSquad), above the weapon panel: each
+## The Flame Squad's panel while the player drives it (FlameSquad), bottom right: each
 ## trooper's pressure, how close the tree under the leader's flame is to catching (it has to be
 ## held on it for ForestTree.IGNITE_TIME), and the squad's auto order.
 
 const BLOCK := Vector2(250, 96)
-const BLOCK_MARGIN := Vector2(16, 150)
+const BLOCK_MARGIN := Vector2(16, 16)
 const EMPTY := Color(0.2, 0.22, 0.26, 0.9)
 const VENT := Color(0.7, 0.72, 0.76)
 

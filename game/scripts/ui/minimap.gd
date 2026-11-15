@@ -1,20 +1,23 @@
 class_name Minimap
 extends Control
-## The attacking player's minimap (AttackerHUD, top right): the whole map, north up (-z up, +x right).
+## The minimap of either side (AttackerHUD, DefenderHUD; top right): the whole map, north up (-z up, +x right), drawn from
+## the player's side: their own units green, the enemy red.
 ##
 ## The land is drawn once when the match starts, from the map's own data rather than a render: on the Jungle Keep the
-## ground's heights (JungleTerrain, hill-shaded), the rivers and the lake, the forest and the clearing; on the classic field
-## its groves (LevelBuilder.FORESTS). Over it, live:
-##   the fog of war   dark beyond what the army sees (AttackerVision's viewers), redrawn a few times a second
+## ground's heights (JungleTerrain, hill-shaded), the rivers and the lake, the forest and the clearing; on the showcases'
+## field its groves (LevelBuilder.FORESTS). Over it, live:
+##   the fog of war   the attacker's: dark beyond what the army sees (AttackerVision's viewers), redrawn a few times a second
 ##   the stronghold   the mountain, its air vents (destroyed ones crossed out) and its gates (by health; open when down)
-##   the base         where every unit comes out (a ring), and the outposts (the helipads): held (green), sabotaged (red,
-##                    blinking) or being retaken (amber)
-##   bridges          cyan across the rivers, red while their alarm goes off
-##   units            the army (green; white when selected, the transport helicopters as white squares), and the
-##                    defenders it sees (red)
+##   the base         the attackers' citadel, where every unit comes out (a ring), and their outposts (the helipads): held,
+##                    sabotaged (blinking) or being retaken (amber)
+##   bridges          across the rivers, blinking while their alarm goes off
+##   units            the attacker's army (white when selected, the transport helicopters as squares) and the defenders it
+##                    sees; the defender's soldiers, squads and machines and every attacker not hidden from them (sneaking,
+##                    coiled in a bush, under the water)
 ##   pings            rings where a warning came from (flash())
-##   the camera       its view on the ground (white outline)
-## LMB (or drag) moves the camera there; RMB sends the selected units there (attack-move; Ctrl+RMB: move).
+##   the view         the attacker's camera on the ground (white outline); the defender's post, an arrow the way they look
+## Attacker: LMB (or drag) moves the camera there; RMB sends the selected units there (attack-move; Ctrl+RMB: move).
+## Defender: LMB takes the post nearest there.
 
 const RES := 256
 const FOG_RES := 128
@@ -28,8 +31,12 @@ const GRASS := Color(0.33, 0.42, 0.2)
 const ROCK := Color(0.42, 0.4, 0.38)
 const PING_TIME := 2.5
 
+## The attacking player's controller, or the defending player's (one of the two).
 var controller: AttackerController
+var defender: DefenderController
 var level: LevelBuilder
+## The attackers' army: their units, bridges, base and helicopters.
+var commander: AttackerCommander
 
 var _base: ImageTexture
 var _fog_img: Image
@@ -171,7 +178,7 @@ func _draw() -> void:
 	var r := Rect2(Vector2.ZERO, size)
 	if _base:
 		draw_texture_rect(_base, r, false)
-	if AttackerVision.instance and _fog_tex:
+	if controller != null and AttackerVision.instance and _fog_tex:
 		draw_texture_rect(_fog_tex, r, false)
 	var px := size.x / (2.0 * LevelBuilder.map_half)  # minimap pixels a metre
 	var blink := fmod(_t * 2.0, 1.0) < 0.5
@@ -212,9 +219,10 @@ func _draw_bases(px: float, blink: bool) -> void:
 	for b in level.bases:
 		var at := to_map(b.global_position)
 		var half := Vector2(maxf(b.deck_size.x * px * 0.5, 4.0), maxf(b.deck_size.y * px * 0.5, 4.0))
-		var col := OWN
+		# The attackers' outposts: held, the attacker's own (the defender's enemy); sabotaged, the other way round.
+		var col := OWN if controller != null else ENEMY
 		if not b.controlled:
-			col = UIKit.WARN if b.capture > 0.0 else UIKit.DANGER
+			col = UIKit.WARN if b.capture > 0.0 else (UIKit.DANGER if controller != null else Color(0.6, 0.65, 0.7))
 			if blink:
 				col = col.darkened(0.4)
 		draw_rect(Rect2(at - half, half * 2.0), Color(col, 0.35))
@@ -222,64 +230,76 @@ func _draw_bases(px: float, blink: bool) -> void:
 
 
 func _draw_bridges(px: float, blink: bool) -> void:
-	if controller == null:
+	if commander == null:
 		return
-	for b in controller.commander.bridges:
+	for b in commander.bridges:
 		if not is_instance_valid(b):
 			continue
 		var a := to_map(b.global_transform * Vector3(-b.length * 0.5, 0, 0))
 		var c := to_map(b.global_transform * Vector3(b.length * 0.5, 0, 0))
-		var col := UIKit.DANGER if b.alarm_on and blink else AttackerController.BRIDGE_OK
+		var col := UIKit.DANGER if b.alarm_on and blink else (AttackerController.BRIDGE_OK if controller != null else Color(1.0, 0.55, 0.45))
 		if not b.is_standing():
 			col = Color(col, 0.45)
 		draw_line(a, c, col, maxf(2.5, FoldingBridge.HALF_WIDTH * 2.0 * px), true)
 
 
 func _draw_spawn() -> void:
-	if controller == null:
+	if commander == null or commander.spawn_points.is_empty():
 		return
-	var at := to_map(controller.commander.spawn_points[0])
-	draw_arc(at, 7.0, 0.0, TAU, 20, Color.WHITE if controller.base_selected else Color(1, 1, 1, 0.6), 2.0, true)
-	draw_circle(at, 2.0, Color(1, 1, 1, 0.8))
+	var at := to_map(commander.spawn_points[0])
+	if controller != null:
+		draw_arc(at, 7.0, 0.0, TAU, 20, Color.WHITE if controller.base_selected else Color(1, 1, 1, 0.6), 2.0, true)
+		draw_circle(at, 2.0, Color(1, 1, 1, 0.8))
+	else:
+		draw_arc(at, 7.0, 0.0, TAU, 20, Color(ENEMY, 0.8), 2.0, true)
 
 
 func _draw_units() -> void:
-	# The defenders the army sees: soldiers, squad troopers and the machines (not the stronghold's emplacements).
+	var defending := controller == null
+	# The defenders: soldiers, squad troopers and the machines (not the stronghold's emplacements); the attacker sees only
+	# the ones in sight.
 	for d in get_tree().get_nodes_in_group("defender_targets"):
 		if not (d is DefenderSoldier or d is SquadTrooper or d is DefenderMachine):
 			continue
 		var n := d as Node3D
-		if not n.is_visible_in_tree() or not AttackerVision.sees_node(n):
+		if not defending and (not n.is_visible_in_tree() or not AttackerVision.sees_node(n)):
 			continue
 		if n.has_method("is_alive") and not n.call("is_alive"):
 			continue
-		draw_rect(Rect2(to_map(n.global_position) - Vector2(1.5, 1.5), Vector2(3, 3)), ENEMY)
-	if controller == null:
+		draw_rect(Rect2(to_map(n.global_position) - Vector2(1.5, 1.5), Vector2(3, 3)), OWN if defending else ENEMY)
+	if commander == null:
 		return
-	for u in controller.commander.units.values():
+	for u in commander.units.values():
 		if not is_instance_valid(u) or not u.is_alive():
 			continue
+		# Hidden from the defenders: sneaking, coiled in a bush, under the water.
+		if defending and (u.ghosted() or u.hidden_under()):
+			continue
 		var at := to_map(u.global_position)
-		var col := Color.WHITE if u.selected else OWN
+		var col := ENEMY if defending else Color.WHITE if u.selected else OWN
 		if u.is_flying():
 			draw_colored_polygon(PackedVector2Array([at + Vector2(0, -3), at + Vector2(2.5, 2), at + Vector2(-2.5, 2)]), col)
 		else:
 			var s := 2.0 if u.stats.radius < 1.0 else 3.0
 			draw_rect(Rect2(at - Vector2(s, s) * 0.5, Vector2(s, s)), col)
-	var fleet := controller.commander.fleet
+	var fleet := commander.fleet
 	if fleet:
 		for i in fleet.slots.size():
 			var h := fleet.helo_at(i)
 			if h and h.is_alive():
 				var at := to_map(h.global_position)
-				draw_rect(Rect2(at - Vector2(4, 4), Vector2(8, 8)), Color(1, 1, 1, 0.9), false, 1.5)
-				draw_line(at + Vector2(-2, -2.5), at + Vector2(-2, 2.5), Color.WHITE, 1.0)
-				draw_line(at + Vector2(2, -2.5), at + Vector2(2, 2.5), Color.WHITE, 1.0)
-				draw_line(at + Vector2(-2, 0), at + Vector2(2, 0), Color.WHITE, 1.0)
+				var hc := ENEMY if defending else Color.WHITE
+				draw_rect(Rect2(at - Vector2(4, 4), Vector2(8, 8)), Color(hc, 0.9), false, 1.5)
+				draw_line(at + Vector2(-2, -2.5), at + Vector2(-2, 2.5), hc, 1.0)
+				draw_line(at + Vector2(2, -2.5), at + Vector2(2, 2.5), hc, 1.0)
+				draw_line(at + Vector2(-2, 0), at + Vector2(2, 0), hc, 1.0)
 
 
 ## The camera's view on the ground: the screen's corners cast down onto the ground under the camera's focus.
 func _draw_view() -> void:
+	if defender != null:
+		_draw_post()
+		return
 	if controller == null or controller.camera_rig == null or controller.camera_rig.camera == null:
 		return
 	var cam := controller.camera_rig.camera
@@ -296,9 +316,32 @@ func _draw_view() -> void:
 	draw_polyline(pts, Color(1, 1, 1, 0.85), 1.0, true)
 
 
+## The defender's post: an arrow at it, pointing the way the camera looks.
+func _draw_post() -> void:
+	if defender.current == null:
+		return
+	var at := to_map(defender.current.get_station_position())
+	var cam := get_viewport().get_camera_3d()
+	var fwd := Vector2(0, -1)
+	if cam:
+		var f := -cam.global_basis.z
+		if Vector2(f.x, f.z).length() > 0.01:
+			fwd = Vector2(f.x, f.z).normalized()
+	var side := Vector2(-fwd.y, fwd.x)
+	var tri := PackedVector2Array([at + fwd * 8.0, at - fwd * 4.0 + side * 5.0, at - fwd * 2.0, at - fwd * 4.0 - side * 5.0])
+	draw_colored_polygon(tri, Color.WHITE)
+	draw_polyline(PackedVector2Array([tri[0], tri[1], tri[2], tri[3], tri[0]]), Color(0, 0, 0, 0.8), 1.0, true)
+
+
 # ---------------------------------------------------------------- input
 
 func _gui_input(event: InputEvent) -> void:
+	if defender != null:
+		var dm := event as InputEventMouseButton
+		if dm and dm.pressed and dm.button_index == MOUSE_BUTTON_LEFT:
+			defender.select_nearest_post(to_world(dm.position))
+			accept_event()
+		return
 	if controller == null:
 		return
 	var mb := event as InputEventMouseButton
