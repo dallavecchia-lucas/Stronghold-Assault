@@ -2,7 +2,7 @@ class_name BaseView
 extends Control
 ## The defender's tactical view of the base (DefenderHUD, top right by the minimap), north up like the minimap:
 ##   the four rectangles round it   each side's guns (its gun deck's and its roof's), filled to their health together and
-##                                  coloured by it; a red count of the attackers close to that side; the gate (south, east,
+##                                  coloured by it; a red count of the attackers close to that side (in its far end); the gate (south, east,
 ##                                  west) a notch on the stronghold's face, by its health (crossed when broken)
 ##   the ring inside it             the player's garrison spawn: a dot on the ring at the side it is on (Y moves it)
 ##   the circle in the middle       what the soldiers it spawns go for: B (BASE: guns, decks, then the field) or F (FIELD,
@@ -100,7 +100,8 @@ func _draw() -> void:
 		# Attackers close to that side.
 		var near: int = d.get("near", 0)
 		if near > 0:
-			var at := r.get_center() + _dir(side) * (s * BAND * 0.5 + 8.0)
+			# In the rectangle's far end (out of the way of the letter, inside the view).
+			var at := Vector2(r.end.x - 8.0, r.get_center().y) if side in ["north", "south"] else Vector2(r.get_center().x, r.end.y - 8.0)
 			var blink := 0.6 + 0.4 * sin(_t * 8.0)
 			draw_circle(at, 7.0, Color(UIKit.DANGER, blink))
 			draw_string(font, at + Vector2(-7, 4), str(near), HORIZONTAL_ALIGNMENT_CENTER, 14, FONT, Color.WHITE)
