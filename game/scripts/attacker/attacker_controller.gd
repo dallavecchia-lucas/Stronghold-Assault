@@ -1225,7 +1225,7 @@ func cancel_last(type_id: String) -> void:
 			return
 
 
-## A warning on the HUD's panel (the squid says it), `at` where it happened.
+## A warning on the HUD's panel (central command's octopus says it), `at` where it happened.
 func warn(text: String, col := UIKit.WARN, at := Vector3.INF) -> void:
 	if hud:
 		hud.warn(text, col, at)

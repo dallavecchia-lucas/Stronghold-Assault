@@ -16,7 +16,7 @@ extends Control
 ##                                their keys and costs
 ##                   a helicopter its mugshot
 ##                   nothing      a one-line hint
-##   bottom right  the unit groups there are, and the warnings while they are fresh, central command's squid with them
+##   bottom right  the unit groups there are, and the warnings while they are fresh, central command's tactical octopus with them
 ##
 ## The portraits are rendered from the units' own models (UnitPortraits).
 
@@ -30,10 +30,10 @@ const LINE_TILE := 44.0
 const LINE_SHOWN := 8
 const GROUP_TILE := 40.0
 const MINIMAP := 200.0
-const SQUID := 64.0
+const OCTOPUS := 72.0
 const WARN_W := 320.0
 const WARN_SHOWN := 3
-## The squid talks this long after a warning; a warning stays on screen this long.
+## The octopus talks this long after a warning; a warning stays on screen this long.
 const WARN_LIVE := 6.0
 const WARN_KEEP := 14.0
 const GROUPS := 9
@@ -107,7 +107,7 @@ var _warn_row: Control
 var _warn_labels: Array[Label] = []
 ## [text, colour, place (Vector3.INF: none), when (_clock)], the newest first.
 var _warnings: Array = []
-var _squid: CommandSquid
+var _octopus: CommandOctopus
 ## The unit type the mugshot shows (one of the selection's).
 var _focus_type := ""
 var _outpost_next := 0
@@ -327,10 +327,10 @@ func _build_right() -> void:
 		l.gui_input.connect(_on_warning_input.bind(k))
 		list.add_child(l)
 		_warn_labels.append(l)
-	_squid = CommandSquid.new()
-	_squid.custom_minimum_size = Vector2(SQUID, SQUID)
-	_squid.size_flags_vertical = Control.SIZE_SHRINK_END
-	warn.add_child(_squid)
+	_octopus = CommandOctopus.new()
+	_octopus.custom_minimum_size = Vector2(OCTOPUS, OCTOPUS)
+	_octopus.size_flags_vertical = Control.SIZE_SHRINK_END
+	warn.add_child(_octopus)
 
 
 func _build_overlays() -> void:
@@ -365,7 +365,7 @@ func _build_overlays() -> void:
 
 # ---------------------------------------------------------------- warnings
 
-## A warning (the newest on top) with the squid on screen; `at`: where it happened (a ring on the minimap, and clicking it
+## A warning (the newest on top) with the octopus on screen; `at`: where it happened (a ring on the minimap, and clicking it
 ## looks there).
 func warn(text: String, col := UIKit.WARN, at := Vector3.INF) -> void:
 	_warnings.push_front([text, col, at, _clock])
@@ -373,7 +373,7 @@ func warn(text: String, col := UIKit.WARN, at := Vector3.INF) -> void:
 		_warnings.resize(12)
 	if at != Vector3.INF:
 		minimap.flash(at, col)
-	_squid.tone = col
+	_octopus.tone = col
 
 
 ## The credits flash red: a unit couldn't be paid for.
@@ -759,6 +759,6 @@ func _update_right(sel: Array) -> void:
 		l.add_theme_color_override("font_color", w[1])
 		l.modulate.a = clampf(1.0 - (age - WARN_LIVE) / (WARN_KEEP - WARN_LIVE), 0.3, 1.0)
 		l.tooltip_text = "%s\n%d s ago%s" % [w[0], int(age), " · click: look there" if w[2] != Vector3.INF else ""]
-	_squid.talking = not _warnings.is_empty() and _clock - float(_warnings[0][3]) < WARN_LIVE
+	_octopus.talking = not _warnings.is_empty() and _clock - float(_warnings[0][3]) < WARN_LIVE
 	_warn_row.visible = fresh > 0
 	_right.visible = any_group or fresh > 0
