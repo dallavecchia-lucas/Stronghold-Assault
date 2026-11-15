@@ -56,18 +56,19 @@ class Slot:
         self.f.close()
 
 
-def patch_name(patch: dict, base: str) -> str:
-    return "p_" + hashlib.sha1(json.dumps([base, patch], sort_keys=True).encode()).hexdigest()[:12]
+def patch_name(patch: dict, base: str, diffs: list) -> str:
+    texts = [Path(d).read_text() for d in diffs]
+    return "p_" + hashlib.sha1(json.dumps([base, patch, texts], sort_keys=True).encode()).hexdigest()[:12]
 
 
-def resolve_project(variant: str, keep: bool, patch: dict, base: str = "") -> Path:
+def resolve_project(variant: str, keep: bool, patch: dict, base: str = "", diffs: list = ()) -> Path:
     """The Godot project a match is played on: the game itself, a named variant, or a variant made for `patch`."""
     if variant:
         if keep and (variant_mod.DEFAULT_ROOT / variant).exists():
             return variant_mod.DEFAULT_ROOT / variant
-        return variant_mod.build(variant, patch, base=base)
-    if patch or base:
-        return variant_mod.build(patch_name(patch, base), patch, base=base)
+        return variant_mod.build(variant, patch, base=base, diffs=diffs)
+    if patch or base or diffs:
+        return variant_mod.build(patch_name(patch, base, list(diffs)), patch, base=base, diffs=diffs)
     return variant_mod.GAME
 
 
@@ -124,6 +125,7 @@ def main() -> None:
     ap.add_argument("--variant", default="")
     ap.add_argument("--keep", action="store_true")
     ap.add_argument("--base", default="", help="build the patch on this variant instead of on the game")
+    ap.add_argument("--apply", action="append", help="unified diffs of script changes to apply to the variant (variant.py --diff)")
     ap.add_argument("--patch", action="append")
     ap.add_argument("--set", action="append")
     ap.add_argument("--match-time", type=float, default=0.0)
@@ -140,7 +142,7 @@ def main() -> None:
         patch.update(json.loads(Path(p).read_text()))
     patch.update(variant_mod.parse_sets(a.set))
     try:
-        project = resolve_project(a.variant, a.keep, patch, a.base)
+        project = resolve_project(a.variant, a.keep, patch, a.base, a.apply or [])
     except KeyError as e:
         sys.exit(f"patch error: {e.args[0]}")
     if a.fine:

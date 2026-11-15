@@ -8,7 +8,9 @@ patched, sharing the real project's assets and import cache through symlinks (a 
 prints the variant's directory (a Godot project: `godot --path <dir> ...`). The same NAME is rebuilt from the game as it
 is now each time, so a variant always is the current game plus its patch; `--keep` leaves one that is there alone (to
 edit its scripts by hand and play on: `--diff` then prints what was changed, as a patch for the repository), and
-`--base OTHER` starts from another variant, hand edits and all, instead of from the game.
+`--base OTHER` starts from another variant, hand edits and all, instead of from the game; `--apply file.diff` applies
+such a patch to the fresh copy (so hand edits can be carried onto the game as it is now: save them with --diff, rebuild
+with --apply).
 
 A patch is a JSON object of what to change:
 
@@ -114,8 +116,9 @@ def apply_patch(root: Path, patch: dict) -> list:
     return done
 
 
-def build(name: str, patch: dict, root: Path = DEFAULT_ROOT, game: Path = GAME, base: str = "") -> Path:
-    """Builds variant `name` from the game (or from the variant `base`, keeping its edits) plus `patch`."""
+def build(name: str, patch: dict, root: Path = DEFAULT_ROOT, game: Path = GAME, base: str = "", diffs: list = ()) -> Path:
+    """Builds variant `name` from the game (or from the variant `base`, keeping its edits), with the unified diffs
+    `diffs` applied (as `--diff` prints them) and then `patch`."""
     v = root / name
     if v.exists():
         shutil.rmtree(v)
@@ -139,8 +142,14 @@ def build(name: str, patch: dict, root: Path = DEFAULT_ROOT, game: Path = GAME, 
             shutil.copytree(item, v / ".godot" / item.name)
         else:
             shutil.copy2(item, v / ".godot" / item.name)
+    import subprocess
+    for d in diffs:
+        r = subprocess.run(["patch", "-p2", "-s", "--no-backup-if-mismatch", "-d", str(v), "-i", str(Path(d).resolve())],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            raise KeyError(f"diff {d} does not apply:\n{r.stdout}{r.stderr}")
     apply_patch(v, patch)
-    (v / "PATCH.json").write_text(json.dumps({"base": base, "patch": patch}, indent=1))
+    (v / "PATCH.json").write_text(json.dumps({"base": base, "diffs": [str(d) for d in diffs], "patch": patch}, indent=1))
     return v
 
 
@@ -173,6 +182,7 @@ def main() -> None:
     ap.add_argument("--set", action="append", help="Class.CONST=value, over the patch files")
     ap.add_argument("--root", type=Path, default=DEFAULT_ROOT)
     ap.add_argument("--base", default="", help="start from this variant (its edits kept) instead of from the game")
+    ap.add_argument("--apply", action="append", help="a unified diff of script changes (as --diff prints) to apply first")
     ap.add_argument("--keep", action="store_true", help="if the variant is there already, leave it as it is")
     ap.add_argument("--diff", action="store_true", help="print the variant's scripts against the game's and stop")
     a = ap.parse_args()
@@ -187,7 +197,7 @@ def main() -> None:
         patch.update(json.loads(Path(p).read_text()))
     patch.update(parse_sets(a.set))
     try:
-        print(build(a.name, patch, a.root, base=a.base))
+        print(build(a.name, patch, a.root, base=a.base, diffs=a.apply or []))
     except KeyError as e:
         sys.exit(f"patch error: {e.args[0]}")
 

@@ -42,6 +42,7 @@ def main() -> None:
     ap.add_argument("--variant", default="")
     ap.add_argument("--keep", action="store_true")
     ap.add_argument("--base", default="")
+    ap.add_argument("--apply", action="append", help="unified diffs of script changes to apply to the variant (variant.py --diff)")
     ap.add_argument("--patch", action="append")
     ap.add_argument("--set", action="append")
     ap.add_argument("--match-time", type=float, default=0.0)
@@ -56,7 +57,7 @@ def main() -> None:
         patch.update(json.loads(Path(p).read_text()))
     patch.update(variant_mod.parse_sets(a.set))
     try:
-        project = run_match.resolve_project(a.variant, a.keep, patch, a.base)
+        project = run_match.resolve_project(a.variant, a.keep, patch, a.base, a.apply or [])
     except KeyError as e:
         sys.exit(f"patch error: {e.args[0]}")
     if a.fine:
