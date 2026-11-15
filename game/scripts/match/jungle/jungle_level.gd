@@ -166,6 +166,8 @@ const JUNGLE_TIME := 900.0
 
 
 func match_time() -> float:
+	if GameConfig.match_time_override > 0.0:
+		return GameConfig.match_time_override
 	return maxf(GameConfig.match_duration, JUNGLE_TIME) if GameConfig.autotest == "" else GameConfig.match_duration
 
 

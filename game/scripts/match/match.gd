@@ -19,6 +19,8 @@ var drones: DroneBay
 var fleet: HeloFleet
 ## The defenders' foot soldiers, spawned all match long (the CPU defender has them too).
 var garrison: Garrison
+## The balance simulator (`--sim=`): the CPU plays both sides and the match is written up (SimDirector); null otherwise.
+var sim: SimDirector
 var time_left := 600.0
 var started := false
 var finished := false
@@ -71,7 +73,12 @@ func _ready() -> void:
 		drones.level = level
 		drones.swarm_launched.connect(func(_s): ui.alert("Defender drones are up: only bears and AA units can touch them", UIKit.WARN))
 
-	if GameConfig.player_side == GameConfig.PlayerSide.DEFENDER:
+	if GameConfig.sim != "":
+		# Nobody at the keyboard: the CPU attacks and the CPU defends (it makes the armory and both of them).
+		sim = SimDirector.new()
+		sim.name = "SimDirector"
+		sim.setup(self)
+	elif GameConfig.player_side == GameConfig.PlayerSide.DEFENDER:
 		armory = DefenderArmory.new()
 		armory.name = "DefenderArmory"
 		armory.level = level
@@ -93,7 +100,8 @@ func _ready() -> void:
 		ac.commander = commander
 		ac.match_ui = ui
 		player_controller = ac
-	ui.resumed.connect(player_controller.restore_mouse)
+	if player_controller:
+		ui.resumed.connect(player_controller.restore_mouse)
 
 	level.vents_destroyed.connect(func(): _end(GameConfig.TEAM_ATTACKER))
 
@@ -119,9 +127,12 @@ func _start() -> void:
 		if player_controller is DefenderController:
 			player_controller.garrison = garrison
 			player_controller.player_number = garrison.local_player
-	add_child(player_controller)
+	if player_controller:
+		add_child(player_controller)
 	if ai_attacker:
 		add_child(ai_attacker)
+	if sim:
+		add_child(sim)
 	var side_text := "Hold the stronghold!" if GameConfig.player_side == GameConfig.PlayerSide.DEFENDER else "Break through and destroy the air vents on the roofs!"
 	ui.alert(side_text, UIKit.ACCENT)
 	if GameConfig.autotest != "":
@@ -183,6 +194,9 @@ func _end(winner: int) -> void:
 	var title := "VICTORY" if won else "DEFEAT"
 	var sub := "The Keep has fallen." if winner == GameConfig.TEAM_ATTACKER else "The stronghold held!"
 	print("MATCH OVER: winner=%s time_left=%.0f" % ["attacker" if winner == GameConfig.TEAM_ATTACKER else "defender", time_left])
+	if sim:
+		sim.finish(winner)
+		return
 	if GameConfig.autotest != "":
 		_autotest_report()
 		get_tree().quit()

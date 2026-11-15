@@ -7,7 +7,7 @@ func _ready() -> void:
 	get_tree().paused = false
 	Engine.time_scale = 1.0
 
-	if GameConfig.autotest != "":
+	if GameConfig.autotest != "" or GameConfig.sim != "":
 		_start(GameConfig.PlayerSide.ATTACKER if GameConfig.autotest == "attacker" else GameConfig.PlayerSide.DEFENDER)
 		return
 

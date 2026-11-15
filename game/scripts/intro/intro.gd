@@ -96,7 +96,7 @@ var _subtitle: Label
 
 
 func _ready() -> void:
-	if GameConfig.autotest != "":
+	if GameConfig.autotest != "" or GameConfig.sim != "":
 		get_tree().change_scene_to_file.call_deferred("res://scenes/main_menu.tscn")
 		return
 	_movie = Engine.get_write_movie_path() != ""

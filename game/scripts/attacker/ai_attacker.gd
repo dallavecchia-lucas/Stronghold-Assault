@@ -25,12 +25,54 @@ var level: LevelBuilder
 ## are up (_plan_wave), or the army would have no answer at all.
 var drones: DroneBay
 
+## How it plays (the balance simulator's `--atk=`: SimDirector): DEFAULT_POLICY with a named POLICIES entry or a JSON file's
+## keys laid over it. The default is the CPU attacker as it always played.
+##   income_mult       its income against a player's (AttackerCommander.BASE_INCOME); null: the difficulty's
+##   first_wave_delay  seconds before it spawns anything
+##   sides             which gate a wave goes for: "random", "south" / "east" / "west", "rotate" (each in turn), "stick" (one
+##                     picked at random and kept until it falls), "weakest" (the standing gate with the least health; a
+##                     random one while all are whole)
+##   split             a wave's infantry splits over this many gates at once (multi-front): 1, 2 or 3
+##   wave_scale        every count of a wave times this (rounded; a type in the wave keeps at least one)
+##   waves             its own waves instead of the built-in mix: [{type: count}, ...], wave k taking entry k and waves past
+##                     the end the last one, each count growing by `growth` of itself a wave past the end
+##   growth            see `waves`
+##   drone_answer      more bears and rhinos while drone swarms are up (the built-in answer to drones)
+const DEFAULT_POLICY := {"income_mult": null, "first_wave_delay": 15.0, "sides": "random", "split": 1, "wave_scale": 1.0,
+		"waves": [], "growth": 0.0, "drone_answer": true}
+const POLICIES := {
+	"default": {},
+	# A player's income rather than the difficulty's, otherwise as ever.
+	"even": {"income_mult": 1.0},
+	# Everything at one gate until it falls.
+	"stick": {"income_mult": 1.0, "sides": "stick"},
+	# Two gates at once, the stronghold's garrison split.
+	"split": {"income_mult": 1.0, "sides": "rotate", "split": 2},
+	# Cheap, early and often: bears, kangaroos, chimps and rams, no heavies.
+	"rush": {"income_mult": 1.0, "first_wave_delay": 5.0, "sides": "stick", "growth": 0.15,
+			"waves": [{"rifleman": 4, "kangaroo": 1}, {"rifleman": 4, "kangaroo": 2, "breacher": 1, "medic": 1},
+				{"rifleman": 5, "kangaroo": 2, "breacher": 2, "chimp": 2, "medic": 1}]},
+	# Guns: mules and bisons shelling the decks, the roofs and the vents, behind a screen.
+	"siege": {"income_mult": 1.0, "sides": "stick", "growth": 0.1,
+			"waves": [{"rifleman": 4, "medic": 1, "giraffe": 1}, {"rifleman": 4, "bison_gun": 1, "medic": 1, "giraffe": 1},
+				{"rifleman": 5, "mule": 1, "bison_gun": 1, "rhino": 1, "medic": 1, "giraffe": 1, "breacher": 1},
+				{"rifleman": 5, "mule": 2, "bison_gun": 1, "rhino": 1, "elephant": 1, "medic": 2, "giraffe": 1, "breacher": 2}]},
+	# The air: talons at the vents over the walls, elephants under them against the defenders' aircraft.
+	"air": {"income_mult": 1.0, "sides": "rotate", "growth": 0.1,
+			"waves": [{"rifleman": 3, "talon": 2, "medic": 1}, {"rifleman": 3, "talon": 4, "giraffe": 1},
+				{"rifleman": 4, "talon": 5, "elephant": 1, "medic": 1}, {"rifleman": 4, "talon": 6, "elephant": 1, "medic": 1, "breacher": 1}]},
+}
+var policy := DEFAULT_POLICY.duplicate(true)
+
 var _think_cd := 2.0
 var _wave := 0
 var _pending: Array[String] = []
 var _staging: Array[int] = []
 var _wave_side := "south"
+var _stick_side := ""
 var _first_wave_delay := 15.0
+## Told to whoever listens (the telemetry): a wave has set off.
+signal wave_launched(wave: int, side: String, ids: Array)
 
 ## The gates a wave can go for (the stronghold's south, east and west faces).
 const GATE_SIDES := ["south", "east", "west"]
@@ -94,6 +136,19 @@ const ALARM_UNITS := 5
 const ALARM_REACH := 180.0
 const ALARM_EVERY := 6.0
 var _alarm_sent := {}
+
+
+## Lays `overrides` over the default policy (unknown keys are kept: a subclass may read its own).
+func set_policy(overrides: Dictionary) -> void:
+	policy = DEFAULT_POLICY.duplicate(true)
+	for k in overrides:
+		policy[k] = overrides[k]
+	_first_wave_delay = float(policy.first_wave_delay)
+
+
+## The wave now being gathered or last sent (1 for the first).
+func wave_number() -> int:
+	return _wave
 
 
 func _process(delta: float) -> void:
@@ -174,11 +229,75 @@ func _bridge_alarms() -> void:
 					"pos": b.intruders[0].global_position, "attack": true})
 
 
+## Which gate wave `_wave` goes for, by the policy's `sides`.
+func _pick_side() -> String:
+	var standing := GATE_SIDES.filter(func(s): return level.gates[s].is_alive())
+	var any: String = GATE_SIDES[randi() % GATE_SIDES.size()]
+	match String(policy.sides):
+		"south", "east", "west":
+			return policy.sides
+		"rotate":
+			return GATE_SIDES[(_wave - 1) % GATE_SIDES.size()]
+		"stick":
+			if _stick_side == "" or not level.gates[_stick_side].is_alive():
+				_stick_side = any if standing.is_empty() else standing[randi() % standing.size()]
+			return _stick_side
+		"weakest":
+			var best := ""
+			for s in standing:
+				if best == "" or level.gates[s].hp < level.gates[best].hp:
+					best = s
+			if best != "" and level.gates[best].hp < level.gates[best].max_hp:
+				return best
+	return any
+
+
+## The policy's own wave `_wave` (its `waves`), or {} with none.
+func _policy_wave() -> Dictionary:
+	var waves: Array = policy.waves
+	if waves.is_empty():
+		return {}
+	var k := mini(_wave - 1, waves.size() - 1)
+	var past := maxi(_wave - waves.size(), 0)
+	var out := {}
+	for type_id in waves[k]:
+		if UnitTypes.DATA.has(type_id):
+			out[type_id] = int(round(float(waves[k][type_id]) * (1.0 + float(policy.growth) * past)))
+	return out
+
+
 func _plan_wave() -> void:
 	_wave += 1
-	_wave_side = GATE_SIDES[randi() % GATE_SIDES.size()]
+	_wave_side = _pick_side()
 	# Wave mix grows over time: infantry core, then flyers, heavies and artillery.
-	var counts := {
+	var counts := _policy_wave()
+	if counts.is_empty():
+		counts = _builtin_wave()
+	# Drones about: more bears, and Combat Rhinos (their guns are the AA that can follow a swarm about).
+	var swarms := drones.live_swarms() if drones != null and policy.drone_answer else 0
+	if swarms > 0:
+		counts["rifleman"] = mini(counts.get("rifleman", 0) + swarms, 14)
+		if swarms >= 3 and _wave >= 2:
+			counts["rhino"] = maxi(counts.get("rhino", 0), 1 if swarms < 5 else 2)
+	var scale := float(policy.wave_scale)
+	if scale != 1.0:
+		for type_id in counts:
+			if counts[type_id] > 0:
+				counts[type_id] = maxi(int(round(counts[type_id] * scale)), 1)
+	# Interleave so a partly-spawned wave is still a sensible mix.
+	var remaining := true
+	while remaining:
+		remaining = false
+		for type_id in counts:
+			if counts[type_id] > 0:
+				_pending.append(type_id)
+				counts[type_id] -= 1
+				remaining = true
+
+
+## The CPU's own mix for wave `_wave`.
+func _builtin_wave() -> Dictionary:
+	return {
 		"breacher": 1 if _wave >= 2 and (_wave % 2 == 0 or _wave > 5) else 0,
 		"mule": 1 if _wave >= 3 and _wave % 2 == 1 else 0,
 		"elephant": 0 if _wave < 3 else (1 if _wave < 7 else 2),
@@ -191,27 +310,28 @@ func _plan_wave() -> void:
 		"lioness": 0 if _wave < 2 else mini(1 + _wave / 2, 6),
 		"serpent": 0 if _wave < 3 else mini(1 + (_wave - 3) / 2, 3),
 	}
-	# Drones about: more bears, and Combat Rhinos (their guns are the AA that can follow a swarm about).
-	var swarms := drones.live_swarms() if drones != null else 0
-	if swarms > 0:
-		counts["rifleman"] = mini(counts["rifleman"] + swarms, 14)
-		if swarms >= 3 and _wave >= 2:
-			counts["rhino"] = 1 if swarms < 5 else 2
-	# Interleave so a partly-spawned wave is still a sensible mix.
-	var remaining := true
-	while remaining:
-		remaining = false
-		for type_id in counts:
-			if counts[type_id] > 0:
-				_pending.append(type_id)
-				counts[type_id] -= 1
-				remaining = true
 
 
 func _launch_wave() -> void:
-	var gate: Structure = level.gates[_wave_side]
-	var ids := _staging.duplicate()
+	var all_ids := _staging.duplicate()
 	_staging.clear()
+	wave_launched.emit(_wave, _wave_side, all_ids)
+	# Multi-front (the policy's `split`): the wave goes for that many gates at once, a share of it each.
+	var sides := [_wave_side]
+	var k := GATE_SIDES.find(_wave_side)
+	for n in range(1, clampi(int(policy.split), 1, GATE_SIDES.size())):
+		sides.append(GATE_SIDES[(k + n) % GATE_SIDES.size()])
+	for n in sides.size():
+		var share := []
+		for i in all_ids.size():
+			if i % sides.size() == n:
+				share.append(all_ids[i])
+		_launch_at(sides[n], share)
+
+
+## Sends `ids` at `side`'s gate (or on at the vents, once it is down).
+func _launch_at(side: String, ids: Array) -> void:
+	var gate: Structure = level.gates[side]
 	if gate.is_alive():
 		var infantry := []
 		var siege := []
@@ -232,7 +352,7 @@ func _launch_wave() -> void:
 		# Infantry, medics and flyers push up to the gate and suppress the walls, rams go
 		# for the gate, artillery shells it from range (the Mule Artillery stop and set their
 		# guns up once it is in reach: _mule_guns).
-		var out: Vector3 = LevelBuilder.SIDES[_wave_side].dir
+		var out: Vector3 = LevelBuilder.SIDES[side].dir
 		commander.submit({"type": "move", "units": infantry, "pos": out * (LevelBuilder.FACE_DIST + 14.0), "attack": true})
 		commander.submit({"type": "attack", "units": siege + artillery, "target": gate.get_path()})
 		# Gunships skip the gate and go straight for the air vents on that face's roof.
