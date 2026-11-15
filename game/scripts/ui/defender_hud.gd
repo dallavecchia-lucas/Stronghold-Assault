@@ -12,7 +12,7 @@ extends Control
 ##   bottom left   the ammo counter: the post or squad driven, its weapon, its rounds (or heat, or pressure) big, the heat
 ##                 bar and its health
 ##   bottom centre the skills of what is driven, a tile each with its key (cooldowns swept, what is on lit), the drone
-##                 swarm call (C) on every post; and over them the post's keys for a few seconds after taking it
+##                 swarm call (C, the drones ready on their docks) on every post; and over them the post's keys for a few seconds after taking it
 ##
 ## The squads' portraits are rendered from their troopers' and machines' models (UnitPortraits.DEFENDER_SUBJECTS).
 
@@ -421,7 +421,8 @@ func skills_of(s) -> Array:
 	var drones := controller.drones
 	if drones:
 		var ready := drones.ready_count()
-		out.append(_skill("Call a drone swarm here", "drone", "C", 0.0, 0.0, false, str(ready), ready <= 0))
+		out.append(_skill("Call a drone swarm here (%d drones ready on their docks)" % ready, "drone", "C", 0.0, 0.0, false, str(ready),
+				ready <= 0))
 	return out
 
 

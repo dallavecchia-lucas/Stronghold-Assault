@@ -4,8 +4,9 @@ extends Node
 ##   attacker (AttackerHUD)  an army in front of the south gate with a mixed selection (its skills on the card), units on the
 ##                           production line, groups saved and a warning up: 1_selection; the base selected (Backspace) with
 ##                           its production: 2_base; nothing selected, the HUD at its leanest: 3_idle
-##   defender (DefenderHUD)  four squads bought (the credits left buy the rest), attackers at the south gate, the south guns
-##                           and gate hurt: on a south deck gun, 1_gun; driving the AA Squad, 2_aa_squad; the Sniper, 3_sniper
+##   defender (DefenderHUD)  three squads and the Fighter Jet bought (the credits left buy the rest), attackers at the south
+##                           gate, the south guns and gate hurt: on a south deck gun, 1_gun; driving the AA Squad, 2_aa_squad;
+##                           flying the jet, 3_jet
 ##
 ##   xvfb-run -a -s "-screen 0 1600x900x24" godot --path game --rendering-driver opengl3 --resolution 1600x900 \
 ##       res://scenes/dev/hud_shots.tscn -- --out=/some/dir --lighting=standard [--side=defender]
@@ -116,11 +117,10 @@ func _defender_shots() -> void:
 	var dc: DefenderController = game.player_controller
 	var armory: DefenderArmory = game.armory
 	var level: LevelBuilder = game.level
-	armory.credits = 1150.0 + 350.0 + 300.0 + 280.0 + 220.0
-	for kind in ["aa", "flame", "infiltrator", "sniper"]:
+	armory.credits = 350.0 + 300.0 + 280.0 + 600.0 + 700.0
+	for kind in ["aa", "flame", "infiltrator", "jet"]:
 		dc.buy_squad(kind)
-	# Attackers at the south gate; the south gate and some of its guns hurt.
-	_army(["rhino", "rifleman", "rifleman", "rifleman", "lioness", "kangaroo", "hippo", "giraffe"])
+	# The south gate and some of its guns hurt.
 	var gate: Structure = level.gates["south"]
 	gate.hp = gate.max_hp * 0.55
 	var hurt := 0
@@ -129,9 +129,10 @@ func _defender_shots() -> void:
 			s.hp = s.max_hp * 0.35
 			hurt += 1
 	await _wait_portraits("d_tank")
-	# Let the garrison take some guns and the HUD settle.
+	# Let the garrison take some guns and the HUD settle; then attackers at the south gate (now, so they still stand).
 	for i in 200:
 		await get_tree().process_frame
+	_army(["rhino", "rhino", "elephant", "hippo", "hippo", "lioness", "giraffe", "rifleman"])
 
 	# On a south deck gun.
 	var gun := -1
@@ -147,13 +148,17 @@ func _defender_shots() -> void:
 	await _snap("2_aa_squad")
 
 	dc.select_squad(3, true)
-	await _snap("3_sniper")
+	await _snap("3_jet")
 
 
 ## Turns the 3D view on for a few frames (the camera settles, the panels catch up) and saves a still.
 func _snap(file: String) -> void:
 	get_viewport().disable_3d = false
 	for i in 6:
+		await get_tree().process_frame
+	# The post's keys show for a few seconds after taking it: the frames above are slow on software GL.
+	if game.player_controller is DefenderController:
+		game.player_controller.hud.on_switched()
 		await get_tree().process_frame
 	await RenderingServer.frame_post_draw
 	var path := "%s/%s.png" % [out_dir, file]
