@@ -56,6 +56,7 @@ func _army(types: Array) -> Array:
 	var cmd: AttackerCommander = game.commander
 	var level: LevelBuilder = game.level
 	var front: Vector3 = level.gates["south"].global_position + Vector3(0, 0, 45)
+	cmd.supply += 6000.0
 	var army := []
 	for i in types.size():
 		var id := cmd.submit({"type": "spawn", "unit": types[i]})
