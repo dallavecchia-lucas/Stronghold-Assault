@@ -5,7 +5,7 @@ extends Control
 ##   - the aim ring: where the mouse is steering it (the jet banks and turns onto it);
 ##   - the bomb mark: where a bomb let go this instant would land (the same forecast as the ground preview), with the
 ##     distance, kept on the screen's edge with an arrow when it is off it;
-##   - a block on the left: speed, height, the boost, the bombs in the bay, the missile salvo;
+##   - a block bottom right: speed, height, the boost, the bombs in the bay, the missile salvo;
 ##   - a line mid-screen for a warning (PULL UP, TURN BACK) or what has just happened (CRASHED, SHOT DOWN).
 
 const BLOCK := Vector2(250, 150)
@@ -107,7 +107,7 @@ func _diamond(at: Vector2, r: float, col: Color) -> void:
 
 ## Speed, height, boost, bombs, missiles.
 func _panel(font: Font, view: Vector2) -> void:
-	var origin := Vector2(BLOCK_MARGIN.x, view.y - BLOCK_MARGIN.y - BLOCK.y)
+	var origin := view - BLOCK_MARGIN - BLOCK
 	draw_style_box(UIKit.panel_style(), Rect2(origin, BLOCK))
 	draw_string(font, origin + Vector2(12, 24), "SPEED  %d m/s" % int(jet.speed), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color.WHITE)
 	draw_string(font, origin + Vector2(12, 46), "HEIGHT %d m" % int(maxf(jet.altitude(), 0.0)), HORIZONTAL_ALIGNMENT_LEFT, -1, 15,

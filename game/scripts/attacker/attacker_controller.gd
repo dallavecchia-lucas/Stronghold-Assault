@@ -4,9 +4,15 @@ extends CanvasLayer
 ## Turns mouse/keyboard input into commands for the AttackerCommander.
 ##
 ## LMB click/drag: select · Shift adds · RMB: attack-move / attack target
-## Ctrl+RMB: move without stopping to fight · Ctrl+1-5 assign group · 1-5 recall
-## Z X C V B N M H J K L Y U I: spawn units · Tab: cycle spawn point (the map's edge, and the
-##    Forward Helipads while the attackers hold them: AttackerBase)
+## Ctrl+RMB: move without stopping to fight · Ctrl+1-9 assign group · 1-9 recall (twice quickly: the camera goes to it)
+## Backspace: select the base (the army's one base, the Mobile Command Citadel; the Forward Helipads are outposts:
+##    AttackerBase) and look at it. With the base selected the HUD's card shows the units to build, and
+## Z X C V B N M H J K L Y U I put one on the production line (AttackerCommander "produce": paid for now, built one at a
+##    time, out at the base); PRODUCE_ANYWHERE lets them work without the base selected
+## F1: the keys (HELP)
+## The HUD (AttackerHUD): small islands, each on screen only while it has something to show: credits and vents top centre,
+## the production line top left, the minimap top right (LMB looks, RMB orders), the command card bottom left (the selected
+## units' skills, a tile each: use_skill; or the base's production) and the groups and warnings bottom right.
 ## F: aim the selected rhinos' cluster bombing (LMB fire, RMB/F cancel) · T: scout formation
 ##    with no rhino ready, the selected talons' strafe run: press LMB on the middle of the line,
 ##    drag the way to fly it, let go to fire (a click flies it from the talons; RMB/F cancel)
@@ -55,23 +61,40 @@ const BRIDGE_OK := Color(0.25, 0.95, 1.0)
 const SMOKE_FILL := Color(0.2, 0.9, 0.6, 0.35)
 const SMOKE_LINE := Color(0.3, 1.0, 0.7)
 const MISSILE_LINE := Color(1.0, 0.35, 0.3)
+const HELP_KEY := KEY_F1
+## Selects the base (select_base); the unit keys build there.
+const BASE_KEY := KEY_BACKSPACE
+## The unit keys build only with the base selected (Backspace) when false; any time when true.
+const PRODUCE_ANYWHERE := false
+## Unit groups (Ctrl+1-9), and how quickly a group's key pressed twice sends the camera to it (s).
+const GROUPS := 9
+const GROUP_DOUBLE_TAP := 0.35
+## The same warning (not enough credits, the army full) no more often than this (s).
+const WARN_REPEAT := 3.0
+## The keys, on the F1 panel.
+const HELP := "LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-9 group, 1-9 select it (twice: look) · WASD/Q/E/wheel camera\nBackspace: select your base, the citadel · with it selected, a unit's key (or its tile) puts one on the production line, paid for now · click one on the line to take it off\nMinimap: LMB look there (drag to pan) · RMB send the selection there (Ctrl: move)\nSkills: the selected units' skills, a tile each (click to use that one); a key's badge is lit on the tile the key uses now · T switches modes\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nBisons: G bombardment (LMB fire, RMB cancel), onto the gun decks and roofs too\nMule Artillery: T sets the gun up / disarms it (it can't move unless disarmed) · armed, G bombardment (LMB fire): further, harder and wider than the bisons'\nTalons: F strafe run (press LMB on the target, drag the way to fly, let go) · G bomb strike (LMB fire) · RMB cancels\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nGiraffes: see furthest through the fog · P ping: marks every defender it reaches, even under camo, and reveals infiltrators out of camo\nKangaroos: R flash grenade (LMB fire, RMB cancel) when no hippo's smoke is ready · they resupply units nearby\nLionesses: F sneak (then RMB a defender: they pounce) · G fire blast · T firing lines on/off when moved together\nSerpent Snipers: F sniper nest (LMB a tree: up it they see and shoot further; any move order climbs them down) · G bush trap (LMB a bush: coiled, they strike and crush a defender who comes close)\nWolf Medics: T healing (2 units each) / minesweeping (they find the hidden mines and dig them out; RMB sweeps on the way, Ctrl+RMB doesn't)\nChimps / Rams / Kangaroos: RMB next to a broken gate to send them in\nRivers: Shift+B drop a bridge (LMB, RMB cancel; 30 a match) · bears, snakes, hippos, elephants swim · the rest but mules and bisons ride the rafts hippos/elephants tow, 2 each or a rhino or giraffe alone (RMB one, or send them across with it; Space lets them off)\nBears: swimming, F dives under the water for 10 s, out of the defenders' sight (rounds that go in where it is still hit it)\nOutposts (the helipads): held, they see round themselves and the transport helicopters land there · sabotaged, stand ground units by one to retake it\nTransport helos (under the minimap): RMB one with units selected to board them (50 spaces; elephant/giraffe 5, rhino/hippo 2, bison 10, mule 15, rest 1) · LMB one, then RMB a helipad you hold to fly there · they land on the pad, put a unit down beside it every 0.25 s and fly home (helipad lost on the way: they bring them back)\nF1 closes this"
 
 var level: LevelBuilder
 var commander: AttackerCommander
 var camera_rig: RTSCamera
+## The match's HUD (null in the showcases): its status bar gives way to this one's, its alerts come to the warnings panel.
+var match_ui: MatchUI
+var hud: AttackerHUD
 var selected: Array = []
 var groups := {}
-var spawn_index := 0
+## The base is selected: the HUD's card shows its production, the unit keys build there.
+var base_selected := false
 
 var _drag_start := Vector2.ZERO
 var _mouse_down := false
 var _dragging := false
 var _select_rect: Panel
-var _supply_label: Label
-var _count_label: Label
 var _selection_label: Label
-var _spawn_buttons := {}
-var _spawn_point_buttons: Array[Button] = []
+## The group key pressed last and when (Time msec), for the double tap.
+var _last_group := -1
+var _last_group_at := 0
+## Warning key -> when it was last given (Time msec).
+var _warned := {}
 var _marker: MeshInstance3D
 ## Ability aim mode: "" (off), "cluster" (rhinos), "bombard" (bisons), "smoke" (hippos),
 ## "missile" (elephants), "strafe" or "bomb" (talons), "flash" (kangaroos), "nest" or "trap" (Serpent Snipers).
@@ -96,9 +119,6 @@ var _smoke_mesh: ImmediateMesh
 var _missile_preview: MeshInstance3D
 var _missile_mesh: ImmediateMesh
 var _aim_label: Label
-var _line_button: Button
-var _dog_button: Button
-var _gun_button: Button
 var _fog: FogOverlay
 ## The bridge's preview (cyan where it can go, red where it can't), the plan under the cursor, the HUD's button,
 ## and the alarm banner (the bridges with defenders on them).
@@ -106,7 +126,6 @@ var _bridge_ghost := {}
 var _bridge_ok_mat: StandardMaterial3D
 var _bridge_bad_mat: StandardMaterial3D
 var _bridge_plan := {}
-var _bridge_button: Button
 var _alarm_banner: Button
 var _alarms: Array = []
 var _alarm_beep: AudioStreamPlayer
@@ -136,6 +155,8 @@ func _ready() -> void:
 	_build_missile_preview()
 	_build_bridge_preview()
 	_build_hud()
+	if match_ui:
+		match_ui.attach_attacker_hud(hud.warn)
 	commander.bridge_alarm.connect(_on_bridge_alarm)
 	if AttackerVision.instance:
 		_fog = FogOverlay.new()
@@ -196,25 +217,82 @@ func _unhandled_input(event: InputEvent) -> void:
 				_mouse_down = true
 				_drag_start = event.position
 			elif _mouse_down:
-				_mouse_down = false
-				if _dragging:
-					_box_select(Rect2(_drag_start, Vector2.ZERO).expand(event.position), event.shift_pressed)
-				else:
-					_click_select(event.position, event.shift_pressed)
-				_dragging = false
-				_select_rect.visible = false
+				_release_select(event.position, event.shift_pressed)
 		elif event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
 			_issue_order(event.position, event.ctrl_pressed)
 	elif event is InputEventMouseMotion and _mouse_down:
-		if not _dragging and event.position.distance_to(_drag_start) > DRAG_THRESHOLD:
-			_dragging = true
-		if _dragging:
-			var r := Rect2(_drag_start, Vector2.ZERO).expand(event.position)
-			_select_rect.position = r.position
-			_select_rect.size = r.size
-			_select_rect.visible = true
+		_drag_to(event.position)
 	elif event is InputEventKey and event.pressed and not event.echo:
-		if event.physical_keycode == CLUSTER_KEY:
+		if event.physical_keycode == HELP_KEY:
+			hud.help_panel.visible = not hud.help_panel.visible
+			return
+		if event.physical_keycode == BASE_KEY:
+			select_base()
+			return
+		if event.physical_keycode == BRIDGE_KEY and event.shift_pressed:
+			toggle_bridge()
+			return
+		if event.physical_keycode in [CLUSTER_KEY, BOMBARD_KEY, SMOKE_KEY, MISSILE_KEY, RAM_KEY, PING_KEY, SCOUT_KEY]:
+			skill_key(event.physical_keycode)
+			return
+		for type_id in UnitTypes.ORDER:
+			if event.physical_keycode == UnitTypes.DATA[type_id].hotkey:
+				if base_selected or PRODUCE_ANYWHERE:
+					spawn(type_id)
+				else:
+					warn_once("base", "Backspace: select the base to build units", UIKit.ACCENT)
+				return
+		for i in GROUPS:
+			if event.is_action_pressed("slot_%d" % (i + 1)):
+				if event.ctrl_pressed:
+					assign_group(i)
+				else:
+					var again := _last_group == i and Time.get_ticks_msec() - _last_group_at < GROUP_DOUBLE_TAP * 1000.0
+					recall_group(i, event.shift_pressed)
+					if again:
+						focus_group(i)
+					_last_group = i
+					_last_group_at = Time.get_ticks_msec()
+				return
+
+
+## Real mouse input, before the HUD takes it: a box dragged out of the world and let go (or moved) over the HUD still
+## selects (the panels would swallow the release, and the box would stay up).
+func _input(event: InputEvent) -> void:
+	if not _mouse_down or get_tree().paused:
+		return
+	if event is InputEventMouseMotion:
+		_drag_to(event.position)
+	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+		_release_select(event.position, event.shift_pressed)
+		get_viewport().set_input_as_handled()
+
+
+func _drag_to(pos: Vector2) -> void:
+	if not _dragging and pos.distance_to(_drag_start) > DRAG_THRESHOLD:
+		_dragging = true
+	if _dragging:
+		var r := Rect2(_drag_start, Vector2.ZERO).expand(pos)
+		_select_rect.position = r.position
+		_select_rect.size = r.size
+		_select_rect.visible = true
+
+
+func _release_select(pos: Vector2, add: bool) -> void:
+	_mouse_down = false
+	if _dragging:
+		_box_select(Rect2(_drag_start, Vector2.ZERO).expand(pos), add)
+	else:
+		_click_select(pos, add)
+	_dragging = false
+	_select_rect.visible = false
+
+
+## What a skill key does for the selection (the keyboard, and the HUD's skill tiles and switches): each key tries its
+## units' skills in turn, the first that has one ready going (AttackerHUD.SKILLS lists them in the same order).
+func skill_key(key: int) -> void:
+	match key:
+		CLUSTER_KEY:
 			if _aiming in ["cluster", "strafe", "nest"]:
 				_set_aiming("")
 			elif not _ready_rhinos().is_empty():
@@ -227,8 +305,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				_set_aiming("nest")
 			elif not _ready_divers().is_empty():
 				dive()
-			return
-		if event.physical_keycode == BOMBARD_KEY:
+		BOMBARD_KEY:
 			if _aiming in ["bombard", "bomb", "trap"]:
 				_set_aiming("")
 			elif not _ready_bisons().is_empty():
@@ -239,8 +316,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				commander.submit({"type": "blast", "units": _ready_lionesses("blast").map(func(u): return u.unit_id)})
 			elif not _serpents("trap").is_empty():
 				_set_aiming("trap")
-			return
-		if event.physical_keycode == SMOKE_KEY:
+		SMOKE_KEY:
 			# A ready hippo's smoke screen comes first, then the kangaroos' flash grenades.
 			if _aiming in ["smoke", "flash"]:
 				_set_aiming("")
@@ -248,25 +324,19 @@ func _unhandled_input(event: InputEvent) -> void:
 				_set_aiming("smoke")
 			else:
 				_set_aiming("flash" if not _ready_kangaroos().is_empty() else "")
-			return
-		if event.physical_keycode == MISSILE_KEY:
+		MISSILE_KEY:
 			_set_aiming("missile" if _aiming != "missile" and not _ready_elephants().is_empty() else "")
-			return
-		if event.physical_keycode == BRIDGE_KEY and event.shift_pressed:
-			toggle_bridge()
-			return
-		if event.physical_keycode == RAM_KEY:
+		RAM_KEY:
+			# Rams ready ram; else the carriers let their riders off.
 			_alive_selection()
-			if selected.any(func(u): return u.has_ram()):
+			if selected.any(func(u): return u.ram_ready()):
 				commander.submit({"type": "ram", "units": selected.map(func(u): return u.unit_id)})
 			else:
 				commander.submit({"type": "unload", "units": selected.map(func(u): return u.unit_id)})
-			return
-		if event.physical_keycode == PING_KEY:
+		PING_KEY:
 			_alive_selection()
 			commander.submit({"type": "ping", "units": selected.map(func(u): return u.unit_id)})
-			return
-		if event.physical_keycode == SCOUT_KEY:
+		SCOUT_KEY:
 			_alive_selection()
 			if selected.any(func(u): return u.stats.get("line", false)) and not selected.any(func(u): return u.stats.get("scouts", false)):
 				toggle_lines()
@@ -275,22 +345,156 @@ func _unhandled_input(event: InputEvent) -> void:
 			elif not _mules().is_empty() and not selected.any(func(u): return u.stats.get("scouts", false)):
 				toggle_guns()
 			else:
-				commander.submit({"type": "scout", "units": selected.map(func(u): return u.unit_id)})
-			return
-		for type_id in UnitTypes.ORDER:
-			if event.physical_keycode == UnitTypes.DATA[type_id].hotkey:
-				spawn(type_id)
-				return
-		if event.is_action_pressed("spawn_cycle"):
-			set_spawn_point((spawn_index + 1) % commander.spawn_points.size())
-			return
-		for i in 5:
-			if event.is_action_pressed("slot_%d" % (i + 1)):
-				if event.ctrl_pressed:
-					groups[i] = selected.duplicate()
-				else:
-					_set_selection(groups.get(i, []).filter(func(u): return is_instance_valid(u) and u.is_controllable()))
-				return
+				toggle_scout()
+
+
+## The ability aim mode on now ("" off): the HUD lights the tile being aimed.
+func aiming() -> String:
+	return _aiming
+
+
+## T with rhinos selected (or the HUD's switch): the selected rhinos ring the rest of the selection, or stop.
+func toggle_scout() -> void:
+	_alive_selection()
+	commander.submit({"type": "scout", "units": selected.map(func(u): return u.unit_id)})
+
+
+## A skill tile on the HUD: that skill for the selected units that have it (not the key's first choice: the one clicked).
+func use_skill(id: String) -> void:
+	_alive_selection()
+	var ids := func(list: Array) -> Array: return list.map(func(u): return u.unit_id)
+	match id:
+		"cluster":
+			_toggle_aim(id, _ready_rhinos())
+		"strafe":
+			_toggle_aim(id, _ready_talons("strafe"))
+		"bomb":
+			_toggle_aim(id, _ready_talons("bomb"))
+		"bombard":
+			_toggle_aim(id, _ready_bisons())
+		"smoke":
+			_toggle_aim(id, _ready_hippos())
+		"flash":
+			_toggle_aim(id, _ready_kangaroos())
+		"missile":
+			_toggle_aim(id, _ready_elephants())
+		"nest":
+			_toggle_aim(id, _serpents("nest"))
+		"trap":
+			_toggle_aim(id, _serpents("trap"))
+		"sneak":
+			commander.submit({"type": "sneak", "units": ids.call(_ready_lionesses("sneak"))})
+		"blast":
+			commander.submit({"type": "blast", "units": ids.call(_ready_lionesses("blast"))})
+		"dive":
+			dive()
+		"ping":
+			commander.submit({"type": "ping", "units": ids.call(selected)})
+		"ram":
+			commander.submit({"type": "ram", "units": ids.call(selected)})
+		"unload":
+			commander.submit({"type": "unload", "units": ids.call(selected)})
+		"lines":
+			toggle_lines()
+		"dogs":
+			toggle_dog_mode()
+		"guns":
+			toggle_guns()
+		"scout":
+			toggle_scout()
+
+
+## Aims `mode` with `ready` units to fire it, or stops aiming it.
+func _toggle_aim(mode: String, ready: Array) -> void:
+	_set_aiming("" if _aiming == mode or ready.is_empty() else mode)
+
+
+## The state of a mode switch (T) for the selection: "lines" and "scout" ON/OFF, "dogs" HEALING/MINESWEEPING/MIXED, "guns"
+## PACKED/SETTING UP/ARMED/DISARMING/MIXED. "" if the selection has none of those units.
+func mode_state(id: String) -> String:
+	_alive_selection()
+	match id:
+		"lines":
+			return "ON" if commander.line_formation else "OFF"
+		"scout":
+			return "ON" if selected.any(func(u): return commander.is_scouting(u)) else "OFF"
+		"dogs":
+			var dogs := _dogs()
+			if dogs.is_empty():
+				return ""
+			var sweeping := dogs.filter(func(u): return u.dog_mode == "sweep").size()
+			return "MINESWEEPING" if sweeping == dogs.size() else "HEALING" if sweeping == 0 else "MIXED"
+		"guns":
+			var mules := _mules()
+			if mules.is_empty():
+				return ""
+			for s in [["is_armed", "ARMED"], ["setting_up", "SETTING UP"], ["packing_up", "DISARMING"], ["is_packed", "PACKED"]]:
+				if mules.all(func(u): return u.call(s[0])):
+					return s[1]
+			return "MIXED"
+	return ""
+
+
+# ---------------------------------------------------------------- the base
+
+## Selects the base (the army's one: the Mobile Command Citadel): the units are deselected, the HUD's card shows its
+## production and the unit keys build there. `look`: the camera goes to it.
+func select_base(look := true) -> void:
+	_set_selection([])
+	_select_helo(null)
+	base_selected = true
+	if look:
+		camera_rig.focus(commander.spawn_points[0])
+
+
+# ---------------------------------------------------------------- groups
+
+## Ctrl+1-9 (or Ctrl+click its tile): group `i` is the selection.
+func assign_group(i: int) -> void:
+	_alive_selection()
+	groups[i] = selected.duplicate()
+
+
+## 1-9 (or a click on its tile): selects group `i` (`add`: adds it to the selection).
+func recall_group(i: int, add := false) -> void:
+	var list: Array = groups.get(i, []).filter(func(u): return is_instance_valid(u) and u.is_controllable())
+	if add:
+		for u in selected:
+			if is_instance_valid(u) and u.is_controllable() and not u in list:
+				list.append(u)
+	_select_helo(null)
+	_set_selection(list)
+
+
+## The camera goes to group `i` (its key twice, a double click on its tile).
+func focus_group(i: int) -> void:
+	focus_units(groups.get(i, []))
+
+
+## The camera goes to the middle of `list`.
+func focus_units(list: Array) -> void:
+	var alive := list.filter(func(u): return is_instance_valid(u) and u.is_controllable())
+	if alive.is_empty():
+		return
+	var at := Vector3.ZERO
+	for u in alive:
+		at += u.global_position
+	camera_rig.focus(at / alive.size())
+
+
+## Only the selected units of `type_id` stay selected (Ctrl+click on the mugshot).
+func select_type(type_id: String) -> void:
+	_alive_selection()
+	_set_selection(selected.filter(func(u): return u.type_id == type_id))
+
+
+## The minimap's RMB: the selection goes to `pos` (attack-move; `force_move`: plain move).
+func order_at(pos: Vector3, force_move := false) -> void:
+	_alive_selection()
+	if selected.is_empty():
+		return
+	commander.submit({"type": "move", "units": selected.map(func(u): return u.unit_id), "pos": pos, "attack": not force_move})
+	_ping(pos, UIKit.GOOD if force_move else UIKit.WARN)
 
 
 func _ray(screen_pos: Vector2, mask: int) -> Dictionary:
@@ -328,6 +532,7 @@ func _box_select(rect: Rect2, add: bool) -> void:
 
 
 func _set_selection(list: Array) -> void:
+	base_selected = false
 	for u in selected:
 		if is_instance_valid(u):
 			u.selected = false
@@ -350,6 +555,7 @@ func _select_helo(h: TransportHelo) -> void:
 	selected_helo = h
 	if h != null:
 		h.selected = true
+		base_selected = false
 	if helo_panel:
 		helo_panel.selected_slot = h.slot if h != null else -1
 
@@ -375,6 +581,16 @@ func _on_helo_board(i: int) -> void:
 ## The panel's Fly button: helicopter `i` takes what it has aboard to the helipad at spawn point `k`.
 func _on_helo_fly(i: int, k: int) -> void:
 	commander.submit({"type": "helo_fly", "helo": i, "spawn": k})
+
+
+## A helicopter's name on the panel: it is selected, and the camera goes to it.
+func _on_helo_pick(i: int) -> void:
+	var h := commander.fleet.helo_at(i)
+	if h == null or not h.is_alive():
+		return
+	_set_selection([])
+	_select_helo(h)
+	camera_rig.focus(h.global_position)
 
 
 ## The panel's Look button: the camera goes to helicopter `i`.
@@ -460,8 +676,6 @@ func _set_aiming(mode: String) -> void:
 	_aim_label.visible = mode in ["missile", "nest", "trap", "bridge"]
 	if _bridge_ghost.has("root"):
 		_bridge_ghost.root.visible = mode == "bridge"
-	if _bridge_button:
-		_bridge_button.button_pressed = mode == "bridge"
 
 
 func _fire_cluster(screen_pos: Vector2) -> void:
@@ -965,6 +1179,7 @@ func _on_bridge_alarm(bridge: FoldingBridge, on: bool) -> void:
 	if on:
 		_alarms.append(bridge)
 		_ping(bridge.global_position, UIKit.DANGER)
+		warn_once("bridge_%d" % bridge.bridge_id, "Defenders crossing bridge %d!" % bridge.bridge_id, UIKit.DANGER, bridge.global_position)
 		if not _alarm_beep.playing:
 			_alarm_beep.play()
 			get_tree().create_timer(1.6).timeout.connect(_alarm_beep.stop)
@@ -985,23 +1200,44 @@ func _look_at_alarm() -> void:
 		camera_rig.focus(_alarms[-1].global_position)
 
 
+## A unit's key (or its thumbnail): one on the production line, out at the spawn point picked now. Says why when it can't.
 func spawn(type_id: String) -> void:
-	commander.submit({"type": "spawn", "unit": type_id, "spawn": spawn_index})
+	if commander.submit({"type": "produce", "unit": type_id}) > 0:
+		return
+	if commander.units.size() + commander.production.size() >= AttackerCommander.UNIT_CAP:
+		warn_once("cap", "The army is at its cap (%d, the production line included)" % AttackerCommander.UNIT_CAP, UIKit.DANGER)
+	elif commander.supply < UnitTypes.DATA[type_id].cost:
+		warn_once("credits", "Not enough spawn credits for a %s (%d)" % [UnitTypes.DATA[type_id].name, UnitTypes.DATA[type_id].cost], UIKit.DANGER)
+		if hud:
+			hud.flash_credits()
 
 
-func set_spawn_point(i: int) -> void:
-	spawn_index = i
-	for k in _spawn_point_buttons.size():
-		_spawn_point_buttons[k].button_pressed = k == i
+## Takes entry `index` off the production line, credits back.
+func cancel_production(index: int) -> void:
+	commander.submit({"type": "cancel", "index": index})
 
 
-## The spawn point after `i` that is open (a helipad only while the attackers hold it).
-func _next_open_spawn(i: int) -> int:
-	var n := commander.spawn_points.size()
-	for k in range(1, n + 1):
-		if commander.spawn_open((i + k) % n):
-			return (i + k) % n
-	return 0
+## RMB on a unit's thumbnail: the last of `type_id` on the production line comes off it.
+func cancel_last(type_id: String) -> void:
+	for i in range(commander.production.size() - 1, -1, -1):
+		if commander.production[i].unit == type_id:
+			cancel_production(i)
+			return
+
+
+## A warning on the HUD's panel (central command's octopus says it), `at` where it happened.
+func warn(text: String, col := UIKit.WARN, at := Vector3.INF) -> void:
+	if hud:
+		hud.warn(text, col, at)
+
+
+## warn(), but the one under `key` no more often than WARN_REPEAT.
+func warn_once(key: String, text: String, col := UIKit.WARN, at := Vector3.INF) -> void:
+	var now := Time.get_ticks_msec()
+	if now - int(_warned.get(key, -100000)) < WARN_REPEAT * 1000.0:
+		return
+	_warned[key] = now
+	warn(text, col, at)
 
 
 # ---------------------------------------------------------------- visuals / HUD
@@ -1030,109 +1266,23 @@ func _ping(pos: Vector3, color: Color) -> void:
 
 
 func _build_hud() -> void:
-	var root := UIKit.full_rect(Control.new())
-	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(root)
+	hud = AttackerHUD.new()
+	hud.controller = self
+	hud.commander = commander
+	hud.level = level
+	add_child(hud)
+	# The widgets the controller drives (and the showcases read) live in the HUD.
+	_select_rect = hud.select_rect
+	_selection_label = hud.status_label
+	_aim_label = hud.aim_label
+	_alarm_banner = hud.alarm_banner
+	_alarm_banner.pressed.connect(_look_at_alarm)
+	_alarm_beep = AudioStreamPlayer.new()
+	_alarm_beep.stream = FoldingBridge._siren_stream()
+	_alarm_beep.volume_db = -14.0
+	add_child(_alarm_beep)
 
-	_select_rect = Panel.new()
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.3, 1.0, 0.4, 0.12)
-	sb.border_color = Color(0.3, 1.0, 0.4, 0.9)
-	sb.set_border_width_all(1)
-	_select_rect.add_theme_stylebox_override("panel", sb)
-	_select_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_select_rect.visible = false
-	root.add_child(_select_rect)
-
-	var bottom := UIKit.panel()
-	bottom.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
-	bottom.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	bottom.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	bottom.position.y -= 12
-	root.add_child(bottom)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 14)
-	bottom.add_child(row)
-
-	var info := VBoxContainer.new()
-	_supply_label = UIKit.label("", 26, UIKit.WARN)
-	_count_label = UIKit.label("", 14, Color(0.8, 0.85, 0.9))
-	_selection_label = UIKit.label("", 14, Color(0.8, 0.85, 0.9))
-	info.add_child(_supply_label)
-	info.add_child(_count_label)
-	info.add_child(_selection_label)
-	# Long lines about the selection wrap (the bar would grow off the screen's sides).
-	_selection_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	info.custom_minimum_size.x = 200
-	row.add_child(info)
-	# Lionesses moved together form up in firing lines: the toggle shows while any are selected.
-	_line_button = UIKit.button("", 13)
-	_line_button.focus_mode = Control.FOCUS_NONE
-	_line_button.tooltip_text = "Lionesses moved together converge into firing lines, 8 abreast, more lines behind"
-	_line_button.pressed.connect(toggle_lines)
-	_line_button.visible = false
-	info.add_child(_line_button)
-	# Wolf Medics: their mode (healing or minesweeping) and the switch, while any are selected.
-	_dog_button = UIKit.button("", 13)
-	_dog_button.focus_mode = Control.FOCUS_NONE
-	_dog_button.tooltip_text = "Healing: each dog heals up to 2 hurt units near it until they are full\nMinesweeping: each dog sniffs out the mines round it and digs them out, the minefield's outer rim first"
-	_dog_button.pressed.connect(toggle_dog_mode)
-	_dog_button.visible = false
-	info.add_child(_dog_button)
-	# Mule Artillery: their guns (packed, set up or on the way) and the switch, while any are selected.
-	_gun_button = UIKit.button("", 13)
-	_gun_button.focus_mode = Control.FOCUS_NONE
-	_gun_button.tooltip_text = "Set the guns up (%d s): armed, they fire (G) but can't move\nDisarm them (%d s) to move again" \
-			% [UnitTypes.DATA.mule.setup_time, UnitTypes.DATA.mule.setup_time]
-	_gun_button.pressed.connect(toggle_guns)
-	_gun_button.visible = false
-	info.add_child(_gun_button)
-
-	# Two rows of unit buttons and the spawn points three to a row: the panel fits the screen (1600 wide).
-	var grid := GridContainer.new()
-	grid.columns = ceili(UnitTypes.ORDER.size() / 2.0)
-	grid.add_theme_constant_override("h_separation", 6)
-	grid.add_theme_constant_override("v_separation", 6)
-	row.add_child(grid)
-	for type_id in UnitTypes.ORDER:
-		var d: Dictionary = UnitTypes.DATA[type_id]
-		var key := OS.get_keycode_string(d.hotkey)
-		var b := UIKit.button("%s\n%d  [%s]" % [d.name, d.cost, key], 14)
-		b.custom_minimum_size = Vector2(132, 50)
-		b.tooltip_text = "%s · %d HP · %s" % [d.name, int(d.hp), d.role]
-		b.focus_mode = Control.FOCUS_NONE
-		b.pressed.connect(spawn.bind(type_id))
-		grid.add_child(b)
-		_spawn_buttons[type_id] = b
-
-	var sp := VBoxContainer.new()
-	sp.add_child(UIKit.label("SPAWN AT  [Tab]", 12, Color(0.7, 0.75, 0.85)))
-	var sp_row := GridContainer.new()
-	sp_row.columns = 3
-	var bg := ButtonGroup.new()
-	for i in level.spawn_names.size():
-		var b := UIKit.button(level.spawn_names[i], 15)
-		b.toggle_mode = true
-		b.button_group = bg
-		b.focus_mode = Control.FOCUS_NONE
-		b.custom_minimum_size = Vector2(70, 34)
-		b.pressed.connect(set_spawn_point.bind(i))
-		if i < level.spawn_bases.size() and level.spawn_bases[i] != null:
-			b.tooltip_text = "%s: a forward spawn point while you hold it" % level.spawn_bases[i].display_name
-		sp_row.add_child(b)
-		_spawn_point_buttons.append(b)
-	sp.add_child(sp_row)
-	row.add_child(sp)
-	set_spawn_point(0)
-
-	var help := UIKit.label("LMB select/drag · RMB attack-move / attack · Ctrl+RMB move · Ctrl+1-5 group · WASD/Q/E/wheel camera\nRhinos: F cluster bombing (LMB fire, RMB cancel) · T scout formation · Hippos: R smoke screen (LMB fire, RMB cancel)\nBisons: G bombardment (LMB fire, RMB cancel), onto the gun decks and roofs too\nMule Artillery: T sets the gun up / disarms it (it can't move unless disarmed) · armed, G bombardment (LMB fire): further, harder and wider than the bisons'\nTalons: F strafe run (press LMB on the target, drag the way to fly, let go) · G bomb strike (LMB fire) · RMB cancels\nElephants: O missiles (LMB an enemy aircraft, RMB cancel) · Rams: Space ram, then RMB a gate to charge it\nGiraffes: see furthest through the fog · P ping: marks every defender it reaches, even under camo, and reveals infiltrators out of camo\nKangaroos: R flash grenade (LMB fire, RMB cancel) when no hippo's smoke is ready · they resupply units nearby\nLionesses: F sneak (then RMB a defender: they pounce) · G fire blast · T firing lines on/off when moved together\nSerpent Snipers: F sniper nest (LMB a tree: up it they see and shoot further; any move order climbs them down) · G bush trap (LMB a bush: coiled, they strike and crush a defender who comes close)\nWolf Medics: T healing (2 units each) / minesweeping (they find the hidden mines and dig them out; RMB sweeps on the way, Ctrl+RMB doesn't)\nChimps / Rams / Kangaroos: RMB next to a broken gate to send them in\nRivers: Shift+B drop a bridge (LMB, RMB cancel; 30 a match) · bears, snakes, hippos, elephants swim · the rest but mules and bisons ride the rafts hippos/elephants tow, 2 each or a rhino or giraffe alone (RMB one, or send them across with it; Space lets them off)\nBears: swimming, F dives under the water for 10 s, out of the defenders' sight (rounds that go in where it is still hit it)\nHelipads (S/E/W Pad): spawn there and +%.1f supply/s each while you hold them · sabotaged, stand ground units by one to retake it\nTransport helos (top right): RMB one with units selected to board them (50 spaces; elephant/giraffe 5, rhino/hippo 2, bison 10, mule 15, rest 1) · LMB one, then RMB a helipad you hold to fly there · they land on the pad, put a unit down beside it every 0.25 s and fly home (helipad lost on the way: they bring them back)" % AttackerBase.INCOME,
-			13, Color(0.85, 0.85, 0.85, 0.75))
-	help.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
-	help.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	help.position = Vector2(14, help.position.y - 256)
-	root.add_child(help)
-
-	# The transport helicopters, top right: spaces, status, health, and Board / Fly / Look.
+	# The transport helicopters, under the minimap: spaces, status, health, and Board / Fly / Look.
 	if commander.fleet != null:
 		helo_panel = HeloPanel.new()
 		helo_panel.commander = commander
@@ -1141,253 +1291,24 @@ func _build_hud() -> void:
 		helo_panel.board_pressed.connect(_on_helo_board)
 		helo_panel.fly_pressed.connect(_on_helo_fly)
 		helo_panel.look_pressed.connect(_on_helo_look)
-		# Pinned 12 px in from the top right corner; it grows down and to the left with what it holds.
+		# Pinned under the minimap, 12 px in from the right; it grows down and to the left with what it holds.
 		helo_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 		helo_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 		helo_panel.grow_vertical = Control.GROW_DIRECTION_END
-		helo_panel.offset_right = -12.0
-		helo_panel.offset_left = -12.0
-		helo_panel.offset_top = 12.0
-		helo_panel.offset_bottom = 12.0
-		root.add_child(helo_panel)
-
-	_aim_label = UIKit.label("", 15, MISSILE_LINE)
-	_aim_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_aim_label.visible = false
-	root.add_child(_aim_label)
-
-	# Folding bridges (the Jungle Keep's rivers): how many are left, and the button to drop one.
-	if RiverCrossing.active():
-		_bridge_button = UIKit.button("", 14)
-		_bridge_button.toggle_mode = true
-		_bridge_button.focus_mode = Control.FOCUS_NONE
-		_bridge_button.custom_minimum_size = Vector2(150, 34)
-		_bridge_button.tooltip_text = "Airdrop a folding bridge across a river: everyone can cross it (the defenders too: its alarm goes off)\nBears, snakes, hippos and elephants swim; the rest but the Mule Artillery and bisons ride across on the rafts hippos and elephants tow (2 each, or a rhino or a giraffe alone)"
-		_bridge_button.pressed.connect(toggle_bridge)
-		info.add_child(_bridge_button)
-	# Defenders on a bridge: a banner at the top while the alarm goes off (click it to look).
-	_alarm_banner = UIKit.button("", 20)
-	_alarm_banner.focus_mode = Control.FOCUS_NONE
-	_alarm_banner.add_theme_color_override("font_color", Color.WHITE)
-	var alarm_style := UIKit.panel_style(Color(0.7, 0.06, 0.04, 0.88))
-	for st in ["normal", "hover", "pressed"]:
-		_alarm_banner.add_theme_stylebox_override(st, alarm_style)
-	_alarm_banner.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-	_alarm_banner.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	_alarm_banner.position.y += 70
-	_alarm_banner.visible = false
-	_alarm_banner.pressed.connect(_look_at_alarm)
-	root.add_child(_alarm_banner)
-	_alarm_beep = AudioStreamPlayer.new()
-	_alarm_beep.stream = FoldingBridge._siren_stream()
-	_alarm_beep.volume_db = -14.0
-	add_child(_alarm_beep)
+		helo_panel.offset_right = -AttackerHUD.MARGIN
+		helo_panel.offset_left = -AttackerHUD.MARGIN
+		helo_panel.offset_top = hud.helo_panel_top()
+		helo_panel.offset_bottom = hud.helo_panel_top()
+		hud.add_child(helo_panel)
+		helo_panel.select_pressed.connect(_on_helo_pick)
+		# Under the keys' panel and the aim label (that one follows the mouse over everything).
+		hud.move_child(helo_panel, hud.help_panel.get_index())
 
 
 func _process(_delta: float) -> void:
 	if selected.any(func(u): return is_instance_valid(u) and u.raiding):
 		_alive_selection()
-	_supply_label.text = "Supply %d" % int(commander.supply)
-	_count_label.text = "Army %d / %d   (+%.0f/s)" % [commander.units.size(), AttackerCommander.UNIT_CAP, commander.income_rate()]
-	_selection_label.text = "Selected %d" % selected.size()
-	if is_instance_valid(selected_helo) and selected_helo.is_alive():
-		_selection_label.text = "%s · %d/%d spaces\n%s" % [selected_helo.display_name, selected_helo.spaces_used(), HeloCargo.CAPACITY,
-				selected_helo.status_text()]
-		if selected_helo.can_board():
-			_selection_label.text += "\nRMB a helipad you hold: fly there with what is aboard"
-	var rhinos := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_cluster_bomb())
-	if not rhinos.is_empty():
-		var ready := rhinos.filter(func(u): return u.cluster_ready()).size()
-		_selection_label.text += "\nCluster bombs %d/%d [F]" % [ready, rhinos.size()]
-		if ready == 0:
-			var soonest: float = rhinos.map(func(u): return u.cluster_cd).min()
-			_selection_label.text += "  %ds" % ceili(soonest)
-		if rhinos.any(func(u): return commander.is_scouting(u)):
-			_selection_label.text += "\nScout formation [T]"
-	var bisons := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_bombard() and not u.has_setup())
-	if not bisons.is_empty():
-		var ready := bisons.filter(func(u): return u.bombard_ready()).size()
-		_selection_label.text += "\nBombardment %d/%d [G]" % [ready, bisons.size()]
-		if ready == 0:
-			var soonest: float = bisons.map(func(u): return u.bombard_cd).min()
-			_selection_label.text += "  %ds" % ceili(soonest)
-	var mules := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_setup())
-	_gun_button.visible = not mules.is_empty()
-	if not mules.is_empty():
-		var armed := mules.filter(func(u): return u.is_armed())
-		var rising := mules.filter(func(u): return u.setting_up())
-		var packing := mules.filter(func(u): return u.packing_up())
-		var packed := mules.size() - armed.size() - rising.size() - packing.size()
-		var state := "MIXED"
-		for s in [[armed, "ARMED"], [rising, "SETTING UP"], [packing, "DISARMING"]]:
-			if s[0].size() == mules.size():
-				state = s[1]
-		if packed == mules.size():
-			state = "PACKED"
-		_gun_button.text = "Guns: %s  [T]" % state
-		var parts := PackedStringArray()
-		if not armed.is_empty():
-			parts.append("%d armed" % armed.size())
-		if not rising.is_empty():
-			parts.append("%d setting up %ds" % [rising.size(), ceili(rising.map(func(u): return u.setup_left()).max())])
-		if not packing.is_empty():
-			parts.append("%d disarming %ds" % [packing.size(), ceili(packing.map(func(u): return u.setup_left()).max())])
-		if packed > 0:
-			parts.append("%d packed" % packed)
-		_selection_label.text += "\nGuns: " + " · ".join(parts)
-		if not armed.is_empty():
-			var ready := armed.filter(func(u): return u.bombard_ready()).size()
-			_selection_label.text += "\nShells %d/%d [G]" % [ready, armed.size()]
-			if ready == 0:
-				var soonest: float = armed.map(func(u): return u.bombard_cd).min()
-				if soonest > 0.0:
-					_selection_label.text += "  %ds" % ceili(soonest)
-		elif packed == mules.size():
-			_selection_label.text += "\nSet the guns up to fire [T]"
-	var talons := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_strafe())
-	if not talons.is_empty():
-		for skill in [["Strafe run", "strafe_cd", "F"], ["Bomb strike", "bomb_cd", "G"]]:
-			var ready := talons.filter(func(u): return u.get(skill[1]) <= 0.0 and not u.on_run()).size()
-			_selection_label.text += "\n%s %d/%d [%s]" % [skill[0], ready, talons.size(), skill[2]]
-			if ready == 0:
-				var soonest: float = talons.map(func(u): return u.get(skill[1])).min()
-				if soonest > 0.0:
-					_selection_label.text += "  %ds" % ceili(soonest)
-		var flying := talons.filter(func(u): return u.on_run()).size()
-		if flying > 0:
-			_selection_label.text += "\nOn an attack run %d" % flying
-	var hippos := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_smoke())
-	if not hippos.is_empty():
-		var ready := hippos.filter(func(u): return u.smoke_ready()).size()
-		_selection_label.text += "\nSmoke screen %d/%d [R]" % [ready, hippos.size()]
-		if ready == 0:
-			var soonest: float = hippos.map(func(u): return u.smoke_cd).min()
-			_selection_label.text += "  %ds" % ceili(soonest)
-		if hippos.any(func(u): return u.is_overheated()):
-			_selection_label.text += "\nGuns overheated"
-		else:
-			var hottest: float = hippos.map(func(u): return u.heat / u.stats.overheat_time).max()
-			_selection_label.text += "\nGuns heat %d%%" % int(hottest * 100.0)
-	var kangaroos := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_flash())
-	if not kangaroos.is_empty():
-		var ready := kangaroos.filter(func(u): return u.flash_ready()).size()
-		_selection_label.text += "\nFlash grenade %d/%d [R]" % [ready, kangaroos.size()]
-		if ready == 0:
-			var soonest: float = kangaroos.map(func(u): return u.flash_cd).min()
-			if soonest > 0.0:
-				_selection_label.text += "  %ds" % ceili(soonest)
-	var carriers := selected.filter(func(u): return is_instance_valid(u) and u.can_carry())
-	if not carriers.is_empty():
-		var aboard: int = carriers.reduce(func(n, u): return n + u.riders.size(), 0)
-		_selection_label.text += "\nOn their rafts %d (2 each, or a rhino or a giraffe alone) · RMB a carrier to board · Space lets them off" % aboard
-	var crossing := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.is_crossing())
-	if not crossing.is_empty():
-		var riding := crossing.filter(func(u): return u.is_riding()).size()
-		_selection_label.text += "\nCrossing %d (%d swimming, %d riding) · can't fight or use skills" % [crossing.size(), crossing.size() - riding, riding]
-	var bears := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_dive())
-	if not bears.is_empty():
-		var under := bears.filter(func(u): return u.is_submerged())
-		var ready := bears.filter(func(u): return u.dive_ready()).size()
-		if not under.is_empty():
-			_selection_label.text += "\nUnder the water %d (%.0fs) · out of the defenders' sight" % [under.size(), under.map(func(u): return u.dive_left()).max()]
-		elif ready > 0:
-			_selection_label.text += "\nDive %d/%d [F] · under the water %.0fs, out of the defenders' sight" % [ready, bears.size(), bears[0].stats.dive_time]
-		else:
-			var soonest: float = bears.map(func(u): return u.dive_cd).min()
-			_selection_label.text += "\nDive [F] · out swimming only" + (" · ready in %.0fs" % soonest if soonest > 0.0 else "")
-	var supplied := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.resupply > 0.0)
-	if not supplied.is_empty():
-		_selection_label.text += "\nResupplied %d · skills back %d%% sooner" % [supplied.size(), roundi(supplied[0].resupply * 100.0)]
-	var tagged := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.is_tagged())
-	if not tagged.is_empty():
-		_selection_label.text += "\nTagged by a sniper %d · defenders hit them %d%% harder" % [tagged.size(), roundi(AttackerUnit.TAG_BONUS * 100.0)]
-	var elephants := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_missiles())
-	if not elephants.is_empty():
-		var ready := elephants.filter(func(u): return u.missiles_ready()).size()
-		_selection_label.text += "\nMissiles %d/%d [O]" % [ready, elephants.size()]
-		if ready == 0:
-			var soonest: float = elephants.map(func(u): return u.missile_cd).min()
-			_selection_label.text += "  %ds" % ceili(soonest)
-	var giraffes := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_ping())
-	if not giraffes.is_empty():
-		var ready := giraffes.filter(func(u): return u.ping_ready()).size()
-		_selection_label.text += "\nPing %d/%d [P]" % [ready, giraffes.size()]
-		if ready == 0:
-			var soonest: float = giraffes.map(func(u): return u.ping_cd).min()
-			if soonest > 0.0:
-				_selection_label.text += "  %ds" % ceili(soonest)
-	var lionesses := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_sneak())
-	_line_button.visible = not lionesses.is_empty()
-	if not lionesses.is_empty():
-		var ready := lionesses.filter(func(u): return u.sneak_ready()).size()
-		_selection_label.text += "\nSneak %d/%d [F]" % [ready, lionesses.size()]
-		var sneaking := lionesses.filter(func(u): return u.is_sneaking())
-		var marked := lionesses.filter(func(u): return u.is_tagged()).size()
-		if marked > 0:
-			_selection_label.text += "  · %d tagged: can't sneak" % marked
-		elif ready == 0 and sneaking.is_empty():
-			var soonest: float = lionesses.map(func(u): return u.sneak_cd).min()
-			if soonest > 0.0:
-				_selection_label.text += "  %ds" % ceili(soonest)
-		if not sneaking.is_empty():
-			var left: float = sneaking.map(func(u): return u.sneak_left()).max()
-			_selection_label.text += "\nSneaking %d  %ds · RMB a defender: pounce" % [sneaking.size(), ceili(left)]
-		var lit := lionesses.filter(func(u): return u.blast_ready()).size()
-		_selection_label.text += "\nFire blast %d/%d [G]" % [lit, lionesses.size()]
-		var burning := lionesses.filter(func(u): return u.is_blasting()).size()
-		if burning > 0:
-			_selection_label.text += "\nFlamethrowers burning %d" % burning
-		elif lit == 0:
-			var soonest: float = lionesses.map(func(u): return u.blast_cd).min()
-			if soonest > 0.0:
-				_selection_label.text += "  %ds" % ceili(soonest)
-		_line_button.text = "Firing lines: %s  [T]" % ("ON" if commander.line_formation else "OFF")
-	var snakes := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_nest())
-	if not snakes.is_empty():
-		var perched := snakes.filter(func(u): return u.is_perched()).size()
-		var climbing := snakes.filter(func(u): return u.in_tree() and not u.is_perched())
-		_selection_label.text += "\nSniper nest [F] · %d up a tree" % perched
-		if not climbing.is_empty():
-			var up := climbing.filter(func(u): return u.skill_dir() > 0).size()
-			_selection_label.text += " · %d climbing %s" % [climbing.size(), "up" if up == climbing.size() else "down" if up == 0 else "up and down"]
-		var coiled := snakes.filter(func(u): return u.is_coiled()).size()
-		var squeezing := snakes.filter(func(u): return u.is_constricting())
-		var coiling := snakes.filter(func(u): return u.in_bush() and not u.is_coiled() and not u.is_constricting()).size()
-		_selection_label.text += "\nBush trap [G] · %d coiled" % coiled
-		if coiling > 0:
-			_selection_label.text += " · %d coiling or uncoiling" % coiling
-		if not squeezing.is_empty():
-			var left: float = squeezing.map(func(u): return u.squeeze_left()).max()
-			_selection_label.text += "\nConstricting %d  %ds (can't be called off)" % [squeezing.size(), ceili(left)]
-	var dogs := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_dog_modes())
-	_dog_button.visible = not dogs.is_empty()
-	if not dogs.is_empty():
-		var healers := dogs.filter(func(u): return u.dog_mode == "heal")
-		var sweepers := dogs.filter(func(u): return u.dog_mode == "sweep")
-		_dog_button.text = "Dogs: %s  [T]" % ("HEALING" if sweepers.is_empty() else "MINESWEEPING" if healers.is_empty() else "MIXED")
-		if not healers.is_empty():
-			var healed: int = healers.reduce(func(n, u): return n + u.patients.filter(func(p): return u.can_heal(p)).size(), 0)
-			_selection_label.text += "\nHealing %d · %d units healed" % [healers.size(), healed]
-		if not sweepers.is_empty():
-			var digging := sweepers.filter(func(u): return u.is_digging()).size()
-			var cleared: int = sweepers.reduce(func(n, u): return n + u.mines_disarmed, 0)
-			_selection_label.text += "\nMinesweeping %d · %d disarmed" % [sweepers.size(), cleared]
-			if digging > 0:
-				_selection_label.text += " · %d digging" % digging
-	var rams := selected.filter(func(u): return is_instance_valid(u) and u.is_alive() and u.has_ram())
-	if not rams.is_empty():
-		var ready := rams.filter(func(u): return u.ram_ready()).size()
-		_selection_label.text += "\nRam %d/%d [Space]" % [ready, rams.size()]
-		if ready == 0:
-			var soonest: float = rams.map(func(u): return u.ram_cd).min()
-			_selection_label.text += "  %ds" % ceili(soonest)
-		var ramming := rams.filter(func(u): return u.is_ramming())
-		if not ramming.is_empty():
-			var charging := ramming.filter(func(u): return u.charge_gate != null).size()
-			var left: float = ramming.map(func(u): return u.ram_left()).max()
-			_selection_label.text += "\nRamming %d  %ds" % [ramming.size(), ceili(left)]
-			if charging > 0:
-				_selection_label.text += " · %d charging the gate" % charging
+	_selection_label.text = status_text()
 	if _aiming == "cluster":
 		_update_aim_preview()
 	elif _aiming == "bombard":
@@ -1408,14 +1329,94 @@ func _process(_delta: float) -> void:
 		_update_trap_preview()
 	elif _aiming == "bridge":
 		_update_bridge_preview()
-	if _bridge_button:
-		_bridge_button.text = "BRIDGE  %d left  [Shift+B]" % commander.bridges_left
-		_bridge_button.disabled = commander.bridges_left <= 0
 	_update_alarm_banner()
-	for type_id in _spawn_buttons:
-		_spawn_buttons[type_id].disabled = not commander.can_afford(type_id)
-	# A sabotaged helipad spawns nothing until it is retaken.
-	for k in _spawn_point_buttons.size():
-		_spawn_point_buttons[k].disabled = not commander.spawn_open(k)
-	if not commander.spawn_open(spawn_index):
-		set_spawn_point(_next_open_spawn(spawn_index))
+
+
+## What the selection is doing, for the HUD's mugshot: states only (crossing, tagged, sneaking, guns heat...), the skills'
+## readiness and cooldowns being on their tiles.
+func status_text() -> String:
+	var out := PackedStringArray()
+	if is_instance_valid(selected_helo) and selected_helo.is_alive():
+		out.append(selected_helo.status_text())
+		if selected_helo.can_board():
+			out.append("RMB a helipad you hold: fly there with what is aboard")
+	var live := selected.filter(func(u): return is_instance_valid(u) and u.is_alive())
+	var mules := live.filter(func(u): return u.has_setup())
+	if not mules.is_empty():
+		var parts := PackedStringArray()
+		var armed := mules.filter(func(u): return u.is_armed()).size()
+		var rising := mules.filter(func(u): return u.setting_up())
+		var packing := mules.filter(func(u): return u.packing_up())
+		if armed > 0:
+			parts.append("%d armed" % armed)
+		if not rising.is_empty():
+			parts.append("%d setting up %ds" % [rising.size(), ceili(rising.map(func(u): return u.setup_left()).max())])
+		if not packing.is_empty():
+			parts.append("%d disarming %ds" % [packing.size(), ceili(packing.map(func(u): return u.setup_left()).max())])
+		if armed + rising.size() + packing.size() == 0:
+			parts.append("packed: set them up to fire [T]")
+		out.append("Guns: " + " · ".join(parts))
+	var flying := live.filter(func(u): return u.has_strafe() and u.on_run()).size()
+	if flying > 0:
+		out.append("On an attack run %d" % flying)
+	var hippos := live.filter(func(u): return u.has_smoke())
+	if not hippos.is_empty():
+		if hippos.any(func(u): return u.is_overheated()):
+			out.append("Guns overheated")
+		else:
+			var hottest: float = hippos.map(func(u): return u.heat / u.stats.overheat_time).max()
+			if hottest > 0.0:
+				out.append("Guns heat %d%%" % int(hottest * 100.0))
+	var carriers := live.filter(func(u): return u.can_carry())
+	var aboard: int = carriers.reduce(func(n, u): return n + u.riders.size(), 0)
+	if aboard > 0:
+		out.append("On their rafts %d · Space lets them off" % aboard)
+	var crossing := live.filter(func(u): return u.is_crossing())
+	if not crossing.is_empty():
+		var riding := crossing.filter(func(u): return u.is_riding()).size()
+		out.append("Crossing %d (%d swimming, %d riding) · can't fight or use skills" % [crossing.size(), crossing.size() - riding, riding])
+	var under := live.filter(func(u): return u.has_dive() and u.is_submerged())
+	if not under.is_empty():
+		out.append("Under the water %d (%.0fs) · out of the defenders' sight" % [under.size(), under.map(func(u): return u.dive_left()).max()])
+	var tagged := live.filter(func(u): return u.is_tagged())
+	if not tagged.is_empty():
+		out.append("Tagged by a sniper %d · defenders hit them %d%% harder" % [tagged.size(), roundi(AttackerUnit.TAG_BONUS * 100.0)])
+	var lionesses := live.filter(func(u): return u.has_sneak())
+	var marked := lionesses.filter(func(u): return u.is_tagged()).size()
+	if marked > 0:
+		out.append("Lionesses: %d tagged: can't sneak" % marked)
+	var sneaking := lionesses.filter(func(u): return u.is_sneaking())
+	if not sneaking.is_empty():
+		out.append("Sneaking %d  %ds · RMB a defender: pounce" % [sneaking.size(), ceili(sneaking.map(func(u): return u.sneak_left()).max())])
+	var burning := lionesses.filter(func(u): return u.is_blasting()).size()
+	if burning > 0:
+		out.append("Flamethrowers burning %d" % burning)
+	var snakes := live.filter(func(u): return u.has_nest())
+	if not snakes.is_empty():
+		var perched := snakes.filter(func(u): return u.is_perched()).size()
+		var climbing := snakes.filter(func(u): return u.in_tree() and not u.is_perched()).size()
+		var coiled := snakes.filter(func(u): return u.is_coiled()).size()
+		var squeezing := snakes.filter(func(u): return u.is_constricting())
+		if perched + climbing + coiled > 0:
+			out.append("Snakes: %d up a tree%s · %d coiled" % [perched, " (%d climbing)" % climbing if climbing > 0 else "", coiled])
+		if not squeezing.is_empty():
+			out.append("Constricting %d  %ds (can't be called off)" % [squeezing.size(), ceili(squeezing.map(func(u): return u.squeeze_left()).max())])
+	var dogs := live.filter(func(u): return u.has_dog_modes())
+	var healers := dogs.filter(func(u): return u.dog_mode == "heal")
+	if not healers.is_empty():
+		var healed: int = healers.reduce(func(n, u): return n + u.patients.filter(func(p): return u.can_heal(p)).size(), 0)
+		out.append("Healing %d · %d units healed" % [healers.size(), healed])
+	var sweepers := dogs.filter(func(u): return u.dog_mode == "sweep")
+	if not sweepers.is_empty():
+		var digging := sweepers.filter(func(u): return u.is_digging()).size()
+		out.append("Minesweeping %d · %d disarmed%s" % [sweepers.size(), sweepers.reduce(func(n, u): return n + u.mines_disarmed, 0),
+				" · %d digging" % digging if digging > 0 else ""])
+	var ramming := live.filter(func(u): return u.has_ram() and u.is_ramming())
+	if not ramming.is_empty():
+		var charging := ramming.filter(func(u): return u.charge_gate != null).size()
+		out.append("Ramming %d  %ds%s" % [ramming.size(), ceili(ramming.map(func(u): return u.ram_left()).max()),
+				" · %d charging the gate" % charging if charging > 0 else ""])
+	var supplied := live.filter(func(u): return u.resupply > 0.0)
+	if not supplied.is_empty():
+		out.append("Resupplied %d · skills back %d%% sooner" % [supplied.size(), roundi(supplied[0].resupply * 100.0)])
+	return "\n".join(out)

@@ -3,16 +3,16 @@ extends Control
 ## The AA Squad's sights while the player drives it (AASquad): a mark on every enemy aircraft in
 ## lock range, the lock-on box closing in on the one being tracked (LOCKED once the crosshair has
 ## stayed on it for AASquad.LOCK_TIME), the squad's pods (a pip per missile), its mines and its auto
-## order (above the weapon panel), and a line under the crosshair when the squad can't fire.
+## order (bottom right), and a line under the crosshair when the squad can't fire.
 
 const LOCKING := Color(1.0, 0.8, 0.25)
 const LOCKED := Color(1.0, 0.3, 0.22)
 const MARK := Color(1.0, 1.0, 1.0, 0.6)
 const PIP := Color(0.85, 0.9, 1.0)
 const EMPTY := Color(0.2, 0.22, 0.26, 0.9)
-## Status block, above the weapon panel (bottom right).
+## Status block, bottom right.
 const BLOCK := Vector2(250, 118)
-const BLOCK_MARGIN := Vector2(16, 150)
+const BLOCK_MARGIN := Vector2(16, 16)
 
 var squad: AASquad
 
@@ -71,7 +71,7 @@ func _draw() -> void:
 	_draw_block(view, font)
 
 
-## Pods, mines and the auto order, in a panel above the weapon panel.
+## Pods, mines and the auto order, in a panel bottom right.
 func _draw_block(view: Vector2, font: Font) -> void:
 	var origin := view - BLOCK_MARGIN - BLOCK
 	draw_style_box(UIKit.panel_style(), Rect2(origin, BLOCK))

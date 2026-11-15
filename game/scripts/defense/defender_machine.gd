@@ -2,7 +2,7 @@ class_name DefenderMachine
 extends CharacterBody3D
 ## A defender post that is one machine the player flies or drives in third person: the Fighter Jet (DefenderJet) and the
 ## Hover Tank (DefenderTank). Bought with credits like a squad (DefenderArmory), it sits on the same roster (the hotbar:
-## SquadHotbar; F1-F6 takes command) and is a station like the others (see DefenderController for the interface): the
+## DefenderHUD's squads, top left; F1-F6 takes command) and is a station like the others (see DefenderController for the interface): the
 ## player's camera rides on it, the attackers shoot at it (it is a "defender_target"), and once it is down it is gone for
 ## good (wiped_out), however it went (shot, crashed).
 ##
@@ -58,7 +58,7 @@ func setup(n: int) -> void:
 	number = n
 
 
-# ---------------------------------------------------------------- the roster (SquadHotbar)
+# ---------------------------------------------------------------- the roster (DefenderHUD)
 
 func roster_label() -> String:
 	return station_name

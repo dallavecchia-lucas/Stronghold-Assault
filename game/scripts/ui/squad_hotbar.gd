@@ -1,6 +1,7 @@
 class_name SquadHotbar
 extends Control
-## The defender's roster of bought squads and machines (DefenderArmory), bottom centre: a slot per squad with
+## A strip of the defender's roster of bought squads and machines (DefenderArmory), bottom centre, as the AA Squad showcase's
+## overlay shows it (the game's own HUD shows the roster as DefenderHUD's squads, top left): a slot per squad with
 ## its key (F1-F6 takes command of it, Ctrl+F<n> changes its auto order), its troopers' health, its
 ## auto order and what it is doing, the one the player drives outlined; then the buy slots (B: an
 ## AA Squad, N: a Flame Squad, M: an Infiltrator Squad, K: a Sniper, J: the Fighter Jet, H: the Hover Tank)
@@ -74,7 +75,7 @@ func _draw_squad(r: Rect2, i: int, s, font: Font) -> void:
 	draw_string(font, r.position + Vector2(7, 44), s.order_name(), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, s.order_color())
 	# What it is doing, after the order's name (a longer name, like BOMB RUN, pushes it along).
 	var after := maxf(52.0, 7.0 + font.get_string_size(s.order_name(), HORIZONTAL_ALIGNMENT_LEFT, -1, 12).x + 6.0)
-	draw_string(font, r.position + Vector2(after, 44), s.doing(driving), HORIZONTAL_ALIGNMENT_LEFT, int(r.size.x - after - 4.0), 10, DIM)
+	draw_string(font, r.position + Vector2(after, 44), s.doing(driving), HORIZONTAL_ALIGNMENT_LEFT, int(r.size.x - after - 4.0), 11, DIM)
 
 
 ## A buy slot: [key, label, kind].

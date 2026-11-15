@@ -74,7 +74,6 @@ func _ready() -> void:
 			shots_dir = arg.get_slice("=", 1)
 		elif arg.begins_with("--only="):
 			only = Array(arg.get_slice("=", 1).split(","))
-	GameConfig.map = "jungle"
 	level = JungleLevel.new()
 	add_child(level)
 	level.build()

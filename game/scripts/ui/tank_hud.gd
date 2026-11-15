@@ -49,7 +49,7 @@ func _draw() -> void:
 		var text := "FIRE" if ready and on else ("TRAVERSING" if ready else "RELOADING")
 		var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, -1, 12).x
 		draw_string(font, c + Vector2(-w * 0.5, 46), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, UIKit.GOOD if ready and on else DIM)
-	var origin := Vector2(BLOCK_MARGIN.x, view.y - BLOCK_MARGIN.y - BLOCK.y)
+	var origin := view - BLOCK_MARGIN - BLOCK
 	draw_style_box(UIKit.panel_style(), Rect2(origin, BLOCK))
 	draw_string(font, origin + Vector2(12, 24), "SPEED  %d m/s" % int(absf(tank.speed)), HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color.WHITE)
 	draw_string(font, origin + Vector2(12, 52), "CANNON [LMB]", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, UIKit.GOOD if tank.cannon_cd <= 0.0 else DIM)

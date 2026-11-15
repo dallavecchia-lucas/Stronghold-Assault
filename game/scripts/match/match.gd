@@ -27,7 +27,8 @@ var _autotest_t := 0.0
 
 
 func _ready() -> void:
-	level = JungleLevel.new() if GameConfig.map == "jungle" else LevelBuilder.new()
+	# The one map: the Jungle Keep (its stronghold, rivers and forest: JungleLevel).
+	level = JungleLevel.new()
 	level.name = "Level"
 	add_child(level)
 	level.build()
@@ -78,6 +79,8 @@ func _ready() -> void:
 		dc.level = level
 		dc.armory = armory
 		dc.drones = drones
+		dc.match_ui = ui
+		dc.commander = commander
 		player_controller = dc
 		ai_attacker = AIAttacker.new()
 		ai_attacker.commander = commander
@@ -88,6 +91,7 @@ func _ready() -> void:
 		var ac := AttackerController.new()
 		ac.level = level
 		ac.commander = commander
+		ac.match_ui = ui
 		player_controller = ac
 	ui.resumed.connect(player_controller.restore_mouse)
 
@@ -118,7 +122,7 @@ func _start() -> void:
 	add_child(player_controller)
 	if ai_attacker:
 		add_child(ai_attacker)
-	var side_text := "Hold the stronghold!" if GameConfig.player_side == GameConfig.PlayerSide.DEFENDER else "Break through and destroy the Keep!"
+	var side_text := "Hold the stronghold!" if GameConfig.player_side == GameConfig.PlayerSide.DEFENDER else "Break through and destroy the air vents on the roofs!"
 	ui.alert(side_text, UIKit.ACCENT)
 	if GameConfig.autotest != "":
 		_autotest_setup()
@@ -239,7 +243,6 @@ func _autotest_step(delta: float) -> void:
 				Input.action_release("fire")
 		elif player_controller is AttackerController:
 			var ac: AttackerController = player_controller
-			ac.set_spawn_point(step % 3)
 			for t in [UnitTypes.ORDER[step % UnitTypes.ORDER.size()], "rifleman", "kangaroo", "medic", "giraffe"]:
 				ac.spawn(t)
 			var ids := commander.units.keys()

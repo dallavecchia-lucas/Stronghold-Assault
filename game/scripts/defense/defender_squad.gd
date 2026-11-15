@@ -132,7 +132,7 @@ func setup(_n: int) -> void:
 	pass
 
 
-## For the roster of bought squads (SquadHotbar): its name in a slot, its auto order (and the
+## For the roster of bought squads (DefenderHUD): its name in a slot, its auto order (and the
 ## colour it is shown in), whether the slot should catch the eye, and a word on what it is up to.
 func roster_label() -> String:
 	return station_name

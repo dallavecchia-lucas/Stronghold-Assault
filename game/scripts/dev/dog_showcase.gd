@@ -427,7 +427,7 @@ func _sweep_step() -> void:
 		_check(pack.all(func(u): return u.dog_mode == "sweep"), "sweep: T switches them all to minesweeping")
 		_check(pack.all(func(u): return u.get("_sweep_ring").visible and not u.get("_heal_ring").visible), "sweep: each shows how far it sniffs mines out")
 	if _phase_at(4.0, "aim"):
-		_check(controller.get("_dog_button").text.contains("MINESWEEPING"), "sweep: the HUD says so (%s)" % controller.get("_dog_button").text)
+		_check(controller.mode_state("dogs") == "MINESWEEPING", "sweep: the HUD says so (%s)" % controller.mode_state("dogs"))
 		_keycap.visible = false
 		_pan(FIELD_AT + Vector3(0, 0, 17), 4.0, 5.5)
 		rig._target_zoom = FIELD_ZOOM + 4.0

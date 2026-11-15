@@ -21,9 +21,6 @@ const LAYER_WATER_EDGE := 32
 const LAYER_ALL_SOLID := LAYER_WORLD | LAYER_ATTACKERS | LAYER_DEFENDERS | LAYER_STRUCTURES
 
 const DIFFICULTY_NAMES := ["Easy", "Normal", "Hard"]
-## The maps: the Jungle Keep (JungleLevel, the default) and the classic open field (LevelBuilder).
-const MAPS := ["jungle", "classic"]
-const MAP_NAMES := ["Jungle Keep", "Classic Field"]
 ## How the light is rendered (Atmosphere): "raytraced" (SDFGI global illumination, ray-traced contact shadows,
 ## ray-marched volumetric clouds, screen-space reflections, finer soft shadows) or "standard" (lighter on the GPU).
 const LIGHTING := ["raytraced", "standard"]
@@ -31,7 +28,6 @@ const LIGHTING_NAMES := ["Ray-traced", "Standard"]
 
 var player_side: PlayerSide = PlayerSide.DEFENDER
 var difficulty := 1
-var map := "jungle"
 var lighting := "raytraced"
 var match_duration := 600.0
 var mouse_sensitivity := 0.0025
@@ -40,7 +36,6 @@ var mouse_sensitivity := 0.0025
 #   --autotest=defender|attacker   play a scripted match and quit
 #   --screenshot=path.png          save a screenshot during the autotest
 #   --duration=seconds             autotest length (game time)
-#   --map=jungle|classic           the map to play
 #   --lighting=raytraced|standard  how the light is rendered
 #   --drones=off                   no defender drones (DroneBay) in the match
 #   --garrison=off                 no garrison (Garrison): no spawned soldiers, and the guns crew themselves as before
@@ -60,8 +55,6 @@ func _ready() -> void:
 			screenshot_path = arg.get_slice("=", 1)
 		elif arg.begins_with("--duration="):
 			autotest_duration = arg.get_slice("=", 1).to_float()
-		elif arg.begins_with("--map="):
-			map = arg.get_slice("=", 1)
 		elif arg.begins_with("--lighting="):
 			lighting = arg.get_slice("=", 1)
 		elif arg.begins_with("--drones="):
@@ -90,7 +83,6 @@ func _setup_input() -> void:
 	_add_action("cam_rotate_left", [KEY_Q])
 	_add_action("cam_rotate_right", [KEY_E])
 	_add_action("pause", [KEY_ESCAPE])
-	_add_action("spawn_cycle", [KEY_TAB])
 	var digit_keys := [KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9, KEY_0]
 	for i in digit_keys.size():
 		_add_action("slot_%d" % (i + 1), [digit_keys[i]])

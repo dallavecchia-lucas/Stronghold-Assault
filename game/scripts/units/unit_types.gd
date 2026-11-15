@@ -160,6 +160,17 @@ extends RefCounted
 const ORDER := ["rifleman", "kangaroo", "medic", "talon", "elephant", "mule", "breacher",
 		"giraffe", "chimp", "hippo", "bison_gun", "lioness", "serpent", "rhino"]
 const FLY_HEIGHT := 16.0
+## How long a unit takes on the attacking player's production line (AttackerCommander "produce"): BUILD_BASE s plus
+## BUILD_PER_COST s per credit it costs (a Bear Rifleman 1.6 s, a War Elephant 4.8 s), unless its entry has a "build"
+## of its own. Shorter than it takes the income to pay for it, so the line smooths spending rather than holding it up.
+const BUILD_BASE := 1.0
+const BUILD_PER_COST := 0.012
+
+
+## Seconds `type_id` takes on the production line.
+static func build_time(type_id: String) -> float:
+	var d: Dictionary = DATA[type_id]
+	return d.get("build", BUILD_BASE + d.cost * BUILD_PER_COST)
 
 const DATA := {
 	"rifleman": {

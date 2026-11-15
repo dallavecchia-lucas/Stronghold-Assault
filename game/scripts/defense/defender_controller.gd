@@ -5,8 +5,9 @@ extends CanvasLayer
 ## wants_captured_mouse(), get_hud_info(), get_station_position(), station_name, station_kind
 ## and a became_unavailable signal. G jumps to the Gunner Squad (station_kind "squad").
 ##
-## The roster of bought squads (DefenderArmory) sits in a hotbar at the bottom (SquadHotbar):
-## F1-F6 takes command of a squad, Ctrl+F1-F6 changes its auto order without leaving the post
+## The HUD (DefenderHUD) after the paper sketch, minimal like the attacker's: the squads top left, the time to hold and the
+## vents top centre, the tactical view of the base and the minimap top right, the ammo counter bottom left, the skills of
+## what the player drives bottom centre. The roster of bought squads (DefenderArmory): F1-F6 takes command of a squad, Ctrl+F1-F6 changes its auto order without leaving the post
 ## the player is on, B buys another AA Squad, N a Flame Squad, M an Infiltrator Squad, K a Sniper, J the Fighter
 ## Jet (DefenderJet) and H the Hover Tank (DefenderTank): machines (DefenderMachine) ride on the same roster.
 ##
@@ -15,7 +16,7 @@ extends CanvasLayer
 ##
 ## The garrison (Garrison): the player has one of the base's four spawn controls (player 0's, on the south side at the
 ## start). Y moves it to the next side round the base (south, east, north, west), U switches the soldiers it spawns
-## between BASE (guns, then the decks, then the field) and FIELD (straight out). A panel at the top right shows it.
+## between BASE (guns, then the decks, then the field) and FIELD (straight out). The HUD's tactical view shows it.
 
 const THREAT_RADIUS := 45.0
 const SWITCH_FADE := 0.18
@@ -45,24 +46,18 @@ var garrison: Garrison
 var player_number := 0
 var stations := []
 var current = null
+## The match's HUD (null in the showcases): its status bar gives way to this one's banner. The attackers' army, for the
+## minimap.
+var match_ui: MatchUI
+var commander: AttackerCommander
+var hud: DefenderHUD
 
 var _overview_cam: Camera3D
 var _fade: ColorRect
 var _crosshair: Control
-var _list: VBoxContainer
-var _rows := []
-var _weapon_label: Label
-var _status_label: Label
-var _hint_label: Label
-var _drone_label: Label
-var _garrison_label: Label
-var _hp_bar: ProgressBar
-var _heat_bar: ProgressBar
 var _prompt: Label
 var _threat := {}
-var _threat_cd := 0.0
 var _switching := false
-var _hotbar: SquadHotbar
 var _whiteout: ColorRect
 var _whiteout_tw: Tween
 
@@ -80,6 +75,8 @@ func _ready() -> void:
 	_overview_cam.global_transform = Transform3D(Basis.from_euler(Vector3(deg_to_rad(-40.0), 0, 0)), Vector3(0, 150, 230))
 
 	_build_hud()
+	if match_ui:
+		match_ui.attach_defender_hud(hud.alerts_top())
 	if armory:
 		armory.squad_bought.connect(_on_squad_bought)
 		for s in armory.squads:
@@ -184,6 +181,32 @@ func _on_squad_bought(s) -> void:
 	s.became_unavailable.connect(_on_station_unavailable)
 
 
+## The tactical view's click on a side: the player's garrison spawn goes there.
+func move_spawn_to(side: String) -> void:
+	if garrison == null:
+		return
+	garrison.move_spawn(player_number, side)
+	_flash_prompt("Your spawn: %s · %s now spawns %d at a time" % [side.to_upper(), side.capitalize(), garrison.spawns_at(side)])
+
+
+## The minimap's click: the post (or bought squad) nearest `pos` that can be taken.
+func select_nearest_post(pos: Vector3) -> void:
+	var all: Array = stations.duplicate()
+	if armory:
+		all.append_array(armory.squads)
+	var best = null
+	var best_d := INF
+	for s in all:
+		if not s.can_possess():
+			continue
+		var d: float = Vector2(s.get_station_position().x - pos.x, s.get_station_position().z - pos.z).length()
+		if d < best_d:
+			best_d = d
+			best = s
+	if best != null:
+		_switch_to(best)
+
+
 ## Y: the player's garrison spawn to the next side round the base.
 func cycle_spawn() -> void:
 	if garrison == null:
@@ -268,8 +291,7 @@ func _possess(s) -> void:
 	restore_mouse()
 	_prompt.visible = false
 	_crosshair.visible = s.wants_captured_mouse()
-	if _hotbar:
-		_hotbar.current = s
+	hud.on_switched()
 
 
 func _on_station_unavailable(s) -> void:
@@ -277,8 +299,6 @@ func _on_station_unavailable(s) -> void:
 		return
 	current.unpossess()
 	current = null
-	if _hotbar:
-		_hotbar.current = null
 	_overview_cam.current = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_crosshair.visible = false
@@ -340,74 +360,10 @@ func _build_hud() -> void:
 		c.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_crosshair.add_child(c)
 
-	var list_panel := UIKit.panel()
-	list_panel.position = Vector2(12, 90)
-	root.add_child(list_panel)
-	_list = VBoxContainer.new()
-	_list.add_theme_constant_override("separation", 3)
-	list_panel.add_child(_list)
-	_list.add_child(UIKit.label("POSTS  ·  Tab = hottest", 13, Color(0.7, 0.75, 0.85)))
-	for i in stations.size():
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 8)
-		var key_text := str((i + 1) % 10) if i < 10 else " "
-		if stations[i].station_kind == "squad":
-			key_text = "G"
-		var key := UIKit.label(key_text, 15, UIKit.ACCENT)
-		key.custom_minimum_size.x = 14
-		var name_l := UIKit.label(stations[i].station_name, 15)
-		name_l.custom_minimum_size.x = 210
-		var hp := UIKit.bar(60, 8, UIKit.GOOD)
-		hp.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		var threat := UIKit.label("", 14, UIKit.DANGER)
-		threat.custom_minimum_size.x = 64
-		row.add_child(key)
-		row.add_child(name_l)
-		row.add_child(hp)
-		row.add_child(threat)
-		_list.add_child(row)
-		_rows.append({"name": name_l, "hp": hp, "threat": threat})
-
-	var weapon_panel := UIKit.panel()
-	weapon_panel.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
-	weapon_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	weapon_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	weapon_panel.position -= Vector2(16, 16)
-	root.add_child(weapon_panel)
-	var wbox := VBoxContainer.new()
-	weapon_panel.add_child(wbox)
-	_weapon_label = UIKit.label("", 15, Color(0.75, 0.8, 0.9))
-	_status_label = UIKit.label("", 28)
-	_heat_bar = UIKit.bar(220, 8, UIKit.WARN)
-	wbox.add_child(_weapon_label)
-	wbox.add_child(_status_label)
-	wbox.add_child(_heat_bar)
-	wbox.add_child(UIKit.label("HEALTH", 11, Color(0.7, 0.75, 0.85)))
-	_hp_bar = UIKit.bar(220, 10, UIKit.GOOD)
-	wbox.add_child(_hp_bar)
-
-	_hint_label = UIKit.label("", 14, Color(0.85, 0.85, 0.85, 0.8))
-	_hint_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
-	_hint_label.grow_horizontal = Control.GROW_DIRECTION_BOTH
-	_hint_label.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	_hint_label.position.y -= 14
-	root.add_child(_hint_label)
-
-	if drones:
-		_drone_label = UIKit.label("", 14, Color(0.6, 0.9, 1.0))
-		_drone_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-		_drone_label.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-		_drone_label.position += Vector2(-16, 90)
-		root.add_child(_drone_label)
-
-	if garrison:
-		var gpanel := UIKit.panel()
-		gpanel.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
-		gpanel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-		gpanel.position += Vector2(-16, 118)
-		root.add_child(gpanel)
-		_garrison_label = UIKit.label("", 14, Color(0.85, 0.9, 1.0))
-		gpanel.add_child(_garrison_label)
+	# Everything else (the squads, the banner, the base and the map, the ammo counter, the skills) is the HUD's.
+	hud = DefenderHUD.new()
+	hud.controller = self
+	root.add_child(hud)
 
 	_prompt = UIKit.label("", 26, UIKit.WARN)
 	_prompt.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
@@ -415,12 +371,6 @@ func _build_hud() -> void:
 	_prompt.position.y += 60
 	_prompt.visible = false
 	root.add_child(_prompt)
-
-	if armory:
-		_hotbar = SquadHotbar.new()
-		_hotbar.armory = armory
-		_hotbar.keys = ROSTER_KEYS.map(func(k): return OS.get_keycode_string(k))
-		root.add_child(_hotbar)
 
 	_fade = UIKit.full_rect(ColorRect.new()) as ColorRect
 	_fade.color = Color(0, 0, 0, 0)
@@ -437,20 +387,6 @@ func _build_hud() -> void:
 	flash_layer.add_child(_whiteout)
 
 
-## The garrison panel: the player's spawn, how many come out on each side, and where the soldiers are.
-func _garrison_text() -> String:
-	var c := garrison.control_of(player_number)
-	var g := garrison.summary()
-	var sides := []
-	for side in Garrison.SIDE_ORDER:
-		sides.append("%s %d" % [side.substr(0, 1).to_upper(), garrison.spawns_at(side)])
-	var mine := "—"
-	if not c.is_empty():
-		mine = "%s · %s" % [String(c.side).to_upper(), Garrison.PRIORITY_NAMES[c.priority]]
-	return "GARRISON  ·  Y move spawn  ·  U base/field\nYour spawn: %s\nSpawns  %s  (1 each per %d s)\nGuns crewed %d/%d  ·  Deck %d/%d  ·  Field %d  ·  Moving %d" % [
-			mine, "  ".join(sides), int(Garrison.SPAWN_INTERVAL), g.guns, g.guns_alive, g.deck, g.deck_total, g.field, g.walking]
-
-
 func _refresh_threat() -> void:
 	_threat.clear()
 	var units := get_tree().get_nodes_in_group("attacker_units")
@@ -463,41 +399,8 @@ func _refresh_threat() -> void:
 		_threat[s] = n
 
 
-func _process(delta: float) -> void:
-	_threat_cd -= delta
-	if _threat_cd <= 0.0:
-		_threat_cd = 0.25
-		_refresh_threat()
-		if _drone_label:
-			_drone_label.text = drones.status_text() + "  ·  C call a swarm here"
-		if _garrison_label:
-			_garrison_label.text = _garrison_text()
-	for i in stations.size():
-		var s = stations[i]
-		var row: Dictionary = _rows[i]
-		var alive: bool = s.can_possess()
-		row.hp.value = s.hp / s.max_hp
-		var n: int = _threat.get(s, 0)
-		row.threat.text = ("%d near" % n) if n > 0 else ""
-		if alive and s.has_method("is_manned") and not s.is_manned():
-			row.threat.text = "no crew" if n == 0 else "%d · no crew" % n
-		var col := UIKit.ACCENT if s == current else (Color(0.5, 0.5, 0.5) if not alive else Color.WHITE)
-		row.name.add_theme_color_override("font_color", col)
-
+func _process(_delta: float) -> void:
 	if current != null:
-		var info: Dictionary = current.get_hud_info()
-		_weapon_label.text = "%s  ·  %s" % [current.station_name, info.weapon]
-		_status_label.text = info.status
-		_hint_label.text = info.hint
-		_hp_bar.value = info.hp
-		_heat_bar.visible = info.has("heat")
 		# A scope up draws its own reticle.
+		var info: Dictionary = current.get_hud_info()
 		_crosshair.visible = current.wants_captured_mouse() and info.get("crosshair", true)
-		if info.has("heat"):
-			_heat_bar.value = info.heat
-			UIKit.set_bar_color(_heat_bar, info.get("bar_color", UIKit.DANGER if info.heat > 0.75 else UIKit.WARN))
-	else:
-		_weapon_label.text = "No post"
-		_status_label.text = "—"
-		_hint_label.text = "Number keys or Tab to take over a post" + (" · F1-F6 a squad · B buy an AA Squad · N a Flame Squad · M Infiltrators · K a Sniper · J a Jet · H a Tank" if armory else "")
-		_heat_bar.visible = false
