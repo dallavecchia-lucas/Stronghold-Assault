@@ -54,6 +54,10 @@ var _tossed := false
 ## Held in a Serpent Sniper's coils last frame (it struggles).
 var _was_held := false
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
+## Standing still on the floor: how many more ticks move_and_slide is spared, and where it stands.
+const REST_CHECK := 4
+var _rest_left := 0
+var _rest_at := Vector3.INF
 
 var _head: Node3D
 var _camera: Camera3D
@@ -322,7 +326,16 @@ func _physics_process(delta: float) -> void:
 		_player_update(delta)
 	else:
 		_ai_update(delta)
+	# Standing still on the floor right where it stood still last time (a post left to the CPU): move_and_slide would
+	# find the same nothing again (it is looked at afresh every REST_CHECK ticks all the same).
+	var still := velocity == Vector3.ZERO and not possessed
+	if still and _rest_left > 0 and global_position == _rest_at:
+		_rest_left -= 1
+		return
+	var was := global_position
 	move_and_slide()
+	_rest_left = REST_CHECK if still and global_position == was and is_on_floor() else 0
+	_rest_at = global_position
 
 
 func _unhandled_input(event: InputEvent) -> void:

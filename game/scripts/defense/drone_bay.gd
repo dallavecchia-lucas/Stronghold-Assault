@@ -343,13 +343,20 @@ func _auto_call() -> void:
 		return
 	var best: Node = null
 	var best_n := 0
+	# (The attackers that count, looked up once rather than once for every defender: the same count, faster.)
+	var seen := PackedVector3Array()
+	for a in attackers:
+		if a.is_alive() and not a.is_submerged() and not DroneSwarm.concealed(a):
+			seen.append(a.global_position)
+	if seen.is_empty():
+		return
 	for d in get_tree().get_nodes_in_group("defender_targets"):
 		if not d.is_alive():
 			continue
 		var p: Vector3 = d.global_position
 		var n := 0
-		for a in attackers:
-			if a.is_alive() and not a.is_submerged() and not DroneSwarm.concealed(a) and _flat(a.global_position, p) <= PRESSURE_RADIUS:
+		for a2 in seen:
+			if _flat(a2, p) <= PRESSURE_RADIUS:
 				n += 1
 		if n > best_n:
 			best_n = n

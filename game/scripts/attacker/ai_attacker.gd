@@ -57,12 +57,14 @@ var drones: DroneBay
 ##   talon_soldiers    its talons' bombs go for the guns, then the defenders they see, never the gates
 ##   smoke             its hippos lay smoke screens between themselves and the deck guns in reach of them
 ##   missiles          its elephants fire missile salvos at the defenders' aircraft in reach (the jet before drones)
+##   escort            while it waits for its artillery (`siege`), the massed army stands guard by the guns out in the woods
+##                     (ESCORT_BACK behind them) instead of at the base: the defenders' tank and jet find them escorted
 ##   (`sides` "guns": the standing gate whose face has the fewest live deck guns, the nearest to the base of those while
 ##                     they are even)
 const DEFAULT_POLICY := {"income_mult": null, "first_wave_delay": 15.0, "sides": "random", "split": 1, "wave_scale": 1.0,
 		"waves": [], "growth": 0.0, "drone_answer": true, "launch_at": 0, "regroup": 0.0, "regroup_ready": 0.7,
 		"regroup_wait": 150.0, "standoff": false, "bison_fire": false, "shell_vents": false, "siege": 0.0, "siege_guns": 2,
-		"rhino_cluster": false, "talon_soldiers": false, "smoke": false, "missiles": false}
+		"rhino_cluster": false, "talon_soldiers": false, "smoke": false, "missiles": false, "escort": false}
 const POLICIES := {
 	"default": {},
 	# A player's income rather than the difficulty's, otherwise as ever.
@@ -87,7 +89,7 @@ const POLICIES := {
 	# waits at the base, then the army goes in where the guns are down; every skill used. A mix without dead weight.
 	"siege_mass": {"income_mult": 1.0, "first_wave_delay": 5.0, "sides": "guns", "launch_at": 36, "regroup": 290.0,
 			"standoff": true, "bison_fire": true, "shell_vents": true, "siege": 360.0, "siege_guns": 4,
-			"rhino_cluster": true, "talon_soldiers": true, "smoke": true, "missiles": true, "drone_answer": false,
+			"rhino_cluster": true, "talon_soldiers": true, "smoke": true, "missiles": true, "drone_answer": false, "escort": true,
 			"waves": [{"mule": 2, "giraffe": 1}, {"rifleman": 6, "hippo": 1, "serpent": 1, "kangaroo": 1, "medic": 1},
 				{"mule": 2, "rifleman": 4, "breacher": 2, "chimp": 2},
 				{"rifleman": 6, "hippo": 1, "serpent": 1, "rhino": 1, "kangaroo": 1, "elephant": 1},
@@ -179,6 +181,13 @@ const SPOT_AHEAD := 6.0
 const SPOT_SLACK := 8.0
 ## Artillery goes to a firing spot for a gun this far off at most (m, flat): it is slow, the other faces are too far.
 const ROAM := 100.0
+## The escort: artillery this close to the middle (m, flat) is guarded, from this far behind it (m); the guard moves once
+## its spot has moved further than ESCORT_SLACK.
+const ESCORT_FROM := 320.0
+const ESCORT_BACK := 22.0
+const ESCORT_SLACK := 15.0
+var _escort_at := Vector3.INF
+var _escort_n := 0
 ## Artillery this close to the middle of the map (m, flat) is in the siege: there it keeps to the guns within ROAM.
 const SIEGE_BAND := 250.0
 
@@ -250,6 +259,7 @@ func _think() -> void:
 		elif not at_cap:
 			_plan_wave()
 
+	_escort_tick()
 	_regroup_tick()
 	_retake_bases()
 	_reassign_idle()
@@ -887,6 +897,31 @@ static func _flat_dist(a: Vector3, b: Vector3) -> float:
 
 ## The siege (the policy's `siege`): true while the massed army waits at the base for its artillery to bring the guns on
 ## the face it goes for down to siege_guns, at most `siege` seconds from when it was massed.
+## The escort (the policy's `escort`): while the siege waits, the army gathering for it stands ESCORT_BACK behind its
+## artillery out in the woods (the middle of the guns within ESCORT_FROM of the middle of the map), moved along as they move.
+func _escort_tick() -> void:
+	if not policy.escort or _staging.is_empty() or not _siege_waiting():
+		return
+	var sum := Vector3.ZERO
+	var n := 0
+	for id in _guns:
+		var u = commander.units.get(id)
+		if u != null and Vector2(u.global_position.x, u.global_position.z).length() < ESCORT_FROM:
+			sum += u.global_position
+			n += 1
+	if n == 0:
+		return
+	var mid := sum / n
+	var back := level.rally_point(0) - mid
+	back.y = 0.0
+	var at := mid + back.normalized() * ESCORT_BACK
+	if _escort_at != Vector3.INF and _flat_dist(at, _escort_at) < ESCORT_SLACK and _staging.size() == _escort_n:
+		return
+	_escort_at = at
+	_escort_n = _staging.size()
+	commander.submit({"type": "move", "units": _staging, "pos": Vector3(at.x, 0.0, at.z), "attack": true})
+
+
 func _siege_waiting() -> bool:
 	var massed := _staging.size() >= int(policy.launch_at) or commander.units.size() >= AttackerCommander.UNIT_CAP - 2
 	if float(policy.siege) <= 0.0 or not massed or level.gates.values().any(func(g): return not g.is_alive()):

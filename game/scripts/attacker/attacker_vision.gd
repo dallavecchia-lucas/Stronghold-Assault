@@ -32,6 +32,10 @@ var viewers: Array = []
 var _cd := 0.0
 ## Defender instance id -> in sight, as of the last update.
 var _seen := {}
+## The viewers by square cells as wide as the furthest any of them sees (plus BODY): one in sight of a point is in its
+## cell or one next to it, so only those nine are looked through (the same answer as looking through them all).
+var _grid := {}
+var _cell := 0.0
 
 
 func _enter_tree() -> void:
@@ -61,6 +65,7 @@ func refresh() -> void:
 		if b.controlled:
 			# BASE_SIGHT round a standard deck; a bigger base sees as far round its own.
 			viewers.append([b.global_position, BASE_SIGHT + (b.deck_size.length() - AttackerBase.SIZE.length()) * 0.5])
+	_build_grid()
 	_seen.clear()
 	for d in get_tree().get_nodes_in_group("defender_targets"):
 		var seen := _in_sight(d.global_position, BODY)
@@ -74,7 +79,38 @@ func in_sight(p: Vector3) -> bool:
 	return _in_sight(p, 0.0)
 
 
+func _build_grid() -> void:
+	_grid.clear()
+	_cell = 0.0
+	for v in viewers:
+		_cell = maxf(_cell, v[1])
+	_cell += BODY
+	if _cell <= 0.0:
+		return
+	for v in viewers:
+		var at: Vector3 = v[0]
+		var key := Vector2i(floori(at.x / _cell), floori(at.z / _cell))
+		var list: Array = _grid.get(key, [])
+		if list.is_empty():
+			_grid[key] = list
+		list.append(v)
+
+
 func _in_sight(p: Vector3, margin: float) -> bool:
+	if not _grid.is_empty() and margin <= BODY:
+		var cx := floori(p.x / _cell)
+		var cz := floori(p.z / _cell)
+		for gx in range(cx - 1, cx + 2):
+			for gz in range(cz - 1, cz + 2):
+				var list = _grid.get(Vector2i(gx, gz))
+				if list == null:
+					continue
+				for v in list:
+					var at: Vector3 = v[0]
+					var r: float = v[1] + margin
+					if (at.x - p.x) * (at.x - p.x) + (at.z - p.z) * (at.z - p.z) <= r * r:
+						return true
+		return false
 	for v in viewers:
 		var at: Vector3 = v[0]
 		var r: float = v[1] + margin

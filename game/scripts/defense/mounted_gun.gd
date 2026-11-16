@@ -94,6 +94,8 @@ var crew: Node3D = null
 var crew_stand := Vector3.INF
 
 var _yaw := 0.0
+var _shown_yaw := NAN
+var _shown_pitch := NAN
 var _pitch := 0.0
 ## The servos' rates (rad/s), and the sweep's clock.
 var _yaw_rate := 0.0
@@ -348,8 +350,12 @@ func _physics_process(delta: float) -> void:
 	if overheated and heat < 0.35:
 		overheated = false
 	_shake = maxf(_shake - delta, 0.0)
-	_camera.h_offset = randf_range(-1, 1) * _shake * 0.05
-	_camera.v_offset = randf_range(-1, 1) * _shake * 0.05
+	# (The shake's random numbers are drawn whether or not it shakes, as ever: the same random sequence for everything else.)
+	var shake_h := randf_range(-1, 1) * _shake * 0.05
+	var shake_v := randf_range(-1, 1) * _shake * 0.05
+	if _shake > 0.0 or _camera.h_offset != 0.0 or _camera.v_offset != 0.0:
+		_camera.h_offset = shake_h
+		_camera.v_offset = shake_v
 	_apply_aim()
 
 
@@ -363,8 +369,13 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _apply_aim() -> void:
-	_yaw_pivot.rotation.y = _yaw
-	_pitch_pivot.rotation.x = _pitch
+	# Only when the aim moved: a pivot set to where it already is still pushes its transform through everything on it.
+	if _yaw != _shown_yaw:
+		_shown_yaw = _yaw
+		_yaw_pivot.rotation.y = _yaw
+	if _pitch != _shown_pitch:
+		_shown_pitch = _pitch
+		_pitch_pivot.rotation.x = _pitch
 	if _rig:
 		_rig.set_aim(_yaw, _pitch)
 
