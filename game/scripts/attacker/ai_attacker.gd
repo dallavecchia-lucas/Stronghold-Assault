@@ -971,7 +971,7 @@ func _gate_to_base(side: String) -> float:
 func _artillery() -> void:
 	_guns = _guns.filter(func(id): return commander.units.has(id))
 	# With an escort (the policy's `escort`), the guns go out with the army: they keep to the base until it has massed.
-	var hold := policy.escort and not _massed() and not level.gates.values().any(func(g): return not g.is_alive())
+	var hold: bool = policy.escort and not _massed() and not level.gates.values().any(func(g): return not g.is_alive())
 	if not hold:
 		_left_base = true
 	for id in _guns:

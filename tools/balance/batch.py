@@ -50,6 +50,7 @@ def main() -> None:
     ap.add_argument("--ticks", type=int, default=30)
     ap.add_argument("--fine", action="store_true")
     ap.add_argument("--redo", action="store_true")
+    ap.add_argument("--no-check", action="store_true", help="skip the few-seconds check match before the batch")
     ap.add_argument("--timeout", type=float, default=3600.0)
     a = ap.parse_args()
     patch = {}
@@ -76,6 +77,13 @@ def main() -> None:
                     continue
                 jobs.append((atk, deff, seed, label))
     print(f"batch {a.name}: {len(jobs)} matches to play on {project} -> {out}", flush=True)
+    if jobs and not a.no_check:
+        # A match a few seconds long first: a script that doesn't compile would otherwise play whole matches without it.
+        chk = run_match.run(project, jobs[0][0], jobs[0][1], 1, out / "check", "check", 3.0, a.fps, a.ticks, 10.0, 600.0)
+        log = (out / "check" / "check.log").read_text(errors="replace") if (out / "check" / "check.log").exists() else ""
+        bad = [l for l in log.splitlines() if "Parse Error" in l or "Compile Error" in l or "SCRIPT ERROR" in l]
+        if "error" in chk or bad:
+            sys.exit("batch %s: the check match failed:\n%s" % (a.name, "\n".join(bad[:8]) or chk.get("log_tail", "")))
     with ThreadPoolExecutor(max_workers=max(run_match.SLOTS, 1)) as pool:
         futs = {pool.submit(run_match.run, project, atk, deff, seed, out, label, a.match_time, a.fps, a.ticks, 10.0, a.timeout): label
                 for atk, deff, seed, label in jobs}

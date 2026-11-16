@@ -21,6 +21,8 @@ PHASES = [300, 600, 900, 1200, 1500]
 def load(d: Path) -> list:
     out = []
     for f in sorted(d.glob("*.json")):
+        if f.parent.name == "check":
+            continue
         if f.name in ("batch.json", "summary.json"):
             continue
         try:
