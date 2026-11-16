@@ -931,6 +931,14 @@ func _escort_tick() -> void:
 	commander.submit({"type": "move", "units": _staging, "pos": Vector3(at.x, 0.0, at.z), "attack": true})
 
 
+## A standing air vent within `u`'s reach (with GUN_SPARE to spare): the objective is still in its work where it is.
+func _vent_in_reach(u: AttackerUnit) -> bool:
+	for v in level.vents:
+		if v.is_alive() and _flat_dist(v.global_position, u.global_position) < u.stats.bombard_range * GUN_SPARE:
+			return true
+	return false
+
+
 ## The army gathering at the base is big enough to go (the policy's `launch_at`, or the unit cap).
 func _massed() -> bool:
 	return _staging.size() >= int(policy.launch_at) or commander.units.size() >= AttackerCommander.UNIT_CAP - 2
@@ -987,11 +995,11 @@ func _artillery() -> void:
 		var spot := Vector3.INF
 		if t == null:
 			spot = _standoff_spot(u, false)
-			# Out in the siege's band it shifts at most ROAM to another gun; one still out in the woods (on its way in,
-			# or its first spot lost with the gun it was for) walks to the nearest spot however far.
+			# Out in the siege's band, while a vent is still in its reach, it shifts at most ROAM to another gun; one still out
+			# in the woods (on its way in), or with this face's vents done, walks to the nearest spot however far.
 			if spot != Vector3.INF and _flat_dist(spot, u.global_position) > ROAM \
 					and Vector2(u.global_position.x, u.global_position.z).length() < SIEGE_BAND \
-					and _gun_idle.get(id, 0.0) < GUN_IDLE:
+					and _vent_in_reach(u):
 				spot = Vector3.INF
 			if spot == Vector3.INF:
 				t = _gun_target(u)
