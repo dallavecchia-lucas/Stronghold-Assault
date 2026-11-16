@@ -45,9 +45,24 @@ var drones: DroneBay
 ##                     REGROUP_REACH of the spot) or regroup_wait seconds after it set off; 0: straight in
 ##   regroup_ready     see `regroup`
 ##   regroup_wait      see `regroup`
+##   standoff          its Mule Artillery and Bison Field Guns work on their own from the moment they are out, from firing
+##                     spots just outside the stronghold's guns' reach (_artillery); its giraffes walk with them (spotters)
+##   bison_fire        its Bison Field Guns shell what is in their reach (_gun_target); otherwise they never fire
+##   shell_vents       its artillery shells the air vents in its reach too (after the guns and the defenders it sees)
+##   siege             the massed army (launch_at, or the unit cap) waits at the base while its artillery shells the guns on
+##                     the face it goes for, until siege_guns or fewer of them are left or it has waited `siege` seconds;
+##                     0: no wait
+##   siege_guns        see `siege`
+##   rhino_cluster     its rhinos cluster-bomb the defenders on the ground they see in their reach
+##   talon_soldiers    its talons' bombs go for the guns, then the defenders they see, never the gates
+##   smoke             its hippos lay smoke screens between themselves and the deck guns in reach of them
+##   missiles          its elephants fire missile salvos at the defenders' aircraft in reach (the jet before drones)
+##   (`sides` "guns": the standing gate whose face has the fewest live deck guns, the nearest to the base of those while
+##                     they are even)
 const DEFAULT_POLICY := {"income_mult": null, "first_wave_delay": 15.0, "sides": "random", "split": 1, "wave_scale": 1.0,
 		"waves": [], "growth": 0.0, "drone_answer": true, "launch_at": 0, "regroup": 0.0, "regroup_ready": 0.7,
-		"regroup_wait": 150.0}
+		"regroup_wait": 150.0, "standoff": false, "bison_fire": false, "shell_vents": false, "siege": 0.0, "siege_guns": 2,
+		"rhino_cluster": false, "talon_soldiers": false, "smoke": false, "missiles": false}
 const POLICIES := {
 	"default": {},
 	# A player's income rather than the difficulty's, otherwise as ever.
@@ -68,6 +83,15 @@ const POLICIES := {
 	# The stock waves, but massed: the army gathers at the base until it is 30 strong, then forms up in the woods off the
 	# gate it goes for and goes in together.
 	"mass": {"income_mult": 1.0, "sides": "stick", "launch_at": 30, "regroup": 320.0},
+	# Massed, with its guns doing the work first: the artillery shells the deck guns from outside their reach while the army
+	# waits at the base, then the army goes in where the guns are down; every skill used. A mix without dead weight.
+	"siege_mass": {"income_mult": 1.0, "first_wave_delay": 5.0, "sides": "guns", "launch_at": 36, "regroup": 290.0,
+			"standoff": true, "bison_fire": true, "shell_vents": true, "siege": 360.0, "siege_guns": 4,
+			"rhino_cluster": true, "talon_soldiers": true, "smoke": true, "missiles": true, "drone_answer": false,
+			"waves": [{"mule": 2, "giraffe": 1}, {"rifleman": 6, "hippo": 1, "serpent": 1, "kangaroo": 1, "medic": 1},
+				{"mule": 2, "rifleman": 4, "breacher": 2, "chimp": 2},
+				{"rifleman": 6, "hippo": 1, "serpent": 1, "rhino": 1, "kangaroo": 1, "elephant": 1},
+				{"rifleman": 6, "serpent": 1, "breacher": 1, "chimp": 2, "hippo": 1, "medic": 1}]},
 	# Massed and on two sides at once.
 	"mass_split": {"income_mult": 1.0, "sides": "rotate", "split": 2, "launch_at": 40, "regroup": 320.0},
 	# The air: talons at the vents over the walls, elephants under them against the defenders' aircraft.
@@ -142,6 +166,19 @@ var _skill_idle := {}
 var _skill_rest := {}
 ## Mule Artillery id -> seconds armed with nothing in reach.
 var _gun_idle := {}
+## Artillery and spotters working on their own (the policy's `standoff`), and where each was last sent.
+var _guns: Array = []
+## When the massed army began waiting for the siege (_siege_waiting); -1: it isn't.
+var _siege_from := -1.0
+var _gun_goal := {}
+## Firing spots: this much of a gun's reach out from what it shells, and this far (m, flat) outside every live gun's reach.
+const STANDOFF_REACH := 0.88
+const GUN_MARGIN := 6.0
+## A spotter keeps this far ahead of its gun (m, toward the middle), and is sent again once its gun is this far off.
+const SPOT_AHEAD := 6.0
+const SPOT_SLACK := 8.0
+## Artillery goes to a firing spot for a gun this far off at most (m, flat): it is slow, the other faces are too far.
+const ROAM := 100.0
 
 ## Where it keeps a bridge standing (the river nearest each, within BRIDGE_NEAR of it), trying BRIDGE_SHIFT m up and
 ## down the river where one can't go just there; and the ground units it sends at defenders on a bridge (up to
@@ -186,6 +223,10 @@ func _think() -> void:
 		if id == 0:
 			break
 		_pending.pop_front()
+		var fresh: AttackerUnit = commander.units.get(id)
+		if policy.standoff and fresh != null and ((fresh.has_bombard() and not fresh.is_flying()) or fresh.has_ping()):
+			_guns.append(id)  # it works on its own (_artillery)
+			continue
 		_staging.append(id)
 		# The wave gathers a way out in front of the base.
 		commander.submit({"type": "move", "units": [id], "pos": level.rally_point(0), "attack": true})
@@ -197,8 +238,12 @@ func _think() -> void:
 	if _pending.is_empty() and not _staging.is_empty():
 		# Massing (the policy's `launch_at`): another wave is planned onto this one until the army is big enough. At the
 		# cap, half of it goes (the rest of the army is out there already); fewer wait for the army out there to thin.
+		# With the policy's `siege`, it waits (and grows to the cap) while its artillery shells the guns first.
 		var mass := int(policy.launch_at)
-		if mass <= 0 or _staging.size() >= mass or (at_cap and _staging.size() >= mass / 2):
+		if _siege_waiting():
+			if not at_cap:
+				_plan_wave()
+		elif mass <= 0 or _staging.size() >= mass or (at_cap and _staging.size() >= mass / 2):
 			_launch_wave()
 		elif not at_cap:
 			_plan_wave()
@@ -214,7 +259,18 @@ func _think() -> void:
 	_lioness_hunts()
 	_serpent_skills()
 	_dog_modes()
-	_mule_guns()
+	if policy.standoff:
+		_artillery()
+	else:
+		_mule_guns()
+		if policy.bison_fire:
+			_bison_guns()
+	if policy.rhino_cluster:
+		_rhino_clusters()
+	if policy.smoke:
+		_hippo_smoke()
+	if policy.missiles:
+		_elephant_missiles()
 	_bridges()
 	_bridge_alarms()
 
@@ -270,6 +326,14 @@ func _pick_side() -> String:
 			if _stick_side == "" or not level.gates[_stick_side].is_alive():
 				_stick_side = any if standing.is_empty() else standing[randi() % standing.size()]
 			return _stick_side
+		"guns":
+			var fewest := ""
+			for side in standing:
+				if fewest == "" or _face_guns(side) < _face_guns(fewest) \
+						or (_face_guns(side) == _face_guns(fewest) and _gate_to_base(side) < _gate_to_base(fewest)):
+					fewest = side
+			if fewest != "":
+				return fewest
 		"weakest":
 			var best := ""
 			for s in standing:
@@ -496,7 +560,12 @@ func _talon_strikes() -> void:
 		if u.bomb_ready():
 			var t := _in_reach(u, u.stats.bomb_range, func(d): return d.get("station_kind") == "aa")
 			if t == null:
-				t = _in_reach(u, u.stats.bomb_range, func(d): return d.get("station_kind") in ["mg", "artillery"] or d in level.gates.values())
+				if policy.talon_soldiers:
+					t = _in_reach(u, u.stats.bomb_range, func(d): return d.get("station_kind") in ["mg", "artillery"])
+					if t == null:
+						t = _in_reach(u, u.stats.bomb_range, func(d): return d.get("station_kind") in ["soldier", "squad"])
+				else:
+					t = _in_reach(u, u.stats.bomb_range, func(d): return d.get("station_kind") in ["mg", "artillery"] or d in level.gates.values())
 			if t:
 				commander.submit({"type": "bomb", "units": [u.unit_id], "pos": t.global_position})
 				continue
@@ -707,6 +776,7 @@ func _gun_target(u: AttackerUnit) -> Node3D:
 	var gates := level.gates.values()
 	for pick in [func(d): return d.get("station_kind") in ["mg", "artillery"],
 			func(d): return d.get("station_kind") in ["soldier", "sniper"],
+			func(d): return policy.shell_vents and d is Structure and d.is_vent,
 			func(d): return d in gates,
 			func(d): return d.get("station_kind") == "aa"]:
 		var t := _in_reach(u, u.stats.bombard_range, pick, GUN_SPARE)
@@ -744,7 +814,7 @@ func _retake_bases() -> void:
 		var cands := []
 		for id in commander.units:
 			var u: AttackerUnit = commander.units[id]
-			if id in sent or id in _staging or u.is_flying() or not u.is_controllable() or u.in_tree() or u.in_bush() \
+			if id in sent or id in _staging or id in _guns or u.is_flying() or not u.is_controllable() or u.in_tree() or u.in_bush() \
 					or u.has_setup():
 				continue  # (the Mule Artillery are far too slow for it)
 			cands.append([b.edge_distance(u.global_position), id])
@@ -758,7 +828,7 @@ func _retake_bases() -> void:
 ## Units with nothing to do look for the next objective.
 func _reassign_idle() -> void:
 	var idle := []
-	var retaking := _grouped()
+	var retaking := _grouped() + _guns
 	for ids in _retakers.values():
 		retaking += ids
 	for id in commander.units:
@@ -801,3 +871,184 @@ func _nearest_gate(p: Vector3) -> Structure:
 
 static func _flat_dist(a: Vector3, b: Vector3) -> float:
 	return Vector2(a.x - b.x, a.z - b.z).length()
+
+
+## The siege (the policy's `siege`): true while the massed army waits at the base for its artillery to bring the guns on
+## the face it goes for down to siege_guns, at most `siege` seconds from when it was massed.
+func _siege_waiting() -> bool:
+	var massed := _staging.size() >= int(policy.launch_at) or commander.units.size() >= AttackerCommander.UNIT_CAP - 2
+	if float(policy.siege) <= 0.0 or not massed or not level.gates[_wave_side].is_alive():
+		return false
+	if _siege_from < 0.0:
+		_siege_from = _clock
+	if _face_guns(_wave_side) <= int(policy.siege_guns) or _clock - _siege_from >= float(policy.siege):
+		_siege_from = -1.0
+		return false
+	return true
+
+
+## The live deck guns (sentries and cannons) on `side`'s face.
+func _face_guns(side: String) -> int:
+	var n := 0
+	for d in level.get_tree().get_nodes_in_group("damageable"):
+		if d is MountedGun and d.is_alive() and d.kind != "bastion" and Garrison.side_of(d.global_position) == side:
+			n += 1
+	return n
+
+
+## How far `side`'s gate is from the army's base (m, flat).
+func _gate_to_base(side: String) -> float:
+	return _flat_dist(level.gates[side].global_position, level.rally_point(0))
+
+
+## The artillery standing off (the policy's `standoff`): each Mule Artillery and Bison Field Gun works on its own, the
+## guns first. A deck or roof gun in its reach: it stops (a mule sets its gun up) and shells it whenever it has reloaded.
+## None, but a safe firing spot for one within ROAM of it (_standoff_spot): it packs up and goes there. Neither: it
+## shells the rest of what _gun_target takes from where it is, and with nothing at all to shell (a mule packing up
+## GUN_IDLE seconds after its last target) goes to a safe spot for a vent (`shell_vents`), or holds. Its giraffes walk
+## with the nearest gun, a little ahead of it: they see for it (_spot_for_guns).
+func _artillery() -> void:
+	_guns = _guns.filter(func(id): return commander.units.has(id))
+	for id in _guns:
+		var u: AttackerUnit = commander.units[id]
+		if not u.is_controllable() or u.setting_up() or u.packing_up():
+			continue
+		if not u.has_bombard():
+			_spot_for_guns(u)
+			continue
+		var t := _in_reach(u, u.stats.bombard_range, func(d): return d.get("station_kind") in ["mg", "artillery"], GUN_SPARE)
+		var spot := Vector3.INF
+		if t == null:
+			spot = _standoff_spot(u, false)
+			if spot != Vector3.INF and _flat_dist(spot, u.global_position) > ROAM:
+				spot = Vector3.INF
+			if spot == Vector3.INF:
+				t = _gun_target(u)
+		if t != null:
+			_gun_idle[id] = 0.0
+			_gun_goal.erase(id)
+			if u.has_setup() and u.is_packed():
+				commander.submit({"type": "setup", "units": [id], "on": true})
+			elif u.bombard_ready():
+				if not u.has_setup() and not u.is_idle():
+					commander.submit({"type": "move", "units": [id], "pos": u.global_position, "attack": false})
+				commander.submit({"type": "bombard", "units": [id], "pos": t.global_position})
+			continue
+		_gun_idle[id] = _gun_idle.get(id, 0.0) + 1.0
+		if u.has_setup() and not u.is_packed():
+			# A gun to go for: it packs up at once; nothing at all: GUN_IDLE seconds after its last target.
+			if spot != Vector3.INF or _gun_idle[id] >= GUN_IDLE:
+				commander.submit({"type": "setup", "units": [id], "on": false})
+			continue
+		if spot == Vector3.INF and policy.shell_vents:
+			spot = _standoff_spot(u, true)
+		if spot == Vector3.INF:
+			continue
+		if _gun_goal.has(id) and _flat_dist(_gun_goal[id], spot) < SPOT_SLACK and not u.is_idle():
+			continue
+		_gun_goal[id] = spot
+		commander.submit({"type": "move", "units": [id], "pos": spot, "attack": false})
+
+
+## The nearest firing spot for `u` from which a live deck or roof gun (or with `vents`, a vent) is in its reach and no
+## live gun reaches it: straight out from it at STANDOFF_REACH of its reach, GUN_MARGIN outside every live gun's reach (a
+## cannon's long shot, a sentry's or bastion's AI_RANGE); INF with none.
+func _standoff_spot(u: AttackerUnit, vents: bool) -> Vector3:
+	var reach: float = u.stats.bombard_range * STANDOFF_REACH
+	var guns := []
+	var marks := []
+	for d in level.get_tree().get_nodes_in_group("damageable"):
+		if d is MountedGun and d.is_alive():
+			guns.append([d.global_position, MountedGun.CANNON_RANGE if d.kind == "cannon" else MountedGun.AI_RANGE])
+			if not vents:
+				marks.append(d.global_position)
+	if vents:
+		for v in level.vents:
+			if v.is_alive():
+				marks.append(v.global_position)
+	var best := Vector3.INF
+	var best_d := INF
+	for m: Vector3 in marks:
+		var flat := Vector3(m.x, 0.0, m.z)
+		if flat.length() < 1.0:
+			continue
+		var spot := flat + flat.normalized() * reach
+		if guns.any(func(g): return _flat_dist(spot, g[0]) < g[1] + GUN_MARGIN):
+			continue
+		var d := _flat_dist(spot, u.global_position)
+		if d < best_d:
+			best_d = d
+			best = spot
+	return best
+
+
+## A spotter (a giraffe working with the artillery) keeps SPOT_AHEAD in front of the nearest gun, toward the middle.
+func _spot_for_guns(u: AttackerUnit) -> void:
+	var gun: AttackerUnit = null
+	for id in _guns:
+		var g: AttackerUnit = commander.units[id]
+		if g.has_bombard() and (gun == null or _flat_dist(g.global_position, u.global_position) < _flat_dist(gun.global_position, u.global_position)):
+			gun = g
+	if gun == null:
+		return
+	var flat := Vector3(gun.global_position.x, 0.0, gun.global_position.z)
+	var spot := flat - flat.normalized() * SPOT_AHEAD
+	if _gun_goal.has(u.unit_id) and _flat_dist(_gun_goal[u.unit_id], spot) < SPOT_SLACK:
+		return
+	_gun_goal[u.unit_id] = spot
+	commander.submit({"type": "move", "units": [u.unit_id], "pos": spot, "attack": false})
+
+
+## Bison Field Guns (the policy's `bison_fire`) shell what is in their reach whenever they have reloaded (_gun_target).
+func _bison_guns() -> void:
+	for u in commander.units.values():
+		if not u.has_bombard() or u.has_setup() or u.is_flying() or not u.bombard_ready():
+			continue
+		var t := _gun_target(u)
+		if t != null:
+			commander.submit({"type": "bombard", "units": [u.unit_id], "pos": t.global_position})
+
+
+## Rhinos (the policy's `rhino_cluster`) cluster-bomb the defenders on the ground they see in their reach.
+func _rhino_clusters() -> void:
+	for u in commander.units.values():
+		if not u.cluster_ready() or not u.is_controllable():
+			continue
+		var on_ground := func(d): return d.get("station_kind") in ["soldier", "squad"] \
+				and absf(d.global_position.y - u.global_position.y) < 3.0
+		var t := _in_reach(u, u.stats.cluster_range, on_ground)
+		if t != null:
+			commander.submit({"type": "cluster", "units": [u.unit_id], "pos": t.global_position})
+
+
+## Hippos (the policy's `smoke`) lay a smoke screen between themselves and a deck gun in reach of them, halfway to it.
+func _hippo_smoke() -> void:
+	var grouped := _grouped()
+	for u in commander.units.values():
+		if not u.smoke_ready() or not u.is_controllable() or u.unit_id in grouped or u.unit_id in _staging:
+			continue
+		var gun := _in_reach(u, MountedGun.AI_RANGE + 10.0, func(d): return d is MountedGun and d.kind != "bastion", 1.0)
+		if gun == null:
+			continue
+		var to := Vector3(gun.global_position.x - u.global_position.x, 0.0, gun.global_position.z - u.global_position.z)
+		var dist := clampf(to.length() * 0.5, u.stats.smoke_min_range + 2.0, u.stats.smoke_range * 0.9)
+		commander.submit({"type": "smoke", "units": [u.unit_id], "pos": u.global_position + to.normalized() * dist})
+
+
+## Elephants (the policy's `missiles`) fire a salvo at the nearest of the defenders' aircraft in their missiles' reach,
+## the jet before the drones.
+func _elephant_missiles() -> void:
+	for u in commander.units.values():
+		if not u.has_missiles() or not u.missiles_ready() or not u.is_controllable():
+			continue
+		var best: Node3D = null
+		var best_d := INF
+		for a in level.get_tree().get_nodes_in_group("air_units"):
+			if a.team == u.team or not a.is_alive():
+				continue
+			var d: float = u.global_position.distance_to(a.global_position) + (0.0 if a.get("swarm") == null else 1000.0)
+			if u.global_position.distance_to(a.global_position) < u.stats.missile_range * 0.9 and d < best_d:
+				best_d = d
+				best = a
+		if best != null:
+			commander.submit({"type": "missile", "units": [u.unit_id], "target": best.get_path()})
