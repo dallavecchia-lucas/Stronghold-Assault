@@ -179,6 +179,8 @@ const SPOT_AHEAD := 6.0
 const SPOT_SLACK := 8.0
 ## Artillery goes to a firing spot for a gun this far off at most (m, flat): it is slow, the other faces are too far.
 const ROAM := 100.0
+## Artillery this close to the middle of the map (m, flat) is in the siege: there it keeps to the guns within ROAM.
+const SIEGE_BAND := 250.0
 
 ## Where it keeps a bridge standing (the river nearest each, within BRIDGE_NEAR of it), trying BRIDGE_SHIFT m up and
 ## down the river where one can't go just there; and the ground units it sends at defenders on a bridge (up to
@@ -930,7 +932,10 @@ func _artillery() -> void:
 		var spot := Vector3.INF
 		if t == null:
 			spot = _standoff_spot(u, false)
-			if spot != Vector3.INF and _flat_dist(spot, u.global_position) > ROAM:
+			# Out in the siege's band it shifts at most ROAM to another gun; one still out in the woods (on its way in,
+			# or its first spot lost with the gun it was for) walks to the nearest spot however far.
+			if spot != Vector3.INF and _flat_dist(spot, u.global_position) > ROAM \
+					and Vector2(u.global_position.x, u.global_position.z).length() < SIEGE_BAND:
 				spot = Vector3.INF
 			if spot == Vector3.INF:
 				t = _gun_target(u)
