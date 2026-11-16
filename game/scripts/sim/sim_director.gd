@@ -244,6 +244,8 @@ func _sample() -> void:
 			"nearest": -1.0 if n == 0 else snappedf(nearest, 0.1), "mean_dist": -1.0 if n == 0 else snappedf(mean / n, 0.1),
 			"bridges_left": commander.bridges_left, "bridges_up": commander.bridges.size(),
 			"helipads": level.bases.filter(func(b): return b.controlled).size(),
+			# Where each Mule Artillery and Bison Field Gun is and what it is doing: [type, x, z, order, gun packed, target].
+			"artillery": _artillery_rows(),
 		},
 		"def": {
 			"credits": int(armory.credits), "spent": int(ai_defender.spent), "squads": squads, "squad_heads": squad_heads,
@@ -278,6 +280,18 @@ func _sample() -> void:
 				clock, n, int(army_value), _atk.lost, at_walls, inside, int(commander.supply), int(armory.credits), armory.squads.size(),
 				int(g.get("alive", 0)), int(gs.get("deaths", 0)), guns_alive, guns_total, JSON.stringify(gates), level.vents_left(), int(vent_hp),
 				clock / maxf(wall, 0.001)])
+
+
+## Each Mule Artillery and Bison Field Gun: [type, x, z, its order, its gun packed, where the order sends it].
+func _artillery_rows() -> Array:
+	var rows := []
+	for u in commander.units.values():
+		if not u.has_bombard():
+			continue
+		var to = u.order.get("pos")
+		rows.append([u.type_id, int(u.global_position.x), int(u.global_position.z), String(u.order.type), u.is_packed(),
+				[int(to.x), int(to.z)] if to is Vector3 else []])
+	return rows
 
 
 ## The match is over (Match._end): writes it up and quits.

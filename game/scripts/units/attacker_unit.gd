@@ -3511,7 +3511,8 @@ func _on_velocity_computed(safe: Vector3) -> void:
 	move_and_slide()
 	if fits_inside() and is_on_wall() and Vector2(safe.x, safe.z).length() > 0.5:
 		_step_up(Vector3(safe.x, 0.0, safe.z).normalized() * 0.3)
-	elif not stats.get("steer", false) and is_on_wall():
+	elif is_on_wall():
+		# (A steered unit too: a Mule Artillery's team wedged head-on against a trunk would push into it for ever.)
 		_sidestep(safe, dt)
 	var flat := Vector2(velocity.x, velocity.z)
 	if not stats.get("steer", false) and flat.length() > 0.3 and not (Combat.is_valid_target(target) and _in_range(target)):
