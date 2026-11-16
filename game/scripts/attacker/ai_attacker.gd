@@ -317,6 +317,9 @@ func _bridge_alarms() -> void:
 func _pick_side() -> String:
 	var standing := GATE_SIDES.filter(func(s): return level.gates[s].is_alive())
 	var any: String = GATE_SIDES[randi() % GATE_SIDES.size()]
+	# A gate down is the way in: the policies that pick their gate go through it while it is open.
+	if String(policy.sides) in ["stick", "guns", "weakest"] and standing.size() < GATE_SIDES.size():
+		return GATE_SIDES.filter(func(s): return not level.gates[s].is_alive())[0]
 	match String(policy.sides):
 		"south", "east", "west":
 			return policy.sides
@@ -877,7 +880,7 @@ static func _flat_dist(a: Vector3, b: Vector3) -> float:
 ## the face it goes for down to siege_guns, at most `siege` seconds from when it was massed.
 func _siege_waiting() -> bool:
 	var massed := _staging.size() >= int(policy.launch_at) or commander.units.size() >= AttackerCommander.UNIT_CAP - 2
-	if float(policy.siege) <= 0.0 or not massed or not level.gates[_wave_side].is_alive():
+	if float(policy.siege) <= 0.0 or not massed or level.gates.values().any(func(g): return not g.is_alive()):
 		return false
 	if _siege_from < 0.0:
 		_siege_from = _clock
