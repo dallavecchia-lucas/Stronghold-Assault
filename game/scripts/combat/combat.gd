@@ -10,6 +10,9 @@ extends RefCounted
 const ATTACKER_TRACER := Color(1.0, 0.55, 0.15)
 const DEFENDER_TRACER := Color(0.45, 0.85, 1.0)
 const BULLET_SPEED := 350.0
+## The attackers' rounds pass through their own units as the defenders' do through theirs (false: they stop on whatever
+## body they meet, their own army's too).
+const ATTACKER_ROUNDS_PASS_ALLIES := false
 ## How far out from the stronghold attackers stand to go after a post on its decks or roofs.
 const WALL_APPROACH := 15.0
 
@@ -97,6 +100,8 @@ static func fire_hitscan(shooter: Node3D, from: Vector3, aim_at: Vector3, spread
 	var mask := GameConfig.LAYER_ALL_SOLID
 	if team == GameConfig.TEAM_DEFENDER:
 		mask &= ~GameConfig.LAYER_DEFENDERS
+	elif ATTACKER_ROUNDS_PASS_ALLIES:
+		mask &= ~GameConfig.LAYER_ATTACKERS
 	var q := PhysicsRayQueryParameters3D.create(from, to, mask, exclude)
 	var hit := shooter.get_world_3d().direct_space_state.intersect_ray(q)
 	var end := to
