@@ -517,12 +517,19 @@ func _push_keep(ids: Array) -> void:
 			flyers.append(id)
 		else:
 			big.append(id)
-	var out: Vector3 = LevelBuilder.SIDES[_breached_side()].dir
+	var side := _breached_side()
+	var out: Vector3 = LevelBuilder.SIDES[side].dir
 	var vent := level.nearest_vent(out * LevelBuilder.FACE_DIST)
 	if vent == null:
 		return
+	# Sent to the broken gate itself, they go in (AttackerUnit: an order near an open breach): the raiders hunt the
+	# defenders inside, the rams make for the vents. Sent at a vent, they would stand under its face outside.
+	var gate: Structure = level.gates[side]
 	if not inside.is_empty():
-		commander.submit({"type": "attack", "units": inside, "target": vent.get_path()})
+		if not gate.is_alive():
+			commander.submit({"type": "move", "units": inside, "pos": gate.global_position + out * 3.0, "attack": true})
+		else:
+			commander.submit({"type": "attack", "units": inside, "target": vent.get_path()})
 	if not flyers.is_empty():
 		commander.submit({"type": "attack", "units": flyers, "target": vent.get_path()})
 	if not big.is_empty():
