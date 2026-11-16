@@ -38,8 +38,16 @@ var drones: DroneBay
 ##                     the end the last one, each count growing by `growth` of itself a wave past the end
 ##   growth            see `waves`
 ##   drone_answer      more bears and rhinos while drone swarms are up (the built-in answer to drones)
+##   launch_at         the army gathers at the base until this many units stand ready (wave after wave planned and
+##                     spawned meanwhile) before any of it sets off; 0: each wave sets off as soon as it is out
+##   regroup           a wave first gathers this far (m, flat) from the middle of the map on its side, in the woods out of
+##                     the defenders' reach, and goes in only once it is together (regroup_ready of its ground units within
+##                     REGROUP_REACH of the spot) or regroup_wait seconds after it set off; 0: straight in
+##   regroup_ready     see `regroup`
+##   regroup_wait      see `regroup`
 const DEFAULT_POLICY := {"income_mult": null, "first_wave_delay": 15.0, "sides": "random", "split": 1, "wave_scale": 1.0,
-		"waves": [], "growth": 0.0, "drone_answer": true}
+		"waves": [], "growth": 0.0, "drone_answer": true, "launch_at": 0, "regroup": 0.0, "regroup_ready": 0.8,
+		"regroup_wait": 240.0}
 const POLICIES := {
 	"default": {},
 	# A player's income rather than the difficulty's, otherwise as ever.
@@ -57,6 +65,11 @@ const POLICIES := {
 			"waves": [{"rifleman": 4, "medic": 1, "giraffe": 1}, {"rifleman": 4, "bison_gun": 1, "medic": 1, "giraffe": 1},
 				{"rifleman": 5, "mule": 1, "bison_gun": 1, "rhino": 1, "medic": 1, "giraffe": 1, "breacher": 1},
 				{"rifleman": 5, "mule": 2, "bison_gun": 1, "rhino": 1, "elephant": 1, "medic": 2, "giraffe": 1, "breacher": 2}]},
+	# The stock waves, but massed: the army gathers at the base until it is 30 strong, then forms up in the woods off the
+	# gate it goes for and goes in together.
+	"mass": {"income_mult": 1.0, "sides": "stick", "launch_at": 30, "regroup": 190.0},
+	# Massed and on two sides at once.
+	"mass_split": {"income_mult": 1.0, "sides": "rotate", "split": 2, "launch_at": 40, "regroup": 190.0},
 	# The air: talons at the vents over the walls, elephants under them against the defenders' aircraft.
 	"air": {"income_mult": 1.0, "sides": "rotate", "growth": 0.1,
 			"waves": [{"rifleman": 3, "talon": 2, "medic": 1}, {"rifleman": 3, "talon": 4, "giraffe": 1},
@@ -71,6 +84,10 @@ var _staging: Array[int] = []
 var _wave_side := "south"
 var _stick_side := ""
 var _first_wave_delay := 15.0
+## Waves forming up in the woods before they go in (the policy's `regroup`): {side, ids, at, since}.
+var _groups: Array = []
+## A wave's ground units within this (m, flat) of its spot count as there.
+const REGROUP_REACH := 30.0
 ## Told to whoever listens (the telemetry): a wave has set off.
 signal wave_launched(wave: int, side: String, ids: Array)
 
@@ -174,8 +191,13 @@ func _think() -> void:
 		commander.submit({"type": "move", "units": [id], "pos": level.rally_point(0), "attack": true})
 
 	if _pending.is_empty() and not _staging.is_empty():
-		_launch_wave()
+		# Massing (the policy's `launch_at`): another wave is planned onto this one until the army is big enough.
+		if _staging.size() < int(policy.launch_at) and commander.units.size() < AttackerCommander.UNIT_CAP - 2:
+			_plan_wave()
+		else:
+			_launch_wave()
 
+	_regroup_tick()
 	_retake_bases()
 	_reassign_idle()
 	_ram_gates()
@@ -329,8 +351,48 @@ func _launch_wave() -> void:
 		_launch_at(sides[n], share)
 
 
-## Sends `ids` at `side`'s gate (or on at the vents, once it is down).
+## Sends `ids` at `side`'s gate (or on at the vents, once it is down); with the policy's `regroup`, to form up in the
+## woods off it first.
 func _launch_at(side: String, ids: Array) -> void:
+	var gate: Structure = level.gates[side]
+	if gate.is_alive() and float(policy.regroup) > 0.0 and not ids.is_empty():
+		var out: Vector3 = LevelBuilder.SIDES[side].dir
+		var at := out * float(policy.regroup)
+		_groups.append({"side": side, "ids": ids.duplicate(), "at": at, "since": _clock})
+		commander.submit({"type": "move", "units": ids, "pos": at, "attack": true})
+		return
+	_assault(side, ids)
+
+
+## The waves forming up in the woods: one that is together (or has waited long enough) goes in.
+func _regroup_tick() -> void:
+	for g in _groups.duplicate():
+		g.ids = g.ids.filter(func(id): return commander.units.has(id))
+		var ground := 0
+		var there := 0
+		for id in g.ids:
+			var u: AttackerUnit = commander.units[id]
+			if u.is_flying() or u.has_setup():
+				continue  # the talons circle over it, the mules are far too slow to wait for
+			ground += 1
+			if Vector2(u.global_position.x - g.at.x, u.global_position.z - g.at.z).length() < REGROUP_REACH:
+				there += 1
+		if g.ids.is_empty() or there >= ground * float(policy.regroup_ready) or _clock - g.since >= float(policy.regroup_wait):
+			_groups.erase(g)
+			if not g.ids.is_empty():
+				_assault(g.side, g.ids)
+
+
+## The ids of every unit forming up with a wave.
+func _grouped() -> Array:
+	var out := []
+	for g in _groups:
+		out += g.ids
+	return out
+
+
+## Sends `ids` at `side`'s gate (or on at the vents, once it is down).
+func _assault(side: String, ids: Array) -> void:
 	var gate: Structure = level.gates[side]
 	if gate.is_alive():
 		var infantry := []
@@ -690,7 +752,7 @@ func _retake_bases() -> void:
 ## Units with nothing to do look for the next objective.
 func _reassign_idle() -> void:
 	var idle := []
-	var retaking := []
+	var retaking := _grouped()
 	for ids in _retakers.values():
 		retaking += ids
 	for id in commander.units:
