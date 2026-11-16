@@ -22,6 +22,17 @@ extends Node
 ##   spawn_priority   [[seconds, "BASE" | "FIELD"], ...]: what its controls' soldiers go for from then on
 ##   reinforce        its first control moves to the side with the most attackers close to it
 ##   reinforce_min    ... once that many are within REINFORCE_RANGE of the stronghold on that side
+##   cb_tank          counter-battery: attacker artillery (Mule Artillery, Bison Field Guns) on the ground within
+##                    `cb_range` of the middle, out of the woods, and each Hover Tank is sent after the nearest (unless
+##                    more than `cb_escort` other attackers are round it), then back to where it deployed
+##   cb_jet           ... and the Fighter Jet makes bomb runs on the nearest (DefenderJet.strike) whenever it is free
+##   cb_range         how far out from the middle (m, flat) artillery is gone after
+##   cb_escort        ... and how many other attackers within CB_ESCORT_RADIUS of it a tank will take on
+##   rebuy_lost       a squad or machine lost is bought again first, before the list goes on
+##   shelled_spawn    while artillery is within `cb_range`: its controls spawn for BASE (crews for the guns) and its
+##                    first control moves to the face with the most artillery out in front of it (an assault that
+##                    `reinforce` answers comes first)
+##   sniper_shelled   ... and its Snipers hold a post out in front of that face, across from the artillery
 
 const DEFAULT_POLICY := {
 	"build": ["sniper", "flame", "aa", "tank", "flame", "jet"],
@@ -30,6 +41,8 @@ const DEFAULT_POLICY := {
 	"sniper_post": "gate",
 	"controls": 1, "spawn_priority": [[0.0, "BASE"]],
 	"reinforce": true, "reinforce_min": 6,
+	"cb_tank": false, "cb_jet": false, "cb_range": 300.0, "cb_escort": 8,
+	"rebuy_lost": false, "shelled_spawn": false, "sniper_shelled": false,
 }
 const POLICIES := {
 	"default": {},
@@ -43,6 +56,10 @@ const POLICIES := {
 	"armor": {"build": ["tank", "jet", "tank", "aa", "sniper", "tank"]},
 	# Deep raids on the attackers' outposts.
 	"raid": {"build": ["infiltrator", "sniper", "infiltrator", "flame", "tank", "aa"]},
+	# Answers a siege as a player would: the tank and the jet go after the artillery, what is lost is bought again, the
+	# garrison's spawn and the Sniper go to the face being shelled.
+	"hunter": {"build": ["tank", "sniper", "jet", "aa", "tank", "aa"], "cb_tank": true, "cb_jet": true,
+			"rebuy_lost": true, "shelled_spawn": true, "sniper_shelled": true},
 }
 ## Attackers this close to the middle of the map (flat, m) press on the side they are on.
 const REINFORCE_RANGE := 170.0
@@ -52,6 +69,12 @@ const REINFORCE_MARGIN := 3
 ## A Sniper's post out in front of her gate: this far out from the door and this far along the face (m).
 const SNIPER_OUT := 9.0
 const SNIPER_ALONG := 11.0
+## Counter-battery: attackers this close (m, flat) to a piece of artillery count as its escort; a Sniper's post across
+## from the artillery stays inside this much of the face's middle (m, along), and she is moved only when the new post is
+## this far (m) from her old one.
+const CB_ESCORT_RADIUS := 40.0
+const SNIPER_SHELLED_ALONG := 40.0
+const SNIPER_REPOST := 30.0
 
 var level: LevelBuilder
 var armory: DefenderArmory
@@ -69,6 +92,13 @@ var _think_cd := 1.0
 var _next := 0
 var _reinforce_cd := 0.0
 var _op_turn := 0
+## Kinds lost, to buy again first (`rebuy_lost`).
+var _rebuy: Array[String] = []
+## Attacker artillery within `cb_range` of the middle (as of the last think), and the face with the most of it ("" none).
+var artillery: Array = []
+var shelled := ""
+## Counter-battery tallies: tank errands and jet runs ordered.
+var cb_stats := {"tank_sent": 0, "jet_runs": 0, "sniper_moves": 0, "spawn_moves": 0}
 
 
 ## Lays `overrides` over the default policy.
@@ -80,7 +110,14 @@ func set_policy(overrides: Dictionary) -> void:
 
 func _ready() -> void:
 	if armory:
-		armory.squad_lost.connect(func(s): lost[kind_of(s)] = int(lost.get(kind_of(s), 0)) + 1)
+		armory.squad_lost.connect(_on_lost)
+
+
+func _on_lost(s) -> void:
+	var kind := kind_of(s)
+	lost[kind] = int(lost.get(kind, 0)) + 1
+	if policy.rebuy_lost and DefenderArmory.COSTS.has(kind):
+		_rebuy.append(kind)
 
 
 func _process(delta: float) -> void:
@@ -89,8 +126,11 @@ func _process(delta: float) -> void:
 	if _think_cd > 0.0:
 		return
 	_think_cd = 1.0
+	_spot_artillery()
 	_buy()
 	_infiltrator_ops()
+	_counter_battery()
+	_snipers()
 	_spawns()
 
 
@@ -116,20 +156,24 @@ func _buy() -> void:
 	if armory == null or _clock < float(policy.buy_after):
 		return
 	var build: Array = policy.build
-	if build.is_empty():
+	var again := not _rebuy.is_empty()
+	if build.is_empty() and not again:
 		return
-	if _next >= build.size():
+	if not again and _next >= build.size():
 		if not policy.rebuy:
 			return
 		_next = clampi(int(policy.rebuy_from), 0, build.size() - 1)
-	var kind := String(build[_next])
+	var kind := _rebuy[0] if again else String(build[_next])
 	if not DefenderArmory.COSTS.has(kind) or armory.credits - DefenderArmory.COSTS[kind] < float(policy.reserve) \
 			or not armory.can_buy(kind):
 		return
 	var squad = armory.buy(kind)
 	if squad == null:
 		return
-	_next += 1
+	if again:
+		_rebuy.pop_front()
+	else:
+		_next += 1
 	bought.append(kind)
 	spent += DefenderArmory.COSTS[kind]
 	_brief(kind, squad)
@@ -146,6 +190,101 @@ func _brief(kind: String, squad) -> void:
 		"sniper":
 			if policy.sniper_post == "gate":
 				(squad as Sniper).hold_at = _sniper_post(squad)
+
+
+## Attacker artillery on the ground within `cb_range` of the middle that the defenders can see (out of the woods), and
+## the face with the most of it.
+func _spot_artillery() -> void:
+	artillery.clear()
+	shelled = ""
+	if commander == null:
+		return
+	var per := {}
+	for u in commander.units.values():
+		if not u.is_alive() or not u.has_bombard() or u.is_flying() or u.is_submerged():
+			continue
+		var at: Vector3 = u.global_position
+		if Vector2(at.x, at.z).length() > float(policy.cb_range) or LevelBuilder.in_forest(at):
+			continue
+		artillery.append(u)
+		var side := Garrison.side_of(at)
+		per[side] = int(per.get(side, 0)) + 1
+	for side in per:
+		if shelled == "" or per[side] > per[shelled]:
+			shelled = side
+
+
+func _nearest(list: Array, p: Vector3, skip := []) -> Node3D:
+	var best: Node3D = null
+	var best_d := INF
+	for u in list:
+		if u in skip:
+			continue
+		var d := Vector2(u.global_position.x - p.x, u.global_position.z - p.z).length()
+		if d < best_d:
+			best_d = d
+			best = u
+	return best
+
+
+## Counter-battery (`cb_tank`, `cb_jet`): the tanks after the nearest artillery each (one apiece while there is enough),
+## back to their posts when there is none; the jet on bomb runs at the nearest.
+func _counter_battery() -> void:
+	if armory == null or not (policy.cb_tank or policy.cb_jet):
+		return
+	var targets := artillery.filter(func(u): return _escort(u) <= int(policy.cb_escort))
+	var taken := []
+	for m in armory.squads:
+		if not (m is DefenderMachine) or not m.is_alive() or m.possessed:
+			continue
+		if m is DefenderTank and policy.cb_tank:
+			if m.post == Vector3.INF:
+				m.post = m.home.origin
+			if m.hunt != null and (not (m.hunt in targets) or not Combat.is_valid_target(m.hunt)):
+				m.hunt = null
+			if m.hunt == null:
+				var t := _nearest(targets, m.global_position, taken)
+				if t == null:
+					t = _nearest(targets, m.global_position)
+				if t != null:
+					m.hunt = t
+					cb_stats.tank_sent += 1
+			if m.hunt != null:
+				taken.append(m.hunt)
+		elif m is DefenderJet and policy.cb_jet:
+			var t := _nearest(targets, m.global_position)
+			if t != null and m.strike(t):
+				cb_stats.jet_runs += 1
+
+
+## How many other attackers are on the ground within CB_ESCORT_RADIUS of `u`.
+func _escort(u: Node3D) -> int:
+	var n := 0
+	for o in commander.units.values():
+		if o != u and o.is_alive() and not o.is_flying() \
+				and Vector2(o.global_position.x - u.global_position.x, o.global_position.z - u.global_position.z).length() < CB_ESCORT_RADIUS:
+			n += 1
+	return n
+
+
+## `sniper_shelled`: the Snipers to a post out in front of the face being shelled, across from its nearest artillery.
+func _snipers() -> void:
+	if armory == null or not policy.sniper_shelled or shelled == "":
+		return
+	var out: Vector3 = LevelBuilder.SIDES[shelled].dir
+	var along := out.cross(Vector3.UP)
+	var face := out * (LevelBuilder.MOUNTAIN_HALF + SNIPER_OUT)
+	for s in armory.squads:
+		if not (s is Sniper) or s.possessed or s.leader == null:
+			continue
+		var gun := _nearest(artillery.filter(func(u): return Garrison.side_of(u.global_position) == shelled), face)
+		if gun == null:
+			continue
+		var at := face + along * clampf(gun.global_position.dot(along), -SNIPER_SHELLED_ALONG, SNIPER_SHELLED_ALONG)
+		at = LevelBuilder.nav_closest(get_tree().root.get_world_3d().navigation_map, Vector3(at.x, 0.0, at.z))
+		if s.hold_at == Vector3.INF or Vector2(s.hold_at.x - at.x, s.hold_at.z - at.z).length() > SNIPER_REPOST:
+			s.hold_at = at
+			cb_stats.sniper_moves += 1
 
 
 ## Out in front of the gate nearest the Sniper's hall, off to one side of the doorway.
@@ -186,6 +325,9 @@ func _spawns() -> void:
 	for step in policy.spawn_priority:
 		if _clock >= float(step[0]):
 			want = String(step[1])
+	var shell_side := shelled if policy.shelled_spawn else ""
+	if shell_side != "":
+		want = "BASE"
 	var p := Garrison.Priority.FIELD if want == "FIELD" else Garrison.Priority.BASE
 	for k in n:
 		if garrison.controls[k].priority != p:
@@ -208,3 +350,7 @@ func _spawns() -> void:
 	if best != here and int(press[best]) >= int(policy.reinforce_min) and int(press[best]) >= int(press.get(here, 0)) + REINFORCE_MARGIN:
 		garrison.move_spawn(0, best)
 		_reinforce_cd = REINFORCE_EVERY
+	elif shell_side != "" and shell_side != here and int(press.get(here, 0)) < int(policy.reinforce_min):
+		garrison.move_spawn(0, shell_side)
+		_reinforce_cd = REINFORCE_EVERY
+		cb_stats.spawn_moves += 1

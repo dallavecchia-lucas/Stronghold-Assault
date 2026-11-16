@@ -95,6 +95,13 @@ const MG_TRAIL := Color(3.2, 1.9, 0.6)
 const AI_RANGE := 150.0
 const AI_MG_RANGE := 65.0
 const AI_LOOK := 0.4
+## Sent out by the CPU defender (AIDefender's counter-battery, `hunt`): it drives along the navmesh until the attacker is
+## within HUNT_RANGE and in sight, fires on it before anything else, then drives back to its `post` (within POST_SLACK).
+## Making no headway for HUNT_STUCK s it jumps.
+const HUNT_RANGE := 115.0
+const POST_SLACK := 12.0
+const HUNT_REPATH := 1.5
+const HUNT_STUCK := 3.0
 
 var heading := 0.0
 var speed := 0.0
@@ -126,6 +133,15 @@ var _hit_tree: ForestTree = null
 var _cam_shake := 0.0
 var _mg_hits := 0
 var _mg_tracer_n := 0
+## What the CPU defender sent it after (null: nothing), and where it comes back to when done (INF: it holds where it is,
+## as ever).
+var hunt: Node3D = null
+var post := Vector3.INF
+var _hunt_seen := false
+var _route := PackedVector3Array()
+var _route_cd := 0.0
+var _route_goal := Vector3.INF
+var _stuck_t := 0.0
 
 
 func _init() -> void:
@@ -695,14 +711,27 @@ func _hit_a_tree(tree: ForestTree, dir: Vector3) -> void:
 # ---------------------------------------------------------------- left alone
 
 func _idle(delta: float) -> void:
+	if hunt != null and not Combat.is_valid_target(hunt):
+		hunt = null
+	var goal := _errand()
 	# Holds where it stands (the hull settles on its cushion); a jump it was in carries on.
 	if not _update_jump(delta):
-		speed = move_toward(speed, 0.0, BRAKE * delta)
-		_move(delta)
+		if goal == Vector3.INF:
+			speed = move_toward(speed, 0.0, BRAKE * delta)
+			_move(delta)
+		else:
+			_drive(delta, _route_to(goal, delta))
 	_look_cd -= delta
 	if _look_cd <= 0.0:
 		_look_cd = AI_LOOK
 		target = _pick_target()
+		_hunt_seen = false
+		if hunt != null and not _unseen(hunt):
+			var d := Vector2(hunt.global_position.x - global_position.x, hunt.global_position.z - global_position.z).length()
+			_hunt_seen = d <= HUNT_RANGE and Combat.has_line_of_sight(self, global_position + Vector3.UP * 3.0,
+					Combat.aim_point(hunt), hunt)
+		if _hunt_seen:
+			target = hunt
 	cannon_cd = maxf(cannon_cd - delta, 0.0)
 	# A locked target that turns invisible or slips into woodland is let go.
 	if target != null and Combat.is_valid_target(target) and _unseen(target):
@@ -726,6 +755,39 @@ func _idle(delta: float) -> void:
 	if on_aim() and cannon_cd <= 0.0:
 		fire_cannon()
 	rig.mg_firing = dist < AI_MG_RANGE
+
+
+## Where it is driving to on its own: at what it was sent after (until that is in reach and in sight), or back to its
+## post; INF: nowhere, it holds.
+func _errand() -> Vector3:
+	if hunt != null:
+		return Vector3.INF if _hunt_seen else hunt.global_position
+	if post != Vector3.INF and Vector2(post.x - global_position.x, post.z - global_position.z).length() > POST_SLACK:
+		return post
+	return Vector3.INF
+
+
+## The way to drive to `goal` (for _drive): along a navmesh path round the mountain and the woods, to its next corner;
+## making no headway for HUNT_STUCK s, it jumps.
+func _route_to(goal: Vector3, delta: float) -> Vector3:
+	_route_cd -= delta
+	if _route_cd <= 0.0 or _route_goal.distance_to(goal) > 8.0:
+		_route_cd = HUNT_REPATH
+		_route_goal = goal
+		var map := get_world_3d().navigation_map
+		_route = LevelBuilder.nav_path(map, LevelBuilder.nav_closest(map, global_position),
+				LevelBuilder.nav_closest(map, goal), true)
+	var next := goal
+	for p in _route:
+		if Vector2(p.x - global_position.x, p.z - global_position.z).length() > 7.0:
+			next = p
+			break
+	var want := Vector3(next.x - global_position.x, 0.0, next.z - global_position.z)
+	_stuck_t = _stuck_t + delta if absf(speed) < 1.5 else 0.0
+	if _stuck_t > HUNT_STUCK:
+		_stuck_t = 0.0
+		try_jump()
+	return want.normalized() if want.length() > 0.5 else Vector3.ZERO
 
 
 ## Left to itself it can't pick out a sneaking (invisible) lioness, an anaconda coiled in a bush, or anyone in woodland.

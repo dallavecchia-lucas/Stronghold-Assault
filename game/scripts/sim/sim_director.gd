@@ -150,6 +150,8 @@ func _on_unit_died(u: AttackerUnit) -> void:
 	_atk.lost += 1
 	_atk.lost_value += float(u.stats.cost)
 	_atk.lost_by[u.type_id] = int(_atk.lost_by.get(u.type_id, 0)) + 1
+	if u.has_bombard():
+		_event("artillery_down", {"unit": u.type_id, "at": _xz(u.global_position)})
 	# Where it fell: how far from the keep (the walls, the clearing, the forest, the river, its own bank).
 	var d := Vector2(u.global_position.x, u.global_position.z).length()
 	var band := "0-100" if d < 100.0 else ("100-150" if d < 150.0 else ("150-250" if d < 250.0 else ("250-420" if d < 420.0 else "420+")))
@@ -253,6 +255,9 @@ func _sample() -> void:
 			"drones_lost": int(drones.stats.drones_lost) if drones else 0,
 			"trees_gone": _trees0 - ForestTree.standing.size(), "mine_blasts": GroundMine.blasts,
 			"spawn_side": match_node.garrison.controls[0].side if match_node.garrison and not match_node.garrison.controls.is_empty() else "",
+			"cb": ai_defender.cb_stats.duplicate(), "artillery_near": ai_defender.artillery.size(), "shelled": ai_defender.shelled,
+			"machines": armory.squads.filter(func(q): return q is DefenderMachine).map(func(q): return [AIDefender.kind_of(q),
+					int(q.global_position.x), int(q.global_position.z), q.get("hunt") != null or q.get("attacker") != null]),
 		},
 		"obj": {"gates": gates, "vents": level.vents_left(), "vent_hp": int(vent_hp)},
 	}

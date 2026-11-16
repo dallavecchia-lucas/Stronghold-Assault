@@ -65,6 +65,9 @@ def resolve_project(variant: str, keep: bool, patch: dict, base: str = "", diffs
     """The Godot project a match is played on: the game itself, a named variant, or a variant made for `patch`."""
     if variant:
         if keep and (variant_mod.DEFAULT_ROOT / variant).exists():
+            if patch or base or diffs:
+                raise KeyError(f"--keep plays variant '{variant}' as it stands: a patch, --base or --apply would be ignored "
+                               f"(bake them into it with variant.py instead)")
             return variant_mod.DEFAULT_ROOT / variant
         return variant_mod.build(variant, patch, base=base, diffs=diffs)
     if patch or base or diffs:

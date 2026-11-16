@@ -562,6 +562,17 @@ func _look_for_attacker() -> void:
 		_begin_setup()
 
 
+## Sent by the CPU defender (AIDefender's counter-battery): a bomb run on `u` (as on an attacker that locked on to it),
+## if it is circling or on its way back and has a bomb; true if it set off.
+func strike(u: Node3D) -> bool:
+	if possessed or _dead or bombs <= 0 or not (idle_state in [Idle.ORBIT, Idle.RETURN]) or not _bombable(u):
+		return false
+	attacker = u
+	_passes = 0
+	_begin_setup()
+	return true
+
+
 ## A ground attacker a bomb can get at: alive, on the ground (not flying or under water), not up inside the mountain.
 func _bombable(u: Node3D) -> bool:
 	if not Combat.is_valid_target(u) or u.is_flying() or u.is_submerged():
