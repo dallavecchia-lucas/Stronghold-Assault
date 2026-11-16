@@ -2514,7 +2514,7 @@ func _raid_ram() -> void:
 		start_ram()
 
 
-func _is_soldier(t: Node3D) -> bool:
+func _is_soldier(t) -> bool:
 	return Combat.is_valid_target(t) and t.get("station_kind") == "soldier"
 
 
