@@ -118,7 +118,16 @@ def apply_patch(root: Path, patch: dict) -> list:
 
 def build(name: str, patch: dict, root: Path = DEFAULT_ROOT, game: Path = GAME, base: str = "", diffs: list = ()) -> Path:
     """Builds variant `name` from the game (or from the variant `base`, keeping its edits), with the unified diffs
-    `diffs` applied (as `--diff` prints them) and then `patch`."""
+    `diffs` applied (as `--diff` prints them) and then `patch`. One build at a time on the machine (a file lock), so two
+    batches starting together on the same patch don't build over each other."""
+    import fcntl
+    root.mkdir(parents=True, exist_ok=True)
+    with open(root / ".build.lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        return _build(name, patch, root, game, base, diffs)
+
+
+def _build(name: str, patch: dict, root: Path, game: Path, base: str, diffs: list) -> Path:
     v = root / name
     if v.exists():
         shutil.rmtree(v)
