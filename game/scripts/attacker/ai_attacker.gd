@@ -58,13 +58,16 @@ var drones: DroneBay
 ##   smoke             its hippos lay smoke screens between themselves and the deck guns in reach of them
 ##   missiles          its elephants fire missile salvos at the defenders' aircraft in reach (the jet before drones)
 ##   escort            while it waits for its artillery (`siege`), the massed army stands guard by the guns out in the woods
-##                     (ESCORT_BACK behind them) instead of at the base: the defenders' tank and jet find them escorted
+##                     (ESCORT_BACK behind them) instead of at the base: the defenders' tank and jet find them escorted;
+##                     and the guns keep to the base until the army has massed, then go out with it
+##   artillery_keep    every wave makes good the Mule Artillery lost, to keep this many (0: the waves' own count)
 ##   (`sides` "guns": the standing gate whose face has the fewest live deck guns, the nearest to the base of those while
 ##                     they are even)
 const DEFAULT_POLICY := {"income_mult": null, "first_wave_delay": 15.0, "sides": "random", "split": 1, "wave_scale": 1.0,
 		"waves": [], "growth": 0.0, "drone_answer": true, "launch_at": 0, "regroup": 0.0, "regroup_ready": 0.7,
 		"regroup_wait": 150.0, "standoff": false, "bison_fire": false, "shell_vents": false, "siege": 0.0, "siege_guns": 2,
-		"rhino_cluster": false, "talon_soldiers": false, "smoke": false, "missiles": false, "escort": false}
+		"rhino_cluster": false, "talon_soldiers": false, "smoke": false, "missiles": false, "escort": false,
+		"artillery_keep": 0}
 const POLICIES := {
 	"default": {},
 	# A player's income rather than the difficulty's, otherwise as ever.
@@ -88,8 +91,8 @@ const POLICIES := {
 	# Massed, with its guns doing the work first: the artillery shells the deck guns from outside their reach while the army
 	# waits at the base, then the army goes in where the guns are down; every skill used. A mix without dead weight.
 	"siege_mass": {"income_mult": 1.0, "first_wave_delay": 5.0, "sides": "guns", "launch_at": 36, "regroup": 290.0,
-			"standoff": true, "bison_fire": true, "shell_vents": true, "siege": 360.0, "siege_guns": 4,
-			"rhino_cluster": true, "talon_soldiers": true, "smoke": true, "missiles": true, "drone_answer": false, "escort": true,
+			"standoff": true, "bison_fire": true, "shell_vents": true, "siege": 540.0, "siege_guns": 4,
+			"rhino_cluster": true, "talon_soldiers": true, "smoke": true, "missiles": true, "drone_answer": false, "escort": true, "artillery_keep": 4,
 			"waves": [{"mule": 2, "giraffe": 1}, {"rifleman": 6, "hippo": 1, "serpent": 1, "kangaroo": 1, "medic": 1},
 				{"mule": 2, "rifleman": 4, "breacher": 2, "chimp": 2},
 				{"rifleman": 6, "hippo": 1, "serpent": 1, "rhino": 1, "kangaroo": 1, "elephant": 1},
@@ -181,13 +184,14 @@ const SPOT_AHEAD := 6.0
 const SPOT_SLACK := 8.0
 ## Artillery goes to a firing spot for a gun this far off at most (m, flat): it is slow, the other faces are too far.
 const ROAM := 100.0
-## The escort: artillery this close to the middle (m, flat) is guarded, from this far behind it (m); the guard moves once
-## its spot has moved further than ESCORT_SLACK.
-const ESCORT_FROM := 320.0
+## The escort: the artillery is guarded from this far behind it (m); the guard moves once its spot has moved further than
+## ESCORT_SLACK.
 const ESCORT_BACK := 22.0
 const ESCORT_SLACK := 15.0
 var _escort_at := Vector3.INF
 var _escort_n := 0
+## The artillery has gone out with the army once (`escort`): from then on it works on its own.
+var _left_base := false
 ## Artillery this close to the middle of the map (m, flat) is in the siege: there it keeps to the guns within ROAM.
 const SIEGE_BAND := 250.0
 
@@ -380,6 +384,11 @@ func _plan_wave() -> void:
 	var counts := _policy_wave()
 	if counts.is_empty():
 		counts = _builtin_wave()
+	# The artillery kept up (the policy's `artillery_keep`): mules lost are made good in the next wave.
+	var keep := int(policy.artillery_keep)
+	if keep > 0:
+		var have := commander.units.values().filter(func(u): return u.type_id == "mule").size() + _pending.count("mule")
+		counts["mule"] = maxi(counts.get("mule", 0), keep - have)
 	# Drones about: more bears, and Combat Rhinos (their guns are the AA that can follow a swarm about).
 	var swarms := drones.live_swarms() if drones != null and policy.drone_answer else 0
 	if swarms > 0:
@@ -898,7 +907,7 @@ static func _flat_dist(a: Vector3, b: Vector3) -> float:
 ## The siege (the policy's `siege`): true while the massed army waits at the base for its artillery to bring the guns on
 ## the face it goes for down to siege_guns, at most `siege` seconds from when it was massed.
 ## The escort (the policy's `escort`): while the siege waits, the army gathering for it stands ESCORT_BACK behind its
-## artillery out in the woods (the middle of the guns within ESCORT_FROM of the middle of the map), moved along as they move.
+## artillery (the middle of the guns), moved along as they move: out from the base with them, and on by them in the woods.
 func _escort_tick() -> void:
 	if not policy.escort or _staging.is_empty() or not _siege_waiting():
 		return
@@ -906,7 +915,7 @@ func _escort_tick() -> void:
 	var n := 0
 	for id in _guns:
 		var u = commander.units.get(id)
-		if u != null and Vector2(u.global_position.x, u.global_position.z).length() < ESCORT_FROM:
+		if u != null and u.has_bombard():
 			sum += u.global_position
 			n += 1
 	if n == 0:
@@ -922,8 +931,13 @@ func _escort_tick() -> void:
 	commander.submit({"type": "move", "units": _staging, "pos": Vector3(at.x, 0.0, at.z), "attack": true})
 
 
+## The army gathering at the base is big enough to go (the policy's `launch_at`, or the unit cap).
+func _massed() -> bool:
+	return _staging.size() >= int(policy.launch_at) or commander.units.size() >= AttackerCommander.UNIT_CAP - 2
+
+
 func _siege_waiting() -> bool:
-	var massed := _staging.size() >= int(policy.launch_at) or commander.units.size() >= AttackerCommander.UNIT_CAP - 2
+	var massed := _massed()
 	if float(policy.siege) <= 0.0 or not massed or level.gates.values().any(func(g): return not g.is_alive()):
 		return false
 	if _siege_from < 0.0:
@@ -956,9 +970,15 @@ func _gate_to_base(side: String) -> float:
 ## with the nearest gun, a little ahead of it: they see for it (_spot_for_guns).
 func _artillery() -> void:
 	_guns = _guns.filter(func(id): return commander.units.has(id))
+	# With an escort (the policy's `escort`), the guns go out with the army: they keep to the base until it has massed.
+	var hold := policy.escort and not _massed() and not level.gates.values().any(func(g): return not g.is_alive())
+	if not hold:
+		_left_base = true
 	for id in _guns:
 		var u: AttackerUnit = commander.units[id]
 		if not u.is_controllable() or u.setting_up() or u.packing_up():
+			continue
+		if hold and not _left_base:
 			continue
 		if not u.has_bombard():
 			_spot_for_guns(u)
@@ -970,7 +990,8 @@ func _artillery() -> void:
 			# Out in the siege's band it shifts at most ROAM to another gun; one still out in the woods (on its way in,
 			# or its first spot lost with the gun it was for) walks to the nearest spot however far.
 			if spot != Vector3.INF and _flat_dist(spot, u.global_position) > ROAM \
-					and Vector2(u.global_position.x, u.global_position.z).length() < SIEGE_BAND:
+					and Vector2(u.global_position.x, u.global_position.z).length() < SIEGE_BAND \
+					and _gun_idle.get(id, 0.0) < GUN_IDLE:
 				spot = Vector3.INF
 			if spot == Vector3.INF:
 				t = _gun_target(u)
