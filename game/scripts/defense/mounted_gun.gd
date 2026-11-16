@@ -47,6 +47,9 @@ const CANNON_LONG_INTERVAL := 6.0
 ## The bastion's flak: a shell every FLAK_INTERVAL, FLAK_DAMAGE where it bursts; how high it elevates (rad).
 const FLAK_INTERVAL := 0.42
 const FLAK_DAMAGE := 20.0
+## The flak's damage against what is on the ground, as a share of FLAK_DAMAGE (it is an anti-aircraft gun: its shells burst
+## round aircraft); at 0 it never takes a ground target at all.
+const FLAK_GROUND_MULT := 1.0
 const FLAK_HEAT := 0.05
 const FLAK_PITCH_MAX := deg_to_rad(78.0)
 const REPAIR_TIME := 360.0  # 6 minutes
@@ -468,7 +471,7 @@ func _fire_flak() -> bool:
 		overheated = true
 	if _rig is BastionRig:
 		(_rig as BastionRig).fire_round()
-	Flak.fire(self, _shown_muzzle().origin, _target, FLAK_DAMAGE, team)
+	Flak.fire(self, _shown_muzzle().origin, _target, FLAK_DAMAGE * (1.0 if _target.is_in_group("air_units") else FLAK_GROUND_MULT), team)
 	return true
 
 
@@ -555,7 +558,7 @@ func _find_target() -> Node3D:
 					and Combat.has_line_of_sight(self, _muzzle.global_position, Combat.aim_point(a), a):
 				best_d = d
 				best = a
-		if best:
+		if best or FLAK_GROUND_MULT <= 0.0:
 			return best
 	for u in get_tree().get_nodes_in_group("attacker_units"):
 		var d := global_position.distance_to(u.global_position)
