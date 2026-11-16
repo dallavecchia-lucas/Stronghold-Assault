@@ -67,9 +67,9 @@ const POLICIES := {
 				{"rifleman": 5, "mule": 2, "bison_gun": 1, "rhino": 1, "elephant": 1, "medic": 2, "giraffe": 1, "breacher": 2}]},
 	# The stock waves, but massed: the army gathers at the base until it is 30 strong, then forms up in the woods off the
 	# gate it goes for and goes in together.
-	"mass": {"income_mult": 1.0, "sides": "stick", "launch_at": 30, "regroup": 190.0},
+	"mass": {"income_mult": 1.0, "sides": "stick", "launch_at": 30, "regroup": 260.0},
 	# Massed and on two sides at once.
-	"mass_split": {"income_mult": 1.0, "sides": "rotate", "split": 2, "launch_at": 40, "regroup": 190.0},
+	"mass_split": {"income_mult": 1.0, "sides": "rotate", "split": 2, "launch_at": 40, "regroup": 260.0},
 	# The air: talons at the vents over the walls, elephants under them against the defenders' aircraft.
 	"air": {"income_mult": 1.0, "sides": "rotate", "growth": 0.1,
 			"waves": [{"rifleman": 3, "talon": 2, "medic": 1}, {"rifleman": 3, "talon": 4, "giraffe": 1},
@@ -190,6 +190,9 @@ func _think() -> void:
 		# The wave gathers a way out in front of the base.
 		commander.submit({"type": "move", "units": [id], "pos": level.rally_point(0), "attack": true})
 
+	# The army at its cap: what is ready goes, and what is still waiting to be spawned is dropped (it couldn't come out).
+	if not _staging.is_empty() and commander.units.size() >= AttackerCommander.UNIT_CAP:
+		_pending.clear()
 	if _pending.is_empty() and not _staging.is_empty():
 		# Massing (the policy's `launch_at`): another wave is planned onto this one until the army is big enough.
 		if _staging.size() < int(policy.launch_at) and commander.units.size() < AttackerCommander.UNIT_CAP - 2:
