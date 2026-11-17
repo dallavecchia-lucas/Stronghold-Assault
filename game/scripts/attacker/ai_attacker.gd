@@ -55,7 +55,8 @@ var drones: DroneBay
 ##                     0: no wait
 ##   siege_guns        see `siege`
 ##   rhino_cluster     its rhinos cluster-bomb the defenders on the ground they see in their reach
-##   talon_soldiers    its talons' bombs go for the guns, then the defenders they see, never the gates
+##   talon_soldiers    its talons' bombs go for the defenders' tanks, then the guns, then the defenders they see, never
+##                     the gates
 ##   smoke             its hippos lay smoke screens between themselves and the deck guns in reach of them
 ##   missiles          its elephants fire missile salvos at the defenders' aircraft in reach (the jet before drones)
 ##   escort            while it waits for its artillery (`siege`), the massed army stands guard by the guns out in the woods
@@ -100,7 +101,7 @@ const POLICIES := {
 			"vents_from": 1080.0, "vents_breach": true,
 			"waves": [{"mule": 2, "giraffe": 1}, {"rifleman": 6, "hippo": 1, "serpent": 1, "kangaroo": 1, "medic": 1},
 				{"mule": 2, "rifleman": 4, "breacher": 2, "chimp": 2},
-				{"rifleman": 6, "hippo": 1, "serpent": 1, "rhino": 1, "kangaroo": 1, "elephant": 1},
+				{"rifleman": 6, "hippo": 1, "serpent": 1, "rhino": 1, "kangaroo": 1, "elephant": 1, "talon": 2},
 				{"rifleman": 6, "serpent": 1, "breacher": 1, "chimp": 2, "hippo": 1, "medic": 1}]},
 	# Massed and on two sides at once.
 	"mass_split": {"income_mult": 1.0, "sides": "rotate", "split": 2, "launch_at": 40, "regroup": 320.0},
@@ -200,6 +201,10 @@ var _escort_n := 0
 var _left_base := false
 ## Artillery this close to the middle of the map (m, flat) is in the siege: there it keeps to the guns within ROAM.
 const SIEGE_BAND := 250.0
+## Talons with a bomb ready fly at a defenders' tank within TALON_HUNT of them that is within TANK_ON_GUNS of the
+## artillery (m, flat): out in the field it hunts the guns from beyond the army's reach.
+const TALON_HUNT := 400.0
+const TANK_ON_GUNS := 260.0
 ## A Sniper who fired within this many seconds is given away by her tracer (_sniper_in_reach).
 const SNIPER_TELL := 6.0
 ## The siege (the policy's `siege`) waits only while it has at least this many guns (Mule Artillery, Bison Field Guns).
@@ -630,13 +635,21 @@ func _talon_strikes() -> void:
 			var t := _in_reach(u, u.stats.bomb_range, func(d): return d.get("station_kind") == "aa")
 			if t == null:
 				if policy.talon_soldiers:
-					t = _in_reach(u, u.stats.bomb_range, func(d): return d.get("station_kind") in ["mg", "artillery"])
+					# The defenders' tanks first: out in the field they hunt the artillery from beyond any gun's reach.
+					t = _in_reach(u, u.stats.bomb_range, func(d): return d.get("station_kind") == "tank")
+					if t == null:
+						t = _in_reach(u, u.stats.bomb_range, func(d): return d.get("station_kind") in ["mg", "artillery"])
 					if t == null:
 						t = _in_reach(u, u.stats.bomb_range, func(d): return d.get("station_kind") in ["soldier", "squad"])
 				else:
 					t = _in_reach(u, u.stats.bomb_range, func(d): return d.get("station_kind") in ["mg", "artillery"] or d in level.gates.values())
 			if t:
 				commander.submit({"type": "bomb", "units": [u.unit_id], "pos": t.global_position})
+				continue
+			# None in reach: a tank out hunting the artillery is flown at (`talon_soldiers`).
+			var tank := _tank_on_guns() if policy.talon_soldiers else null
+			if tank != null and _flat_dist(tank.global_position, u.global_position) < TALON_HUNT:
+				commander.submit({"type": "move", "units": [u.unit_id], "pos": tank.global_position, "attack": true})
 				continue
 		if u.strafe_ready():
 			var t := _in_reach(u, u.stats.strafe_range, func(d): return not d.is_in_group("structures") and d.get("station_kind") not in ["aa", "mg", "artillery"])
@@ -648,6 +661,23 @@ func _talon_strikes() -> void:
 					var along := out.normalized().cross(Vector3.UP)
 					dir = along if along.dot(dir) >= 0.0 else -along
 				commander.submit({"type": "strafe", "units": [u.unit_id], "pos": t.global_position, "dir": dir})
+
+
+## The defenders' tank nearest any of the artillery, within TANK_ON_GUNS of it, or null.
+func _tank_on_guns() -> Node3D:
+	var best: Node3D = null
+	var best_d := TANK_ON_GUNS
+	for d in level.get_tree().get_nodes_in_group("damageable"):
+		if d.get("station_kind") != "tank" or not d.is_alive() or d.team == GameConfig.TEAM_ATTACKER:
+			continue
+		for id in _guns:
+			var g = commander.units.get(id)
+			if g != null and g.has_bombard():
+				var dist := _flat_dist(d.global_position, g.global_position)
+				if dist < best_d:
+					best_d = dist
+					best = d
+	return best
 
 
 ## Kangaroos throw flash grenades at the defenders in their reach: the gun decks' riflemen and
