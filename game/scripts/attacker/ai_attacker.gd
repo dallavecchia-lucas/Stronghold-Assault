@@ -66,13 +66,16 @@ var drones: DroneBay
 ##   vents_from        from this many seconds into the match, its artillery goes for the air vents first (a vent in its
 ##                     reach, else a safe firing spot for one), the guns only when no vent can be had; 0: never by the clock
 ##   vents_breach      ... and so from the moment a gate falls
+##   field_hold        with a siege on, how long (s) the army out in the field holds off a face whose deck guns stand
+##                     while its artillery shells them, before it goes in all the same (_field_hold)
 ##   (`sides` "guns": the standing gate whose face has the fewest live deck guns, the nearest to the base of those while
 ##                     they are even)
 const DEFAULT_POLICY := {"income_mult": null, "first_wave_delay": 15.0, "sides": "random", "split": 1, "wave_scale": 1.0,
 		"waves": [], "growth": 0.0, "drone_answer": true, "launch_at": 0, "regroup": 0.0, "regroup_ready": 0.7,
 		"regroup_wait": 150.0, "standoff": false, "bison_fire": false, "shell_vents": false, "siege": 0.0, "siege_guns": 2,
 		"rhino_cluster": false, "talon_soldiers": false, "smoke": false, "missiles": false, "escort": false,
-		"artillery_keep": 0, "vents_from": 0.0, "vents_breach": false}
+		"artillery_keep": 0, "vents_from": 0.0, "vents_breach": false,
+		"field_hold": 240.0}
 const POLICIES := {
 	"default": {},
 	# A player's income rather than the difficulty's, otherwise as ever.
@@ -1087,7 +1090,7 @@ func _massed() -> bool:
 
 ## The army out in the field holds off `side`'s face while its artillery shells the guns there (the policy's `siege`):
 ## while it has SIEGE_MIN_GUNS pieces or more, more than siege_guns of that face's deck guns stand and no gate is open,
-## for at most `siege` seconds at a time (it goes in once they have run out, until the guns or the artillery change).
+## for at most `field_hold` seconds at a time (it goes in once they have run out, until the guns or the artillery change).
 func _field_hold(side: String) -> bool:
 	if float(policy.siege) <= 0.0 or _open_breach() != "" or _bombards() < SIEGE_MIN_GUNS \
 			or _face_guns(side) <= int(policy.siege_guns):
@@ -1095,7 +1098,7 @@ func _field_hold(side: String) -> bool:
 		return false
 	if _hold_from < 0.0:
 		_hold_from = _clock
-	return _clock - _hold_from < float(policy.siege)
+	return _clock - _hold_from < float(policy.field_hold)
 
 
 ## The live artillery working on its own (`standoff`): Mule Artillery and Bison Field Guns.
