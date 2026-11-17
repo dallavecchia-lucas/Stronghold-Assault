@@ -27,7 +27,7 @@ const STRONGHOLD_OFFSET := Vector3(0, 0, 78)
 ## Map center to the foot of the rock below each face, and half the mountain's footprint.
 const FACE_DIST := 80.0
 const MOUNTAIN_HALF := 86.0
-const GATE_HP := 30000.0
+const GATE_HP := 10000.0
 ## A fallen gate is rebuilt this long after it falls (s).
 const GATE_REBUILD := 480.0
 ## The bushes out on the field: how wide (m, the Serpent Sniper's 2.3 m rifle lies hidden across one), no
@@ -36,7 +36,7 @@ const BUSH_WIDTH := [2.8, 3.3]
 const BUSH_TALLEST := 2.2
 ## The hot-air vents on the roofs (one over every bay clear of the rock, VENT_FX_* markers): the attackers win by
 ## destroying all of them. Each one's health, and the box that takes hits round its hood.
-const VENT_HP := 2500.0
+const VENT_HP := 900.0
 const VENT_SIZE := Vector3(3.6, 2.4, 3.0)
 ## The hot-air vent model standing over every objective vent.
 const VENT_MODEL := "res://assets/structures/hot_air_vent/hot_air_vent.glb"

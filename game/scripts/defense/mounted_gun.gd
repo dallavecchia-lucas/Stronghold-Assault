@@ -42,14 +42,14 @@ const CANNON_BLAST := 3.0
 const CANNON_HEAT := 0.16
 ## The cannon is the stronghold's long gun too (there is none on the roofs): past AI_RANGE and out to CANNON_RANGE its
 ## crew lobs a shell every CANNON_LONG_INTERVAL, the barrel raised for the range.
-const CANNON_RANGE := 150.0
-const CANNON_LONG_INTERVAL := 6.0
+const CANNON_RANGE := 110.0
+const CANNON_LONG_INTERVAL := 12.0
 ## The bastion's flak: a shell every FLAK_INTERVAL, FLAK_DAMAGE where it bursts; how high it elevates (rad).
 const FLAK_INTERVAL := 0.42
 const FLAK_DAMAGE := 20.0
 ## The flak's damage against what is on the ground, as a share of FLAK_DAMAGE (it is an anti-aircraft gun: its shells burst
 ## round aircraft); at 0 it never takes a ground target at all.
-const FLAK_GROUND_MULT := 1.0
+const FLAK_GROUND_MULT := 0.25
 const FLAK_HEAT := 0.05
 const FLAK_PITCH_MAX := deg_to_rad(78.0)
 const REPAIR_TIME := 360.0  # 6 minutes

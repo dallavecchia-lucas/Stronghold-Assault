@@ -47,7 +47,7 @@ const TAG_LIMIT := 5
 ## Left to herself: how far she picks targets (m, flat), her rounds' damage and spread, how long she
 ## settles on her aim before each shot, and how long a target may stay out of her sight before she lets it go.
 const AI_RANGE := 160.0
-const AI_DAMAGE := 105.0
+const AI_DAMAGE := 90.0
 const AI_SPREAD := 0.002
 const AI_SETTLE := 0.6
 const LOST_AFTER := 8.0

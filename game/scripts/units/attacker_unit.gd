@@ -84,7 +84,7 @@ const HEAL_COLOR := Color(0.35, 1.0, 0.45)
 const AA_COLOR := Color(1.0, 0.9, 0.4)
 ## The defenders' drones (DefenderDrone). A unit that can hurt them (hunts_drones) is pulled in by one in sight
 ## within DRONE_NOTICE (flat, m) and follows it as far as DRONE_LEASH, hyper-focused: see _update_drone_prey().
-const DRONE_NOTICE := 80.0
+const DRONE_NOTICE := 30.0
 const DRONE_LEASH := 110.0
 const DRONE_MARK := Color(1.0, 0.35, 0.3)
 ## How close to a broken gate an order has to land to send infiltrators in.

@@ -89,10 +89,10 @@ signal bridge_ordered(bridge: FoldingBridge)
 signal bridge_alarm(bridge: FoldingBridge, on: bool)
 signal bridge_fallen(bridge: FoldingBridge)
 
-const UNIT_CAP := 60
+const UNIT_CAP := 70
 ## The army's war chest: every credit it gets, at the start of the match. There is no income: what it spends on units
 ## that die is gone, and it has to last until the vents are down (or the clock runs out).
-const START_CREDITS := 18000.0
+const START_CREDITS := 25000.0
 ## Credits a second on top (none: the war chest is all there is; kept for anything that pays out during a match).
 const BASE_INCOME := 0.0
 ## How far outside the edge of the mass scouting rhinos keep.

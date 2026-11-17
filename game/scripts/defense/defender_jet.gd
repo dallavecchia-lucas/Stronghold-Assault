@@ -70,10 +70,10 @@ const EDGE_MARGIN := 60.0
 const OUT_TIME := 7.0
 ## Bombs: carried, a new one every BOMB_RECHARGE s, at least BOMB_INTERVAL s apart; its blast and damage.
 const BOMBS := 4
-const BOMB_RECHARGE := 8.0
+const BOMB_RECHARGE := 25.0
 const BOMB_INTERVAL := 0.4
-const BOMB_RADIUS := 11.0
-const BOMB_DAMAGE := 380.0
+const BOMB_RADIUS := 6.0
+const BOMB_DAMAGE := 220.0
 ## Where the bay lets go, from the jet's origin (the model's frame: +Z forward).
 const BAY := Vector3(0.0, -0.4, -0.6)
 ## Missiles: a salvo of SALVO, one every SALVO_INTERVAL s, reloaded SALVO_RELOAD s after the last left. Each hits for

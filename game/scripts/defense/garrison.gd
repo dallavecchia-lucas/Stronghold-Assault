@@ -31,7 +31,7 @@ signal changed
 enum Priority { BASE, FIELD }
 const PRIORITY_NAMES := ["BASE", "FIELD"]
 
-const SPAWN_INTERVAL := 6.0
+const SPAWN_INTERVAL := 12.0
 ## The four controls' sides at the start (control k: player k).
 const SIDE_ORDER := ["south", "east", "north", "west"]
 const OPPOSITE := {"south": "north", "north": "south", "east": "west", "west": "east"}
@@ -40,7 +40,7 @@ const OPPOSITE := {"south": "north", "north": "south", "east": "west", "west": "
 const SPAWN_DEPTH := 8.0
 const SPAWN_SPREAD := 1.2
 ## Alive at once at most: past this, a control's turn passes without a soldier.
-const MAX_ALIVE := 320
+const MAX_ALIVE := 120
 ## The gaps between a deck's fourteen guns (0-12, west to east along the face) that get a garrison soldier: the end bays'
 ## middles and the gaps between the bays (8 a deck). The middles of bays 3-5 are left to the rifle posts
 ## (LevelBuilder.RIFLE_POSTS); within a bay the two guns' seats face each other across its middle.

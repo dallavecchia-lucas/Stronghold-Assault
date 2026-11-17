@@ -12,7 +12,7 @@ const DEFENDER_TRACER := Color(0.45, 0.85, 1.0)
 const BULLET_SPEED := 350.0
 ## The attackers' rounds pass through their own units as the defenders' do through theirs (false: they stop on whatever
 ## body they meet, their own army's too).
-const ATTACKER_ROUNDS_PASS_ALLIES := false
+const ATTACKER_ROUNDS_PASS_ALLIES := true
 ## How far out from the stronghold attackers stand to go after a post on its decks or roofs.
 const WALL_APPROACH := 15.0
 

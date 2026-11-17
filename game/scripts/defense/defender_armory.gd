@@ -21,7 +21,7 @@ const START_CREDITS := 0.0
 ## Credits a second on top (none: the defenders earn by killing; kept for the showcases and tests).
 const INCOME := 0.0
 ## The share of a dead attacker's cost paid to the defenders.
-const BOUNTY := 0.5
+const BOUNTY := 0.3
 const AA_COST := 350
 const FLAME_COST := 300
 const INFILTRATOR_COST := 280
