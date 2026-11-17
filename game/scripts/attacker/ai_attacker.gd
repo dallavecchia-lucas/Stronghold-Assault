@@ -200,6 +200,8 @@ var _escort_n := 0
 var _left_base := false
 ## Artillery this close to the middle of the map (m, flat) is in the siege: there it keeps to the guns within ROAM.
 const SIEGE_BAND := 250.0
+## A Sniper who fired within this many seconds is given away by her tracer (_sniper_in_reach).
+const SNIPER_TELL := 6.0
 ## The siege (the policy's `siege`) waits only while it has at least this many guns (Mule Artillery, Bison Field Guns).
 const SIEGE_MIN_GUNS := 2
 
@@ -1060,8 +1062,9 @@ func _artillery() -> void:
 		if not u.has_bombard():
 			_spot_for_guns(u)
 			continue
-		# A Sniper it sees in its reach comes first: she picks the artillery off from out of the guns' reach.
-		var t := _in_reach(u, u.stats.bombard_range, func(d): return d.get("station_kind") == "sniper", GUN_SPARE)
+		# A Sniper in its reach comes first: she picks the artillery off from out of the guns' reach. Fog hides her, but
+		# not her tracers: one that has fired lately is shelled where she shoots from, as a player would.
+		var t := _sniper_in_reach(u)
 		var spot := Vector3.INF
 		# The vents first (`vents_from`, `vents_breach`): one in reach, else a safe spot for one; with neither, the guns.
 		if t == null and vents_first:
@@ -1104,6 +1107,22 @@ func _artillery() -> void:
 			continue
 		_gun_goal[id] = spot
 		commander.submit({"type": "move", "units": [id], "pos": spot, "attack": false})
+
+
+## A Sniper within `u`'s bombard reach that it sees or that fired in the last SNIPER_TELL seconds (her tracer), or null.
+func _sniper_in_reach(u: AttackerUnit) -> Node3D:
+	var best: Node3D = null
+	var best_d := u.stats.bombard_range * GUN_SPARE
+	for d in level.get_tree().get_nodes_in_group("damageable"):
+		if not (d is SniperTrooper) or not d.is_alive():
+			continue
+		if not (AttackerVision.sees_node(d) or d.shot_lately(SNIPER_TELL)):
+			continue
+		var dist := _flat_dist(d.global_position, u.global_position)
+		if dist < best_d:
+			best_d = dist
+			best = d
+	return best
 
 
 ## The nearest firing spot for `u` from which a live deck or roof gun (or with `vents`, a vent) is in its reach and no

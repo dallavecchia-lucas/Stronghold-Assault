@@ -319,6 +319,8 @@ func fire() -> bool:
 ## A round landed: what it hit is tagged (as far as her tags go), and the totals.
 func _landed(shot: Dictionary) -> void:
 	stats.rounds += 1
+	if leader is SniperTrooper:
+		leader.fired_frame = Engine.get_physics_frames()
 	var u = shot.unit
 	if u == null:
 		return
