@@ -1054,10 +1054,11 @@ func _artillery() -> void:
 		if not u.has_bombard():
 			_spot_for_guns(u)
 			continue
-		var t: Node3D = null
+		# A Sniper it sees in its reach comes first: she picks the artillery off from out of the guns' reach.
+		var t := _in_reach(u, u.stats.bombard_range, func(d): return d.get("station_kind") == "sniper", GUN_SPARE)
 		var spot := Vector3.INF
 		# The vents first (`vents_from`, `vents_breach`): one in reach, else a safe spot for one; with neither, the guns.
-		if vents_first:
+		if t == null and vents_first:
 			t = _in_reach(u, u.stats.bombard_range, func(d): return d is Structure and d.is_vent, GUN_SPARE)
 			if t == null:
 				spot = _standoff_spot(u, true)
