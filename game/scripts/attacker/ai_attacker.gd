@@ -200,6 +200,8 @@ var _escort_n := 0
 var _left_base := false
 ## Artillery this close to the middle of the map (m, flat) is in the siege: there it keeps to the guns within ROAM.
 const SIEGE_BAND := 250.0
+## The siege (the policy's `siege`) waits only while it has at least this many guns (Mule Artillery, Bison Field Guns).
+const SIEGE_MIN_GUNS := 2
 
 ## Where it keeps a bridge standing (the river nearest each, within BRIDGE_NEAR of it), trying BRIDGE_SHIFT m up and
 ## down the river where one can't go just there; and the ground units it sends at defenders on a bridge (up to
@@ -1009,6 +1011,10 @@ func _massed() -> bool:
 func _siege_waiting() -> bool:
 	var massed := _massed()
 	if float(policy.siege) <= 0.0 or not massed or _open_breach() != "":
+		return false
+	# Too little artillery left to shell the guns down: nothing worth waiting for.
+	if _guns.filter(func(id): return commander.units.has(id) and commander.units[id].has_bombard()).size() < SIEGE_MIN_GUNS:
+		_siege_from = -1.0
 		return false
 	if _siege_from < 0.0:
 		_siege_from = _clock
