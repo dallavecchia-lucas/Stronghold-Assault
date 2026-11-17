@@ -209,6 +209,11 @@ const TANK_ON_GUNS := 260.0
 const SNIPER_TELL := 6.0
 ## The siege (the policy's `siege`) waits only while it has at least this many guns (Mule Artillery, Bison Field Guns).
 const SIEGE_MIN_GUNS := 2
+## The army out in the field holding off a face (_field_hold): when it was first held (-1: it isn't), where it waits
+## with no `regroup` (m out from the middle), and how far from there a unit is sent back to it (m).
+var _hold_from := -1.0
+const REGROUP_FALLBACK := 290.0
+const HOLD_SLACK := 25.0
 
 ## Where it keeps a bridge standing (the river nearest each, within BRIDGE_NEAR of it), trying BRIDGE_SHIFT m up and
 ## down the river where one can't go just there; and the ground units it sends at defenders on a bridge (up to
@@ -247,8 +252,12 @@ func _process(delta: float) -> void:
 func _think() -> void:
 	if _pending.is_empty() and _staging.is_empty():
 		_plan_wave()
+	_artillery_topup()
 
-	while not _pending.is_empty() and commander.can_afford(_pending[0]):
+	# Room under the cap is kept for the artillery still to be made good (`artillery_keep`).
+	var room := AttackerCommander.UNIT_CAP - _mules_missing()
+	while not _pending.is_empty() and commander.can_afford(_pending[0]) \
+			and (_pending[0] == "mule" or commander.units.size() < room):
 		var id := commander.submit({"type": "spawn", "unit": _pending[0]})
 		if id == 0:
 			break
@@ -261,8 +270,9 @@ func _think() -> void:
 		# The wave gathers a way out in front of the base.
 		commander.submit({"type": "move", "units": [id], "pos": level.rally_point(0), "attack": true})
 
-	# The army at its cap: what is still waiting to be spawned is dropped (it couldn't come out).
-	var at_cap := commander.units.size() >= AttackerCommander.UNIT_CAP - 2
+	# The army at its cap (less the room kept for the artillery): what is still waiting to be spawned is dropped (it
+	# couldn't come out).
+	var at_cap := commander.units.size() >= room - 2
 	if not _staging.is_empty() and at_cap:
 		_pending.clear()
 	if _pending.is_empty() and not _staging.is_empty():
@@ -427,6 +437,32 @@ func _plan_wave() -> void:
 				_pending.append(type_id)
 				counts[type_id] -= 1
 				remaining = true
+
+
+## How many Mule Artillery short of the policy's `artillery_keep` the army is (alive and still to spawn).
+func _mules_missing() -> int:
+	var keep := int(policy.artillery_keep)
+	if keep <= 0 or commander.supply < float(UnitTypes.DATA["mule"].cost):
+		return 0
+	var have := commander.units.values().filter(func(u): return u.type_id == "mule").size()
+	return maxi(keep - have, 0)
+
+
+## The artillery kept up (the policy's `artillery_keep`): a Mule Artillery lost is made good at once, ahead of any wave,
+## while there is room under the cap and the credits. It goes out on its own (`standoff`), or with the next wave.
+func _artillery_topup() -> void:
+	if _mules_missing() <= 0 or commander.units.size() >= AttackerCommander.UNIT_CAP or not commander.can_afford("mule"):
+		return
+	var id := commander.submit({"type": "spawn", "unit": "mule"})
+	if id == 0:
+		return
+	_pending.erase("mule")
+	var fresh: AttackerUnit = commander.units.get(id)
+	if policy.standoff and fresh != null:
+		_guns.append(id)
+	else:
+		_staging.append(id)
+		commander.submit({"type": "move", "units": [id], "pos": level.rally_point(0), "attack": true})
 
 
 ## The CPU's own mix for wave `_wave`.
@@ -941,10 +977,19 @@ func _reassign_idle() -> void:
 
 
 ## Sends `ids` on to the next objective: the air vents once a gate is down (over a face with vents left), else the
-## standing gate nearest each.
+## standing gate nearest each; with a siege on (_field_hold), to wait off the face out of its guns' reach.
 func _send_on(ids: Array) -> void:
 	if _open_breach() != "":
 		_push_keep(ids)
+		return
+	var side := ""
+	if float(policy.siege) > 0.0:
+		side = _wave_side if level.gates.has(_wave_side) and level.gates[_wave_side].is_alive() else _pick_side()
+	if side != "" and _field_hold(side):
+		var at: Vector3 = LevelBuilder.SIDES[side].dir * float(policy.regroup if float(policy.regroup) > 0.0 else REGROUP_FALLBACK)
+		var far := ids.filter(func(id): return _flat_dist(commander.units[id].global_position, at) > HOLD_SLACK)
+		if not far.is_empty():
+			commander.submit({"type": "move", "units": far, "pos": at, "attack": true})
 		return
 	var by_gate := {}
 	for id in ids:
@@ -1040,12 +1085,30 @@ func _massed() -> bool:
 	return _staging.size() >= int(policy.launch_at) or commander.units.size() >= AttackerCommander.UNIT_CAP - 2
 
 
+## The army out in the field holds off `side`'s face while its artillery shells the guns there (the policy's `siege`):
+## while it has SIEGE_MIN_GUNS pieces or more, more than siege_guns of that face's deck guns stand and no gate is open,
+## for at most `siege` seconds at a time (it goes in once they have run out, until the guns or the artillery change).
+func _field_hold(side: String) -> bool:
+	if float(policy.siege) <= 0.0 or _open_breach() != "" or _bombards() < SIEGE_MIN_GUNS \
+			or _face_guns(side) <= int(policy.siege_guns):
+		_hold_from = -1.0
+		return false
+	if _hold_from < 0.0:
+		_hold_from = _clock
+	return _clock - _hold_from < float(policy.siege)
+
+
+## The live artillery working on its own (`standoff`): Mule Artillery and Bison Field Guns.
+func _bombards() -> int:
+	return _guns.filter(func(id): return commander.units.has(id) and commander.units[id].has_bombard()).size()
+
+
 func _siege_waiting() -> bool:
 	var massed := _massed()
 	if float(policy.siege) <= 0.0 or not massed or _open_breach() != "":
 		return false
 	# Too little artillery left to shell the guns down: nothing worth waiting for.
-	if _guns.filter(func(id): return commander.units.has(id) and commander.units[id].has_bombard()).size() < SIEGE_MIN_GUNS:
+	if _bombards() < SIEGE_MIN_GUNS:
 		_siege_from = -1.0
 		return false
 	if _siege_from < 0.0:
