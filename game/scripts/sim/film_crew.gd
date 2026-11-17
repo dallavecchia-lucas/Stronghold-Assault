@@ -289,7 +289,11 @@ func _start(m: Dictionary) -> void:
 		if score > best_score:
 			best_score = score
 			best_az = az
-	var name_ := "%02dm%02d_%s_%s" % [int(sim.clock) / 60, int(sim.clock) % 60, _place(at).replace(" ", "_"), m.kind]
+	# Rock or wall between the camera and it from every bearing (a raider deep in a tunnel): nothing to film.
+	if _blocked(at, best_az, st.d, st.h) >= 5.0:
+		print("FILM %6.1f skip %s: %s (no clear view)" % [sim.clock, m.kind, m.desc])
+		return
+	var name_ :="%02dm%02d_%s_%s" % [int(sim.clock) / 60, int(sim.clock) % 60, _place(at).replace(" ", "_"), m.kind]
 	var dir := out_dir.path_join(name_)
 	DirAccess.make_dir_recursive_absolute(dir)
 	_shot = {"m": m, "st": st, "az": best_az, "dir": dir, "name": name_, "pivot": at, "look": at + Vector3(0, st.aim, 0),

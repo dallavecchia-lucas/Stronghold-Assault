@@ -68,6 +68,8 @@ var drones: DroneBay
 ##   vents_breach      ... and so from the moment a gate falls
 ##   field_hold        with a siege on, how long (s) the army out in the field holds off a face whose deck guns stand
 ##                     while its artillery shells them, before it goes in all the same (_field_hold)
+##   airlift           its Mule Artillery just out at the base fly to a helipad it holds in a transport helicopter (helo_board,
+##                     helo_fly) when they are at work sooner that way than walking round the stronghold (_airlift)
 ##   (`sides` "guns": the standing gate whose face has the fewest live deck guns, the nearest to the base of those while
 ##                     they are even)
 const DEFAULT_POLICY := {"income_mult": null, "first_wave_delay": 15.0, "sides": "random", "split": 1, "wave_scale": 1.0,
@@ -75,7 +77,7 @@ const DEFAULT_POLICY := {"income_mult": null, "first_wave_delay": 15.0, "sides":
 		"regroup_wait": 150.0, "standoff": false, "bison_fire": false, "shell_vents": false, "siege": 0.0, "siege_guns": 2,
 		"rhino_cluster": false, "talon_soldiers": false, "smoke": false, "missiles": false, "escort": false,
 		"artillery_keep": 0, "vents_from": 0.0, "vents_breach": false,
-		"field_hold": 240.0}
+		"field_hold": 240.0, "airlift": false}
 const POLICIES := {
 	"default": {},
 	# A player's income rather than the difficulty's, otherwise as ever.
@@ -101,7 +103,7 @@ const POLICIES := {
 	"siege_mass": {"income_mult": 1.0, "first_wave_delay": 5.0, "sides": "guns", "launch_at": 36, "regroup": 290.0,
 			"standoff": true, "bison_fire": true, "shell_vents": true, "siege": 540.0, "siege_guns": 4,
 			"rhino_cluster": true, "talon_soldiers": true, "smoke": true, "missiles": true, "drone_answer": false, "escort": true, "artillery_keep": 4,
-			"vents_from": 1080.0, "vents_breach": true,
+			"vents_from": 1080.0, "vents_breach": true, "airlift": true,
 			"waves": [{"mule": 2, "giraffe": 1}, {"rifleman": 6, "hippo": 1, "serpent": 1, "kangaroo": 1, "medic": 1},
 				{"mule": 2, "rifleman": 4, "breacher": 2, "chimp": 2},
 				{"rifleman": 6, "hippo": 1, "serpent": 1, "rhino": 1, "kangaroo": 1, "elephant": 1, "talon": 2},
@@ -220,6 +222,19 @@ const SIEGE_MIN_GUNS := 2
 ## The army out in the field holding off a face (_field_hold): when it was first held (-1: it isn't), where it waits
 ## with no `regroup` (m out from the middle), and how far from there a unit is sent back to it (m).
 var _hold_from := -1.0
+## The airlift (the policy's `airlift`): the Mule Artillery flying, unit id -> helicopter slot, from the order to board until
+## the helicopter puts it down (then _artillery has it again).
+var _lift := {}
+## The helicopters loading for a trip, slot -> {"pad": spawn index it goes to, "since": when the last mule was sent to it}.
+var _lift_trip := {}
+## How much sooner (s) a mule must be at work by air than on foot to fly.
+const LIFT_GAIN := 60.0
+## A trip's spin-up, climb, descent, landing and unloading (s), besides the flight (TransportHelo.CRUISE_SPEED).
+const LIFT_FIXED := 35.0
+## A helicopter loading takes off this long (s) after the last mule sent to it with what it has (they die in twos and threes).
+const LIFT_WAIT := 12.0
+## A mule this near the base's spawn point (m) may still fly.
+const LIFT_NEAR := 150.0
 const REGROUP_FALLBACK := 290.0
 const HOLD_SLACK := 25.0
 
@@ -309,6 +324,7 @@ func _think() -> void:
 	_serpent_skills()
 	_dog_modes()
 	if policy.standoff:
+		_airlift()
 		_artillery()
 	else:
 		_mule_guns()
@@ -716,7 +732,7 @@ func _tank_on_guns() -> Node3D:
 			continue
 		for id in _guns:
 			var g = commander.units.get(id)
-			if g != null and g.has_bombard():
+			if g != null and g.has_bombard() and not id in _lift:
 				var dist := _flat_dist(d.global_position, g.global_position)
 				if dist < best_d:
 					best_d = dist
@@ -1037,7 +1053,7 @@ func _escort_tick() -> void:
 	var guns := []
 	for id in _guns:
 		var u = commander.units.get(id)
-		if u != null and u.has_bombard():
+		if u != null and u.has_bombard() and not id in _lift:
 			guns.append(u)
 	if guns.is_empty():
 		return
@@ -1156,7 +1172,7 @@ func _artillery() -> void:
 		_left_base = true
 	for id in _guns:
 		var u: AttackerUnit = commander.units[id]
-		if not u.is_controllable() or u.setting_up() or u.packing_up():
+		if id in _lift or not u.is_controllable() or u.setting_up() or u.packing_up():
 			continue
 		if hold and not _left_base:
 			continue
@@ -1229,6 +1245,112 @@ func _route_step(from: Vector3, to: Vector3) -> Vector3:
 	return Vector3(sin(a) * r, 0.0, cos(a) * r)
 
 
+## How far artillery walks from `from` to `to` the way _route_step takes it (m, flat).
+func _route_len(from: Vector3, to: Vector3) -> float:
+	var p := Vector3(from.x, 0.0, from.z)
+	var goal := Vector3(to.x, 0.0, to.z)
+	var n := 0.0
+	for i in 32:
+		var nxt := _route_step(p, goal)
+		n += _flat_dist(p, nxt)
+		if nxt == goal:
+			return n
+		p = nxt
+	return n + _flat_dist(p, goal)
+
+
+## Where artillery at `at` would set up to work (_standoff_spot from there): a vent's spot first with `vents`, else a gun's,
+## then the other; `at` itself with neither.
+func _work_spot(at: Vector3, reach: float, vents: bool) -> Vector3:
+	var spot := _standoff_spot_at(at, reach, vents)
+	if spot == Vector3.INF:
+		spot = _standoff_spot_at(at, reach, not vents)
+	return at if spot == Vector3.INF else spot
+
+
+## The airlift (the policy's `airlift`). A Mule Artillery just out at the base (within LIFT_NEAR of its spawn point) whose work
+## (_work_spot) is far round the stronghold boards a transport helicopter standing by for the helipad it holds nearest that
+## work (_lift_plan), when it is at work LIFT_GAIN sooner that way; a helicopter goes once nothing more is on its way to
+## board it and its hold is full or LIFT_WAIT has passed since the last mule was sent to it. Put down at the helipad, a mule is
+## _artillery's again.
+func _airlift() -> void:
+	if not policy.airlift or commander.fleet == null:
+		return
+	for id in _lift.keys():
+		var u = commander.units.get(id)
+		if u == null or (not u.is_stowed() and u.order.get("type", "") != "helo"):
+			_lift.erase(id)
+	var base: Vector3 = commander.spawn_points[0]
+	for id in _guns:
+		if id in _lift:
+			continue
+		var u = commander.units.get(id)
+		if u == null or u.type_id != "mule" or not u.can_board_helo() or u.setting_up() or u.packing_up() \
+				or _flat_dist(u.global_position, base) > LIFT_NEAR:
+			continue
+		var plan := _lift_plan(u)
+		if plan.is_empty():
+			continue
+		if commander.submit({"type": "helo_board", "units": [id], "helo": plan.helo}) > 0:
+			_lift[id] = plan.helo
+			_lift_trip[plan.helo] = {"pad": plan.pad, "since": _clock}
+	for i in _lift_trip.keys():
+		var h: TransportHelo = commander.fleet.helo_at(i)
+		if h == null or not h.can_board():
+			_lift_trip.erase(i)
+			continue
+		var coming := 0
+		for id in _lift:
+			if _lift[id] == i and not commander.units[id].is_stowed():
+				coming += 1
+		if h.cargo_types().is_empty():
+			if coming == 0:
+				_lift_trip.erase(i)
+			continue
+		if coming > 0 or (h.spaces_free() >= HeloCargo.spaces("mule") and _clock - float(_lift_trip[i].since) < LIFT_WAIT):
+			continue
+		var pad: int = _lift_trip[i].pad
+		if not commander.helo_can_fly(i, pad):
+			# Its helipad lost meanwhile: the other one held, if any.
+			for k in range(1, commander.spawn_bases.size()):
+				if commander.helo_can_fly(i, k):
+					pad = k
+					break
+		if commander.submit({"type": "helo_fly", "helo": i, "spawn": pad}) > 0:
+			_lift_trip.erase(i)
+
+
+## Where Mule Artillery `u` (at the base) is best flown: {"helo": slot, "pad": spawn index} for a helicopter standing by,
+## mended, with room for it and loading for that helipad or for none, when flying there (its walk to the ramp, the flight,
+## LIFT_FIXED, then its walk from the helipad to its work) has it at work LIFT_GAIN sooner than walking from where it is;
+## {} otherwise.
+func _lift_plan(u: AttackerUnit) -> Dictionary:
+	var speed: float = maxf(float(u.stats.speed), 0.1)
+	var reach: float = u.stats.bombard_range * STANDOFF_REACH
+	var vents := _vents_first()
+	var best := {}
+	var best_t := _route_len(u.global_position, _work_spot(u.global_position, reach, vents)) / speed - LIFT_GAIN
+	for k in range(1, commander.spawn_bases.size()):
+		var b = commander.spawn_bases[k]
+		if b == null or not b.controlled:
+			continue
+		var drop: Vector3 = commander.spawn_points[k]
+		var after := _route_len(drop, _work_spot(drop, reach, vents)) / speed
+		for i in HeloCargo.FLEET_SIZE:
+			var h: TransportHelo = commander.fleet.helo_at(i)
+			if h == null or not h.can_board() or h.hp < h.max_hp - 0.01 or h.spaces_free() < HeloCargo.spaces(u.type_id):
+				continue
+			if _lift_trip.has(i) and int(_lift_trip[i].pad) != k:
+				continue
+			var ramp := h.ramp_point()
+			var t := _flat_dist(u.global_position, ramp) / speed + _flat_dist(ramp, drop) / TransportHelo.CRUISE_SPEED \
+					+ LIFT_FIXED + after
+			if t < best_t:
+				best_t = t
+				best = {"helo": i, "pad": k}
+	return best
+
+
 ## A Sniper within `u`'s bombard reach that it sees or that fired in the last SNIPER_TELL seconds (her tracer), or null.
 func _sniper_in_reach(u: AttackerUnit) -> Node3D:
 	var best: Node3D = null
@@ -1249,7 +1371,11 @@ func _sniper_in_reach(u: AttackerUnit) -> Node3D:
 ## live gun reaches it: straight out from it at STANDOFF_REACH of its reach, GUN_MARGIN outside every live gun's reach (a
 ## cannon's long shot, a sentry's or bastion's AI_RANGE); INF with none.
 func _standoff_spot(u: AttackerUnit, vents: bool) -> Vector3:
-	var reach: float = u.stats.bombard_range * STANDOFF_REACH
+	return _standoff_spot_at(u.global_position, u.stats.bombard_range * STANDOFF_REACH, vents)
+
+
+## _standoff_spot for artillery at `at` whose shells reach `reach` (m).
+func _standoff_spot_at(at: Vector3, reach: float, vents: bool) -> Vector3:
 	var guns := []
 	var marks := []
 	for d in level.get_tree().get_nodes_in_group("damageable"):
@@ -1270,7 +1396,7 @@ func _standoff_spot(u: AttackerUnit, vents: bool) -> Vector3:
 		var spot := flat + flat.normalized() * reach
 		if guns.any(func(g): return _flat_dist(spot, g[0]) < g[1] + GUN_MARGIN):
 			continue
-		var d := _flat_dist(spot, u.global_position)
+		var d := _flat_dist(spot, at)
 		if d < best_d:
 			best_d = d
 			best = spot
@@ -1282,7 +1408,7 @@ func _spot_for_guns(u: AttackerUnit) -> void:
 	var gun: AttackerUnit = null
 	for id in _guns:
 		var g: AttackerUnit = commander.units[id]
-		if g.has_bombard() and (gun == null or _flat_dist(g.global_position, u.global_position) < _flat_dist(gun.global_position, u.global_position)):
+		if g.has_bombard() and not id in _lift and (gun == null or _flat_dist(g.global_position, u.global_position) < _flat_dist(gun.global_position, u.global_position)):
 			gun = g
 	if gun == null:
 		return

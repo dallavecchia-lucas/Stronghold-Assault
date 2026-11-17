@@ -93,6 +93,16 @@ func setup(m: Node) -> void:
 	ai_defender.set_policy(load_policy(GameConfig.def_policy, AIDefender.POLICIES))
 
 
+func _watch_helo(h: TransportHelo) -> void:
+	if not h.unloaded.is_connected(_on_helo_unloaded):
+		h.unloaded.connect(_on_helo_unloaded)
+
+
+func _on_helo_unloaded(helo: TransportHelo, u: AttackerUnit) -> void:
+	if helo.out_leg:
+		_event("airlift", {"unit": u.type_id, "pad": helo.dest_name})
+
+
 ## `name`'s policy: an entry of `named`, or a JSON file of overrides (a path ending in .json), which may itself start
 ## from a named one with {"base": name}.
 static func load_policy(name: String, named: Dictionary) -> Dictionary:
@@ -136,6 +146,13 @@ func _ready() -> void:
 	for b in level.bases:
 		b.sabotaged.connect(func(_b): _def.helipads_sabotaged += 1; _event("helipad_sabotaged", {"base": b.display_name}))
 		b.retaken.connect(func(_b): _def.helipads_retaken += 1; _event("helipad_retaken", {"base": b.display_name}))
+	# The attackers' transport helicopters: each unit put down at a helipad is an airlift (AIAttacker._airlift).
+	var fleet: HeloFleet = commander.fleet
+	if fleet != null:
+		for i in HeloCargo.FLEET_SIZE:
+			if fleet.helo_at(i) != null:
+				_watch_helo(fleet.helo_at(i))
+		fleet.helo_added.connect(_watch_helo)
 	print("SIM start atk=%s def=%s seed=%d time=%.0f label=%s" % [GameConfig.atk_policy, GameConfig.def_policy,
 			GameConfig.sim_seed, match_node.time_left, GameConfig.sim_label])
 
