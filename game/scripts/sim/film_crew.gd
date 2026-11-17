@@ -256,7 +256,10 @@ func _style(kind: String) -> Dictionary:
 			return {"d": 20.0, "h": 4.0, "aim": 3.0, "push": 0.15, "orbit": 15.0, "len": 0.9}
 		"artillery":
 			return {"d": 14.0, "h": 3.0, "aim": 1.5, "push": 0.15, "orbit": 18.0, "len": 0.9}
-		"elephant_swim", "swim_crossing", "raft_crossing", "bridge_crossing":
+		"bridge_crossing":
+			# Up over the bridge's side panels: at the walkers' height the panel fills the shot.
+			return {"d": 24.0, "h": 8.0, "aim": 1.5, "push": 0.15, "orbit": 12.0, "len": 1.0}
+		"elephant_swim", "swim_crossing", "raft_crossing":
 			return {"d": 20.0, "h": 3.5, "aim": 1.5, "push": 0.15, "orbit": 12.0, "len": 1.0}
 		"flame_burning":
 			return {"d": 24.0, "h": 4.5, "aim": 2.0, "push": 0.15, "orbit": 15.0, "len": 0.9}
@@ -312,6 +315,14 @@ func _blocked(at: Vector3, az: float, d: float, h: float) -> float:
 	var c := at + Vector3(sin(az), 0.0, cos(az)) * d
 	c.y = maxf(LevelBuilder.ground_height(c) + 1.5, at.y + h)
 	var bad := 0.0
+	# Walls, gates, bridges, buildings: anything solid between the camera and the subject (more than a step short of it).
+	var space := cam.get_world_3d().direct_space_state if cam and cam.is_inside_tree() else null
+	if space:
+		var to := at + Vector3(0, 1.5, 0)
+		var q := PhysicsRayQueryParameters3D.create(c, to, GameConfig.LAYER_WORLD | GameConfig.LAYER_STRUCTURES)
+		var hit := space.intersect_ray(q)
+		if not hit.is_empty() and (hit.position as Vector3).distance_to(to) > 2.5:
+			bad += 5.0
 	for i in range(1, 10):
 		var p := c.lerp(at + Vector3(0, 1.5, 0), i / 10.0)
 		if LevelBuilder.ground_height(p) > p.y - 0.3:
