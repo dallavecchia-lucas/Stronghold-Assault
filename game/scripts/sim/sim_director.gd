@@ -80,9 +80,9 @@ func setup(m: Node) -> void:
 	ai_attacker.set_policy(load_policy(GameConfig.atk_policy, AIAttacker.POLICIES))
 	m.ai_attacker = ai_attacker
 	var mult = ai_attacker.policy.income_mult
-	var m := GameConfig.ai_income_mult() if mult == null else float(mult)
-	commander.supply = AttackerCommander.START_CREDITS * m
-	commander.income = AttackerCommander.BASE_INCOME * m
+	var chest := GameConfig.ai_income_mult() if mult == null else float(mult)
+	commander.supply = AttackerCommander.START_CREDITS * chest
+	commander.income = AttackerCommander.BASE_INCOME * chest
 
 	ai_defender = AIDefender.new()
 	ai_defender.name = "AIDefender"
