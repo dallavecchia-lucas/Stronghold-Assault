@@ -47,6 +47,8 @@ var _raiders := {}
 ## Seconds of real time spent in the frames' process, physics and navigation steps since the last printed line (the
 ## engine's own monitors, summed a frame at a time): where the machine's time goes.
 var _perf := {"process": 0.0, "physics": 0.0, "nav": 0.0, "frames": 0, "wall0": 0}
+## The film crew (`--film=<dir>`, scripts/sim/film_crew.gd): films the match's best moments; null otherwise.
+var film: Node
 
 
 ## The two CPUs, made before the match starts (Match._ready): Match adds them once the navmesh is in.
@@ -55,6 +57,14 @@ func setup(m: Node) -> void:
 	if GameConfig.sim_ticks > 0:
 		Engine.physics_ticks_per_second = GameConfig.sim_ticks
 	Engine.max_physics_steps_per_frame = 32
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--film="):
+			# Nothing is drawn until there is something to film (the level's build and the navmesh included).
+			RenderingServer.render_loop_enabled = false
+			film = preload("res://scripts/sim/film_crew.gd").new()
+			film.name = "FilmCrew"
+			film.sim = self
+			film.out_dir = arg.get_slice("=", 1)
 	level = m.level
 	commander = m.commander
 	armory = DefenderArmory.new()
@@ -103,6 +113,8 @@ static func load_policy(name: String, named: Dictionary) -> Dictionary:
 func _ready() -> void:
 	ai_defender.garrison = match_node.garrison
 	add_child(ai_defender)
+	if film:
+		add_child(film)
 	_t0_msec = Time.get_ticks_msec()
 	_trees0 = ForestTree.standing.size()
 	commander.unit_spawned.connect(_on_unit_spawned)
@@ -167,6 +179,8 @@ func _event(type: String, more := {}) -> void:
 	if not _first.has(type):
 		_first[type] = e.t
 	print("SIM %6.1f %s %s" % [clock, type, JSON.stringify(more)])
+	if film:
+		film.on_event(type, more)
 
 
 static func _xz(p: Vector3) -> Array:
