@@ -225,14 +225,17 @@ var _hold_from := -1.0
 ## The airlift (the policy's `airlift`): the Mule Artillery flying, unit id -> helicopter slot, from the order to board until
 ## the helicopter puts it down (then _artillery has it again).
 var _lift := {}
-## The helicopters loading for a trip, slot -> {"pad": spawn index it goes to, "since": when the last mule was sent to it}.
+## The helicopters loading for a trip, slot -> {"pad": spawn index it goes to, "since": when the last mule was sent to it,
+## "loaded": when the first got aboard (-1: none yet)}.
 var _lift_trip := {}
 ## How much sooner (s) a mule must be at work by air than on foot to fly.
 const LIFT_GAIN := 60.0
 ## A trip's spin-up, climb, descent, landing and unloading (s), besides the flight (TransportHelo.CRUISE_SPEED).
 const LIFT_FIXED := 35.0
-## A helicopter loading takes off this long (s) after the last mule sent to it with what it has (they die in twos and threes).
+## A helicopter loading takes off this long (s) after the last mule sent to it with what it has (they die in twos and threes)...
 const LIFT_WAIT := 12.0
+## ... and this long (s) after the first got aboard at the latest, whoever is still on the way (they take the other one).
+const LIFT_HOLD := 40.0
 ## A mule this near the base's spawn point (m) may still fly.
 const LIFT_NEAR := 150.0
 const REGROUP_FALLBACK := 290.0
@@ -1270,8 +1273,9 @@ func _work_spot(at: Vector3, reach: float, vents: bool) -> Vector3:
 
 ## The airlift (the policy's `airlift`). A Mule Artillery just out at the base (within LIFT_NEAR of its spawn point) whose work
 ## (_work_spot) is far round the stronghold boards a transport helicopter standing by for the helipad it holds nearest that
-## work (_lift_plan), when it is at work LIFT_GAIN sooner that way; a helicopter goes once nothing more is on its way to
-## board it and its hold is full or LIFT_WAIT has passed since the last mule was sent to it. Put down at the helipad, a mule is
+## work (_lift_plan), when it is at work LIFT_GAIN sooner that way; a helicopter goes with what it has aboard once its hold is
+## full, or nothing more is on its way and LIFT_WAIT has passed since the last mule was sent to it, or LIFT_HOLD after the
+## first got aboard (one still on its way loses its place and takes the other helicopter). Put down at the helipad, a mule is
 ## _artillery's again.
 func _airlift() -> void:
 	if not policy.airlift or commander.fleet == null:
@@ -1293,7 +1297,8 @@ func _airlift() -> void:
 			continue
 		if commander.submit({"type": "helo_board", "units": [id], "helo": plan.helo}) > 0:
 			_lift[id] = plan.helo
-			_lift_trip[plan.helo] = {"pad": plan.pad, "since": _clock}
+			var trip: Dictionary = _lift_trip.get(plan.helo, {"loaded": -1.0})
+			_lift_trip[plan.helo] = {"pad": plan.pad, "since": _clock, "loaded": trip.loaded}
 	for i in _lift_trip.keys():
 		var h: TransportHelo = commander.fleet.helo_at(i)
 		if h == null or not h.can_board():
@@ -1307,7 +1312,11 @@ func _airlift() -> void:
 			if coming == 0:
 				_lift_trip.erase(i)
 			continue
-		if coming > 0 or (h.spaces_free() >= HeloCargo.spaces("mule") and _clock - float(_lift_trip[i].since) < LIFT_WAIT):
+		if float(_lift_trip[i].loaded) < 0.0:
+			_lift_trip[i].loaded = _clock
+		var full := h.spaces_free() < HeloCargo.spaces("mule")
+		var settled := coming == 0 and _clock - float(_lift_trip[i].since) >= LIFT_WAIT
+		if not (full or settled or _clock - float(_lift_trip[i].loaded) >= LIFT_HOLD):
 			continue
 		var pad: int = _lift_trip[i].pad
 		if not commander.helo_can_fly(i, pad):
