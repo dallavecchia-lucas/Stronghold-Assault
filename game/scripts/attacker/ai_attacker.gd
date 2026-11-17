@@ -62,13 +62,16 @@ var drones: DroneBay
 ##                     (ESCORT_BACK behind them) instead of at the base: the defenders' tank and jet find them escorted;
 ##                     and the guns keep to the base until the army has massed, then go out with it
 ##   artillery_keep    every wave makes good the Mule Artillery lost, to keep this many (0: the waves' own count)
+##   vents_from        from this many seconds into the match, its artillery goes for the air vents first (a vent in its
+##                     reach, else a safe firing spot for one), the guns only when no vent can be had; 0: never by the clock
+##   vents_breach      ... and so from the moment a gate falls
 ##   (`sides` "guns": the standing gate whose face has the fewest live deck guns, the nearest to the base of those while
 ##                     they are even)
 const DEFAULT_POLICY := {"income_mult": null, "first_wave_delay": 15.0, "sides": "random", "split": 1, "wave_scale": 1.0,
 		"waves": [], "growth": 0.0, "drone_answer": true, "launch_at": 0, "regroup": 0.0, "regroup_ready": 0.7,
 		"regroup_wait": 150.0, "standoff": false, "bison_fire": false, "shell_vents": false, "siege": 0.0, "siege_guns": 2,
 		"rhino_cluster": false, "talon_soldiers": false, "smoke": false, "missiles": false, "escort": false,
-		"artillery_keep": 0}
+		"artillery_keep": 0, "vents_from": 0.0, "vents_breach": false}
 const POLICIES := {
 	"default": {},
 	# A player's income rather than the difficulty's, otherwise as ever.
@@ -94,6 +97,7 @@ const POLICIES := {
 	"siege_mass": {"income_mult": 1.0, "first_wave_delay": 5.0, "sides": "guns", "launch_at": 36, "regroup": 290.0,
 			"standoff": true, "bison_fire": true, "shell_vents": true, "siege": 540.0, "siege_guns": 4,
 			"rhino_cluster": true, "talon_soldiers": true, "smoke": true, "missiles": true, "drone_answer": false, "escort": true, "artillery_keep": 4,
+			"vents_from": 1080.0, "vents_breach": true,
 			"waves": [{"mule": 2, "giraffe": 1}, {"rifleman": 6, "hippo": 1, "serpent": 1, "kangaroo": 1, "medic": 1},
 				{"mule": 2, "rifleman": 4, "breacher": 2, "chimp": 2},
 				{"rifleman": 6, "hippo": 1, "serpent": 1, "rhino": 1, "kangaroo": 1, "elephant": 1},
@@ -185,11 +189,12 @@ const SPOT_AHEAD := 6.0
 const SPOT_SLACK := 8.0
 ## Artillery goes to a firing spot for a gun this far off at most (m, flat): it is slow, the other faces are too far.
 const ROAM := 100.0
-## The escort: the artillery is guarded from this far behind it (m); the guard moves once its spot has moved further than
-## ESCORT_SLACK.
+## The escort: each gun is guarded by its share of the army from this far behind it (m); a guard moves once its spot has
+## moved further than ESCORT_SLACK.
 const ESCORT_BACK := 22.0
 const ESCORT_SLACK := 15.0
-var _escort_at := Vector3.INF
+## Where each gun's guard was last sent (gun id -> spot), and the army's size then.
+var _escort_at := {}
 var _escort_n := 0
 ## The artillery has gone out with the army once (`escort`): from then on it works on its own.
 var _left_base := false
@@ -332,18 +337,21 @@ func _bridge_alarms() -> void:
 
 ## Which gate wave `_wave` goes for, by the policy's `sides`.
 func _pick_side() -> String:
-	var standing := GATE_SIDES.filter(func(s): return level.gates[s].is_alive())
+	# The faces still worth a gate: a standing gate with air vents left over it.
+	var standing := GATE_SIDES.filter(func(s): return level.gates[s].is_alive() and _face_vents(s) > 0)
 	var any: String = GATE_SIDES[randi() % GATE_SIDES.size()]
-	# A gate down is the way in: the policies that pick their gate go through it while it is open.
-	if String(policy.sides) in ["stick", "guns", "weakest"] and standing.size() < GATE_SIDES.size():
-		return GATE_SIDES.filter(func(s): return not level.gates[s].is_alive())[0]
+	# A gate down is the way in: the policies that pick their gate go through it while it is open and its face still has
+	# vents; once they are all down, on to the next face.
+	var open := _open_breach()
+	if String(policy.sides) in ["stick", "guns", "weakest"] and open != "":
+		return open
 	match String(policy.sides):
 		"south", "east", "west":
 			return policy.sides
 		"rotate":
 			return GATE_SIDES[(_wave - 1) % GATE_SIDES.size()]
 		"stick":
-			if _stick_side == "" or not level.gates[_stick_side].is_alive():
+			if _stick_side == "" or not (_stick_side in standing):
 				_stick_side = any if standing.is_empty() else standing[randi() % standing.size()]
 			return _stick_side
 		"guns":
@@ -560,10 +568,35 @@ func _push_keep(ids: Array) -> void:
 
 
 func _breached_side() -> String:
-	for side in level.gates:
-		if not level.gates[side].is_alive():
+	var open := _open_breach()
+	return open if open != "" else _wave_side
+
+
+## A gate down over a face with air vents still standing ("" with none): the way in to them.
+func _open_breach() -> String:
+	for side in GATE_SIDES:
+		if not level.gates[side].is_alive() and _face_vents(side) > 0:
 			return side
-	return _wave_side
+	return ""
+
+
+## The live air vents on `side`'s face.
+func _face_vents(side: String) -> int:
+	var n := 0
+	var face := side.capitalize() + " "
+	for v in level.vents:
+		if v.is_alive() and String(v.display_name).begins_with(face):
+			n += 1
+	return n
+
+
+## The artillery goes for the air vents first (the policy's `vents_from` and `vents_breach`).
+func _vents_first() -> bool:
+	if not policy.shell_vents:
+		return false
+	if float(policy.vents_from) > 0.0 and _clock >= float(policy.vents_from):
+		return true
+	return bool(policy.vents_breach) and level.gates.values().any(func(g): return not g.is_alive())
 
 
 ## Rams closing in on a gate ram it once it is within reach of the charge.
@@ -873,9 +906,10 @@ func _reassign_idle() -> void:
 		_send_on(idle)
 
 
-## Sends `ids` on to the next objective: the air vents once a gate is down, else the standing gate nearest each.
+## Sends `ids` on to the next objective: the air vents once a gate is down (over a face with vents left), else the
+## standing gate nearest each.
 func _send_on(ids: Array) -> void:
-	if level.gates.values().any(func(g): return not g.is_alive()):
+	if _open_breach() != "":
 		_push_keep(ids)
 		return
 	var by_gate := {}
@@ -907,29 +941,56 @@ static func _flat_dist(a: Vector3, b: Vector3) -> float:
 
 ## The siege (the policy's `siege`): true while the massed army waits at the base for its artillery to bring the guns on
 ## the face it goes for down to siege_guns, at most `siege` seconds from when it was massed.
-## The escort (the policy's `escort`): while the siege waits, the army gathering for it stands ESCORT_BACK behind its
-## artillery (the middle of the guns), moved along as they move: out from the base with them, and on by them in the woods.
+## The escort (the policy's `escort`): while the siege waits, the army gathering for it guards the artillery: each gun
+## gets its share of it (the nearest units, as even as they go), standing ESCORT_BACK behind it, moved along as it moves.
+## The guns spread out to shell different deck guns, so one guard at their middle would leave each of them alone.
 func _escort_tick() -> void:
 	if not policy.escort or _staging.is_empty() or not _siege_waiting():
 		return
-	var sum := Vector3.ZERO
-	var n := 0
+	var guns := []
 	for id in _guns:
 		var u = commander.units.get(id)
 		if u != null and u.has_bombard():
-			sum += u.global_position
-			n += 1
-	if n == 0:
+			guns.append(u)
+	if guns.is_empty():
 		return
-	var mid := sum / n
-	var back := level.rally_point(0) - mid
-	back.y = 0.0
-	var at := mid + back.normalized() * ESCORT_BACK
-	if _escort_at != Vector3.INF and _flat_dist(at, _escort_at) < ESCORT_SLACK and _staging.size() == _escort_n:
+	var spots := {}
+	for g: AttackerUnit in guns:
+		var back := level.rally_point(0) - g.global_position
+		back.y = 0.0
+		var at := g.global_position + back.normalized() * ESCORT_BACK
+		spots[g.unit_id] = Vector3(at.x, 0.0, at.z)
+	var moved := _staging.size() != _escort_n or spots.size() != _escort_at.size()
+	for id in spots:
+		if not _escort_at.has(id) or _flat_dist(spots[id], _escort_at[id]) >= ESCORT_SLACK:
+			moved = true
+	if not moved:
 		return
-	_escort_at = at
+	_escort_at = spots
 	_escort_n = _staging.size()
-	commander.submit({"type": "move", "units": _staging, "pos": Vector3(at.x, 0.0, at.z), "attack": true})
+	# Even shares: each unit to the nearest gun whose guard isn't full yet.
+	var share := ceili(float(_staging.size()) / guns.size())
+	var groups := {}
+	for id in spots:
+		groups[id] = []
+	for uid in _staging:
+		var u = commander.units.get(uid)
+		if u == null:
+			continue
+		var best = null
+		var best_d := INF
+		for gid in spots:
+			if groups[gid].size() >= share:
+				continue
+			var d := _flat_dist(u.global_position, spots[gid])
+			if d < best_d:
+				best_d = d
+				best = gid
+		if best != null:
+			groups[best].append(uid)
+	for gid in groups:
+		if not groups[gid].is_empty():
+			commander.submit({"type": "move", "units": groups[gid], "pos": spots[gid], "attack": true})
 
 
 ## A standing air vent within `u`'s reach (with GUN_SPARE to spare): the objective is still in its work where it is.
@@ -947,7 +1008,7 @@ func _massed() -> bool:
 
 func _siege_waiting() -> bool:
 	var massed := _massed()
-	if float(policy.siege) <= 0.0 or not massed or level.gates.values().any(func(g): return not g.is_alive()):
+	if float(policy.siege) <= 0.0 or not massed or _open_breach() != "":
 		return false
 	if _siege_from < 0.0:
 		_siege_from = _clock
@@ -980,7 +1041,8 @@ func _gate_to_base(side: String) -> float:
 func _artillery() -> void:
 	_guns = _guns.filter(func(id): return commander.units.has(id))
 	# With an escort (the policy's `escort`), the guns go out with the army: they keep to the base until it has massed.
-	var hold: bool = policy.escort and not _massed() and not level.gates.values().any(func(g): return not g.is_alive())
+	var hold: bool = policy.escort and not _massed() and _open_breach() == ""
+	var vents_first := _vents_first()
 	if not hold:
 		_left_base = true
 	for id in _guns:
@@ -992,9 +1054,16 @@ func _artillery() -> void:
 		if not u.has_bombard():
 			_spot_for_guns(u)
 			continue
-		var t := _in_reach(u, u.stats.bombard_range, func(d): return d.get("station_kind") in ["mg", "artillery"], GUN_SPARE)
+		var t: Node3D = null
 		var spot := Vector3.INF
-		if t == null:
+		# The vents first (`vents_from`, `vents_breach`): one in reach, else a safe spot for one; with neither, the guns.
+		if vents_first:
+			t = _in_reach(u, u.stats.bombard_range, func(d): return d is Structure and d.is_vent, GUN_SPARE)
+			if t == null:
+				spot = _standoff_spot(u, true)
+		if t == null and spot == Vector3.INF:
+			t = _in_reach(u, u.stats.bombard_range, func(d): return d.get("station_kind") in ["mg", "artillery"], GUN_SPARE)
+		if t == null and spot == Vector3.INF:
 			spot = _standoff_spot(u, false)
 			# Out in the siege's band, while a vent is still in its reach, it shifts at most ROAM to another gun; one still out
 			# in the woods (on its way in), or with this face's vents done, walks to the nearest spot however far.

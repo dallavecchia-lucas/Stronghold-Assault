@@ -222,8 +222,11 @@ func _sample() -> void:
 	for side in level.gates:
 		gates[side] = int(level.gates[side].hp)
 	var vent_hp := 0.0
+	var faces := {}
 	for v in level.vents:
 		vent_hp += v.hp
+		var face := String(v.display_name).get_slice(" ", 0).to_lower()
+		faces[face] = int(faces.get(face, 0)) + (1 if v.is_alive() else 0)
 	var squads := {}
 	var squad_heads := 0
 	for s in armory.squads:
@@ -277,7 +280,7 @@ func _sample() -> void:
 			"machines": armory.squads.filter(func(q): return q is DefenderMachine).map(func(q): return [AIDefender.kind_of(q),
 					int(q.global_position.x), int(q.global_position.z), q.get("hunt") != null or q.get("attacker") != null]),
 		},
-		"obj": {"gates": gates, "vents": level.vents_left(), "vent_hp": int(vent_hp)},
+		"obj": {"gates": gates, "vents": level.vents_left(), "vent_hp": int(vent_hp), "faces": faces},
 	}
 	timeline.append(row)
 	_samples += 1

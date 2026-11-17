@@ -9,6 +9,7 @@ extends Node
 ##   xvfb-run -a -s "-screen 0 1280x720x24" godot --path <variant> --resolution 1280x720 --fixed-fps 10 -- \
 ##       --sim=m.json --atk=mass --def=default --seed=1 --sim-ticks=30 --lighting=standard --no-msaa \
 ##       --film=/tmp/stronghold-balance/clips/run1 [--film-clips=10] [--film-gap=45] [--film-len=8] [--film-tag=rigged]
+##       [--film-min-prio=15] [--film-per-kind=0] [--film-start=25] [--film-fps=30]
 ##
 ## Each clip is a folder <dir>/<name>/ of frames (00000.jpg ...) and a meta.json; <dir>/moments.json lists them all.
 
@@ -19,6 +20,10 @@ var max_clips := 10
 var clip_len := 8.0
 ## No clip before this many seconds of match.
 var start_after := 25.0
+## Moments of a lower priority than this are not filmed (`--film-min-prio`): the clips are kept for the big ones.
+var min_prio := 15
+## At most this many clips of one kind (`--film-per-kind`; 0: no limit).
+var per_kind := 0
 var tag := ""
 var out_dir := ""
 var jpg_quality := 0.9
@@ -74,6 +79,10 @@ func _ready() -> void:
 			tag = v
 		elif arg.begins_with("--film-fps="):
 			fps = maxf(v.to_float(), 1.0)
+		elif arg.begins_with("--film-min-prio="):
+			min_prio = v.to_int()
+		elif arg.begins_with("--film-per-kind="):
+			per_kind = v.to_int()
 		elif arg == "--film-bench":
 			bench = true
 		elif arg == "--no-msaa":
@@ -122,6 +131,8 @@ func on_event(type: String, more: Dictionary) -> void:
 func _offer(kind: String, subject, desc: String, prio := -1, extra := {}) -> void:
 	if subject == null or not is_instance_valid(subject):
 		return
+	if per_kind > 0 and int(counts.get(kind, 0)) >= per_kind:
+		return
 	var m := {"kind": kind, "subject": subject, "desc": desc, "t": sim.clock,
 			"prio": (PRIO.get(kind, 20) if prio < 0 else prio) - REPEAT_PENALTY * int(counts.get(kind, 0))}
 	m.merge(extra)
@@ -149,7 +160,7 @@ func _process(delta: float) -> void:
 	queued.sort_custom(func(a, b): return a.prio > b.prio)
 	var best: Dictionary = queued[0]
 	var wait := gap * (0.25 if best.prio >= RARE else 1.0)
-	if sim.clock - _last_end < wait or best.prio < 15:
+	if sim.clock - _last_end < wait or best.prio < min_prio:
 		return
 	queued.clear()
 	_start(best)

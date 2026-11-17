@@ -37,6 +37,8 @@ def main():
     ap.add_argument("--gap", type=float, default=45.0)
     ap.add_argument("--len", type=float, default=8.0)
     ap.add_argument("--start", type=float, default=25.0)
+    ap.add_argument("--min-prio", type=int, default=15, help="no clip of a moment below this priority (film_crew.gd PRIO)")
+    ap.add_argument("--per-kind", type=int, default=0, help="at most this many clips of one kind (0: no limit)")
     ap.add_argument("--tag", default="", help="'rigged' marks the clips as rigged in the index")
     ap.add_argument("--res", default="1280x720")
     ap.add_argument("--driver", default="vulkan", help="vulkan (lavapipe, Forward+) or opengl3")
@@ -67,6 +69,7 @@ def main():
     cmd += ["--", f"--sim={sim_json}", f"--atk={a.atk}", f"--def={a.deff}", f"--seed={a.seed}", "--sim-ticks=30",
             f"--sim-label=film_{a.run}", f"--lighting={a.lighting}", "--no-msaa", f"--film={out}",
             f"--film-clips={a.clips}", f"--film-gap={a.gap}", f"--film-len={a.len}", f"--film-start={a.start}",
+            f"--film-min-prio={a.min_prio}", f"--film-per-kind={a.per_kind}",
             f"--film-fps={a.fps}"]
     if a.match_time > 0:
         cmd.append(f"--match-time={a.match_time}")
