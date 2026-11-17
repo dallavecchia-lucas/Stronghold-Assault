@@ -1142,7 +1142,7 @@ func _artillery() -> void:
 ## A Sniper within `u`'s bombard reach that it sees or that fired in the last SNIPER_TELL seconds (her tracer), or null.
 func _sniper_in_reach(u: AttackerUnit) -> Node3D:
 	var best: Node3D = null
-	var best_d := u.stats.bombard_range * GUN_SPARE
+	var best_d: float = u.stats.bombard_range * GUN_SPARE
 	for d in level.get_tree().get_nodes_in_group("damageable"):
 		if not (d is SniperTrooper) or not d.is_alive():
 			continue
