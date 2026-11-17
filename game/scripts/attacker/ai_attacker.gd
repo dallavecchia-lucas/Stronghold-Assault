@@ -513,6 +513,9 @@ func _launch_wave() -> void:
 	var all_ids := _staging.duplicate()
 	_staging.clear()
 	wave_launched.emit(_wave, _wave_side, all_ids)
+	if _gateless_end():
+		_guard_guns(all_ids)
+		return
 	# Multi-front (the policy's `split`): the wave goes for that many gates at once, a share of it each.
 	var sides := [_wave_side]
 	var k := GATE_SIDES.find(_wave_side)
@@ -568,6 +571,9 @@ func _grouped() -> Array:
 
 ## Sends `ids` at `side`'s gate (or on at the vents, once it is down).
 func _assault(side: String, ids: Array) -> void:
+	if _gateless_end():
+		_guard_guns(ids)
+		return
 	var gate: Structure = level.gates[side]
 	if gate.is_alive():
 		var infantry := []
@@ -650,6 +656,60 @@ func _open_breach() -> String:
 		if not level.gates[side].is_alive() and _face_vents(side) > 0:
 			return side
 	return ""
+
+
+## The air vents left are all on the face with no gate (the north's): no gate leads to them, only the artillery (and the
+## talons) can bring them down.
+func _gateless_end() -> bool:
+	if level.vents_left() <= 0:
+		return false
+	for side in GATE_SIDES:
+		if _face_vents(side) > 0:
+			return false
+	return true
+
+
+## The gateless end (_gateless_end): rather than throw itself at gates that lead nowhere (and pay the defenders for it), the
+## army stands guard round its artillery, ESCORT_BACK straight out from each gun (away from the stronghold), in even shares
+## as _escort_tick: the defenders' tanks and squads that come for the guns meet it. With no gun out, it waits off the north
+## face out of the guns' reach.
+func _guard_guns(ids: Array) -> void:
+	var guns := []
+	for id in _guns:
+		var g = commander.units.get(id)
+		if g != null and g.has_bombard() and not g.is_flying() and not id in _lift:
+			guns.append(g)
+	if guns.is_empty():
+		var at: Vector3 = LevelBuilder.SIDES["north"].dir * float(policy.regroup if float(policy.regroup) > 0.0 else REGROUP_FALLBACK)
+		var far := ids.filter(func(id): return commander.units.has(id) and _flat_dist(commander.units[id].global_position, at) > HOLD_SLACK)
+		if not far.is_empty():
+			commander.submit({"type": "move", "units": far, "pos": at, "attack": true})
+		return
+	var share := ceili(float(ids.size()) / guns.size())
+	var groups := {}
+	for g in guns:
+		groups[g] = []
+	for uid in ids:
+		var u = commander.units.get(uid)
+		if u == null:
+			continue
+		var best = null
+		var best_d := INF
+		for g in guns:
+			if groups[g].size() >= share:
+				continue
+			var d := _flat_dist(u.global_position, g.global_position)
+			if d < best_d:
+				best_d = d
+				best = g
+		if best != null:
+			groups[best].append(uid)
+	for g in groups:
+		var flat := Vector3(g.global_position.x, 0.0, g.global_position.z)
+		var spot := flat + flat.normalized() * ESCORT_BACK
+		var far: Array = groups[g].filter(func(id): return _flat_dist(commander.units[id].global_position, spot) > HOLD_SLACK)
+		if not far.is_empty():
+			commander.submit({"type": "move", "units": far, "pos": spot, "attack": true})
 
 
 ## The live air vents on `side`'s face.
@@ -1006,6 +1066,9 @@ func _reassign_idle() -> void:
 ## Sends `ids` on to the next objective: the air vents once a gate is down (over a face with vents left), else the
 ## standing gate nearest each; with a siege on (_field_hold), to wait off the face out of its guns' reach.
 func _send_on(ids: Array) -> void:
+	if _gateless_end():
+		_guard_guns(ids)
+		return
 	if _open_breach() != "":
 		_push_keep(ids)
 		return
@@ -1061,8 +1124,10 @@ func _escort_tick() -> void:
 	if guns.is_empty():
 		return
 	var spots := {}
+	var gateless := _gateless_end()
 	for g: AttackerUnit in guns:
-		var back := level.rally_point(0) - g.global_position
+		# Behind it, toward the base; in the gateless end (the north face, the far side), straight out from the stronghold.
+		var back := level.rally_point(0) - g.global_position if not gateless else g.global_position
 		back.y = 0.0
 		var at := g.global_position + back.normalized() * ESCORT_BACK
 		spots[g.unit_id] = Vector3(at.x, 0.0, at.z)
