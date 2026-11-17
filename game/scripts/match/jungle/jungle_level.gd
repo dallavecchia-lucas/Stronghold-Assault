@@ -161,8 +161,9 @@ func rally_point(idx: int) -> Vector3:
 
 
 ## The army walks a long way here (550-650 m from the citadel to a gate): the defenders hold for
-## JUNGLE_TIME rather than the classic map's ten minutes.
-const JUNGLE_TIME := 900.0
+## JUNGLE_TIME rather than the classic map's ten minutes. 25 minutes: the match's arc (the defenders' field in the
+## first ten, the first big push on the guns at 10-15, the breach and the raid at 15-20, the end game at 20-25).
+const JUNGLE_TIME := 1500.0
 
 
 func match_time() -> float:
