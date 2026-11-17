@@ -34,7 +34,7 @@ const WARMUP := 5
 const RARE := 60
 ## Priorities of the moments: rare ones win.
 const PRIO := {"vent_down": 100, "gate_down": 100, "raider_inside": 95, "ram_charge": 85, "gate_hit": 70,
-		"helipad_sabotaged": 70, "jet_bomb_run": 65, "bridge_fallen": 60, "talon_bomb_run": 58, "bridge_drop": 55,
+		"helipad_sabotaged": 70, "airlift": 80, "jet_bomb_run": 65, "bridge_fallen": 60, "talon_bomb_run": 58, "bridge_drop": 55,
 		"drone_swarm": 48, "artillery": 46, "elephant_swim": 44, "raft_crossing": 40, "swim_crossing": 38,
 		"flame_burning": 36, "bridge_crossing": 42, "firefight": 30, "squad_lost": 26}
 ## Clips of one kind already filmed lower its priority by this much each, for variety.
@@ -230,6 +230,14 @@ func _poll() -> void:
 			if n > int(_flame_trees.get(s.get_instance_id(), n)) and s.leader:
 				_offer("flame_burning", s.leader, "the Flame Squad burns the forest")
 			_flame_trees[s.get_instance_id()] = n
+	# A transport helicopter setting artillery down at a helipad (AIAttacker._airlift).
+	var fleet: HeloFleet = commander.fleet
+	if fleet:
+		for i in HeloCargo.FLEET_SIZE:
+			var h := fleet.helo_at(i)
+			if h != null and h.out_leg and h.state == TransportHelo.State.DESCEND and "mule" in h.cargo_types():
+				_offer("airlift", h, "a Heavy Lift Helicopter sets %d Mule Artillery down at the %s" % [
+						h.cargo_types().count("mule"), h.dest_name])
 	var drones: DroneBay = match_node.drones
 	if drones:
 		for sw in drones.swarms:
@@ -250,6 +258,9 @@ func _style(kind: String) -> Dictionary:
 			return {"d": 32.0, "h": 7.0, "aim": 5.0, "push": 0.2, "orbit": 12.0, "len": 1.0}
 		"ram_charge":
 			return {"d": 16.0, "h": 3.0, "aim": 1.5, "push": 0.1, "orbit": 10.0, "len": 0.8}
+		"airlift":
+			# The Heavy Lift Helicopter is 56 m long: well back and up, the pad and the mules coming off the ramp in shot.
+			return {"d": 90.0, "h": 24.0, "aim": 4.0, "push": 0.2, "orbit": 16.0, "len": 1.6}
 		"talon_bomb_run", "jet_bomb_run":
 			return {"d": 40.0, "h": 4.0, "aim": 0.0, "push": 0.0, "orbit": 0.0, "len": 0.8, "flyer": true}
 		"drone_swarm":
