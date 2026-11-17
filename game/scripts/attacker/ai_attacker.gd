@@ -208,6 +208,11 @@ const SIEGE_BAND := 250.0
 ## artillery (m, flat): out in the field it hunts the guns from beyond the army's reach.
 const TALON_HUNT := 400.0
 const TANK_ON_GUNS := 260.0
+## Artillery going round the stronghold (_route_step): the circle it keeps to (m from the middle, flat; a face's cannon
+## reaches about 210), the furthest out it goes round, and how far round each step leads it (rad).
+const ROUTE_R := 235.0
+const ROUTE_R_MAX := 300.0
+const ROUTE_STEP := 0.45
 ## A Sniper who fired within this many seconds is given away by her tracer (_sniper_in_reach).
 const SNIPER_TELL := 6.0
 ## The siege (the policy's `siege`) waits only while it has at least this many guns (Mule Artillery, Bison Field Guns).
@@ -1202,10 +1207,26 @@ func _artillery() -> void:
 			spot = _standoff_spot(u, true)
 		if spot == Vector3.INF:
 			continue
-		if _gun_goal.has(id) and _flat_dist(_gun_goal[id], spot) < SPOT_SLACK and not u.is_idle():
+		# Round the stronghold to another face, it keeps out of the guns' reach (_route_step).
+		var go := _route_step(u.global_position, spot)
+		if _gun_goal.has(id) and _flat_dist(_gun_goal[id], go) < SPOT_SLACK and not u.is_idle():
 			continue
-		_gun_goal[id] = spot
-		commander.submit({"type": "move", "units": [id], "pos": spot, "attack": false})
+		_gun_goal[id] = go
+		commander.submit({"type": "move", "units": [id], "pos": go, "attack": false})
+
+
+## Where artillery at `from` heads next on its way to `to`: straight there once `to` is within ROUTE_STEP (rad) of it round
+## the middle of the map; otherwise to a point ROUTE_STEP further round toward it, on a circle of ROUTE_R round the middle
+## (or its own distance out, up to ROUTE_R_MAX): left to the navmesh, the way round hugs the stronghold's foot, under
+## every gun on the faces it passes.
+func _route_step(from: Vector3, to: Vector3) -> Vector3:
+	var a_from := atan2(from.x, from.z)
+	var diff := angle_difference(a_from, atan2(to.x, to.z))
+	if absf(diff) <= ROUTE_STEP:
+		return to
+	var r := clampf(Vector2(from.x, from.z).length(), ROUTE_R, ROUTE_R_MAX)
+	var a := a_from + signf(diff) * ROUTE_STEP
+	return Vector3(sin(a) * r, 0.0, cos(a) * r)
 
 
 ## A Sniper within `u`'s bombard reach that it sees or that fired in the last SNIPER_TELL seconds (her tracer), or null.
