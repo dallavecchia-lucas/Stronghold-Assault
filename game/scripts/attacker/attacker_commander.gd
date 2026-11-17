@@ -90,7 +90,11 @@ signal bridge_alarm(bridge: FoldingBridge, on: bool)
 signal bridge_fallen(bridge: FoldingBridge)
 
 const UNIT_CAP := 60
-const BASE_INCOME := 12.0
+## The army's war chest: every credit it gets, at the start of the match. There is no income: what it spends on units
+## that die is gone, and it has to last until the vents are down (or the clock runs out).
+const START_CREDITS := 18000.0
+## Credits a second on top (none: the war chest is all there is; kept for anything that pays out during a match).
+const BASE_INCOME := 0.0
 ## How far outside the edge of the mass scouting rhinos keep.
 const SCOUT_MARGIN := 5.0
 ## Seconds between handing out the kangaroos' supplies.
@@ -103,7 +107,7 @@ const FERRY_CELL := 20.0
 const SKILL_COMMANDS := ["cluster", "bombard", "setup", "strafe", "bomb", "smoke", "flash", "missile", "ram", "ping",
 		"sneak", "blast", "nest", "trap"]
 
-var supply := 250.0
+var supply := START_CREDITS
 var income := BASE_INCOME
 ## The production line ("produce"): [{"unit": type_id}], the front one being built; build_left of
 ## build_total seconds to go on it. Units on the line count toward UNIT_CAP; with the army at its cap the front one waits.
@@ -156,7 +160,7 @@ func _process(delta: float) -> void:
 		_update_heal()
 
 
-## Supply a second (the outposts bring in nothing).
+## Supply a second (none: the war chest is all there is; the outposts bring in nothing).
 func income_rate() -> float:
 	return income
 

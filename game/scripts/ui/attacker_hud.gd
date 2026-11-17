@@ -510,10 +510,12 @@ func _update_banner() -> void:
 	var queued := commander.production.size()
 	var cap := AttackerCommander.UNIT_CAP
 	var army_text := "ARMY %d/%d" % [army, cap] if queued == 0 else "ARMY %d+%d/%d" % [army, queued, cap]
-	_banner.left = ["SPAWN CREDITS", str(int(commander.supply)), UIKit.WARN, "+%.1f/s  ·  %s" % [commander.income_rate(), army_text],
+	var rate := commander.income_rate()
+	_banner.left = ["SPAWN CREDITS", str(int(commander.supply)), UIKit.WARN,
+			("+%.1f/s  ·  %s" % [rate, army_text]) if rate > 0.0 else army_text,
 			UIKit.DANGER if army + queued >= cap else StatusBanner.CAPTION]
-	_banner.left_tip = "Spawn credits: units are paid for when they go on the production line\n+%.1f a second · army %d of %d (%d on the line)" \
-			% [commander.income_rate(), army, cap, queued]
+	_banner.left_tip = ("Spawn credits: units are paid for when they go on the production line\n%s · army %d of %d (%d on the line)"
+			% ["+%.1f a second" % rate if rate > 0.0 else "The war chest for the whole match: no more come in", army, cap, queued])
 	var total := level.vents.size()
 	var down := total - level.vents_left()
 	_banner.right = ["VENTS DESTROYED", "%d / %d" % [down, total], UIKit.GOOD if down >= total and total > 0 else Color.WHITE,
@@ -609,7 +611,8 @@ func _update_base() -> void:
 	_mug.tint = Color(0.12, 0.16, 0.14, 0.95)
 	_mug.tooltip_text = "Click: look at it"
 	_mug_name.text = BASE_NAME
-	_mug_hp_text.text = "Your base · +%.1f credits/s" % commander.income_rate()
+	_mug_hp_text.text = "Your base · +%.1f credits/s" % commander.income_rate() if commander.income_rate() > 0.0 \
+			else "Your base · %d credits left" % int(commander.supply)
 	var queued := commander.production.size()
 	_base_text.text = "Every unit comes out here\n%s" % ("%d on the line" % queued if queued > 0 else "Nothing on the line")
 	for type_id in _base_slots:

@@ -93,6 +93,7 @@ func _ready() -> void:
 		ai_attacker.commander = commander
 		ai_attacker.level = level
 		ai_attacker.drones = drones
+		commander.supply = AttackerCommander.START_CREDITS * GameConfig.ai_income_mult()
 		commander.income = AttackerCommander.BASE_INCOME * GameConfig.ai_income_mult()
 	else:
 		var ac := AttackerController.new()

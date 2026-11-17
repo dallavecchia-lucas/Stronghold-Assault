@@ -27,7 +27,8 @@ var drones: DroneBay
 
 ## How it plays (the balance simulator's `--atk=`: SimDirector): DEFAULT_POLICY with a named POLICIES entry or a JSON file's
 ## keys laid over it. The default is the CPU attacker as it always played.
-##   income_mult       its income against a player's (AttackerCommander.BASE_INCOME); null: the difficulty's
+##   income_mult       its war chest against a player's (AttackerCommander.START_CREDITS, and any income); null: the
+##                     difficulty's
 ##   first_wave_delay  seconds before it spawns anything
 ##   sides             which gate a wave goes for: "random", "south" / "east" / "west", "rotate" (each in turn), "stick" (one
 ##                     picked at random and kept until it falls), "weakest" (the standing gate with the least health; a

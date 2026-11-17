@@ -100,7 +100,7 @@ func _ready() -> void:
 		seed(sim_seed)
 
 
-## CPU attacker income multiplier for the chosen difficulty.
+## CPU attacker war chest multiplier for the chosen difficulty (its starting credits, and any income, times this).
 func ai_income_mult() -> float:
 	return [0.75, 1.0, 1.4][difficulty]
 
