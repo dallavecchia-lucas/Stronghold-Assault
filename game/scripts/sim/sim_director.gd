@@ -70,6 +70,7 @@ func setup(m: Node) -> void:
 	armory = DefenderArmory.new()
 	armory.name = "DefenderArmory"
 	armory.level = level
+	armory.watch(commander)
 	m.armory = armory
 
 	ai_attacker = AIAttacker.new()
@@ -267,7 +268,7 @@ func _sample() -> void:
 			"artillery": _artillery_rows(),
 		},
 		"def": {
-			"credits": int(armory.credits), "spent": int(ai_defender.spent), "squads": squads, "squad_heads": squad_heads,
+			"credits": int(armory.credits), "earned": int(armory.earned), "spent": int(ai_defender.spent), "squads": squads, "squad_heads": squad_heads,
 			"squads_lost": _def.squads_lost,
 			"garrison": int(g.get("alive", 0)), "garrison_field": int(g.get("field", 0)), "garrison_deck": int(g.get("deck", 0)),
 			"guns_manned": int(g.get("guns", 0)), "garrison_spawned": int(gs.get("spawned", 0)), "garrison_lost": int(gs.get("deaths", 0)),

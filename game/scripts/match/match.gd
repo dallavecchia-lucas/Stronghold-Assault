@@ -82,6 +82,7 @@ func _ready() -> void:
 		armory = DefenderArmory.new()
 		armory.name = "DefenderArmory"
 		armory.level = level
+		armory.watch(commander)
 		var dc := DefenderController.new()
 		dc.level = level
 		dc.armory = armory
