@@ -1070,8 +1070,8 @@ func _gate_to_base(side: String) -> float:
 	return _flat_dist(level.gates[side].global_position, level.rally_point(0))
 
 
-## The artillery standing off (the policy's `standoff`): each Mule Artillery and Bison Field Gun works on its own, the
-## guns first. A deck or roof gun in its reach: it stops (a mule sets its gun up) and shells it whenever it has reloaded.
+## The artillery standing off (the policy's `standoff`): each Mule Artillery and Bison Field Gun works on its own, a
+## Sniper or a Hover Tank in its reach first, then the guns. A deck or roof gun in its reach: it stops (a mule sets its gun up) and shells it whenever it has reloaded.
 ## None, but a safe firing spot for one within ROAM of it (_standoff_spot): it packs up and goes there. Neither: it
 ## shells the rest of what _gun_target takes from where it is, and with nothing at all to shell (a mule packing up
 ## GUN_IDLE seconds after its last target) goes to a safe spot for a vent (`shell_vents`), or holds. Its giraffes walk
@@ -1095,6 +1095,9 @@ func _artillery() -> void:
 		# A Sniper in its reach comes first: she picks the artillery off from out of the guns' reach. Fog hides her, but
 		# not her tracers: one that has fired lately is shelled where she shoots from, as a player would.
 		var t := _sniper_in_reach(u)
+		# ... then a Hover Tank in its reach: it hunts the artillery from beyond the army's reach, and sits still to shoot.
+		if t == null:
+			t = _in_reach(u, u.stats.bombard_range, func(d): return d.get("station_kind") == "tank", GUN_SPARE)
 		var spot := Vector3.INF
 		# The vents first (`vents_from`, `vents_breach`): one in reach, else a safe spot for one; with neither, the guns.
 		if t == null and vents_first:
