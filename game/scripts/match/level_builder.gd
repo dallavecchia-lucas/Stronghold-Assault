@@ -355,6 +355,9 @@ func _build_stronghold() -> void:
 			n.free()
 	for mi in _stronghold.find_children("*", "MeshInstance3D", true, false):
 		_add_collision(mi)
+	# Lights, steel, pipes, signs and props inside (what stands where people walk collides, so the navmesh goes
+	# round it).
+	StrongholdInterior.build(_stronghold, jungle)
 
 
 ## Static trimesh collision for one of the stronghold's meshes.
@@ -824,7 +827,8 @@ func _build_stations() -> Array:
 ## marker, in the marker's frame (x runs along the hall), facing the hall's spawn ramp.
 func squad_post(face: String, offset: Vector3) -> Transform3D:
 	var post := _marker("SPAWN_%s%d" % [face, GATE_BAY])
-	return Transform3D(Basis.looking_at(post.global_basis.x), post.global_transform * offset)
+	# On the hall's floor (StrongholdInterior's slab over the rock).
+	return Transform3D(Basis.looking_at(post.global_basis.x), post.global_transform * offset + Vector3.UP * StrongholdInterior.HALL_TOP)
 
 
 ## A real weapon on every mount no station uses: on each gun deck an Orbital Sentry Gun on every bay's first mount and an

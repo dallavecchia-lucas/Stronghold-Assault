@@ -222,7 +222,8 @@ uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap_anisotropic, re
 uniform sampler2D arm_tex : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform vec3 tint = vec3(1.0);
 uniform float tile = 1.6;
-// 0: steel, 1: hazard paint, 2: hazard stripes.
+// 0: steel, 1: hazard paint, 2: hazard stripes, 3: paint the colour of the vertices (StrongholdInterior's pipes,
+// wall bands and floor lines).
 uniform int finish = 0;
 %TRIPLANAR%
 void fragment() {
@@ -242,8 +243,9 @@ void fragment() {
 	float rough = o.g;
 	if (finish > 0) {
 		// The scan is white paint over rust: where the paint is, it is hazard orange (or the stripes).
-		float paint = smoothstep(0.32, 0.52, luma(a));
-		vec3 colour = vec3(0.8, 0.23, 0.02);
+		// (The vertex-coloured paint is newer, less worn: more of it is left on the rust.)
+		float paint = finish == 3 ? smoothstep(0.1, 0.28, luma(a)) : smoothstep(0.32, 0.52, luma(a));
+		vec3 colour = finish == 3 ? COLOR.rgb : vec3(0.8, 0.23, 0.02);
 		if (finish == 2) {
 			float band = fract((wpos.x + wpos.z) * 1.4 + wpos.y * 1.4);
 			colour = band < 0.5 ? vec3(0.85, 0.55, 0.01) : vec3(0.025, 0.025, 0.025);
@@ -282,7 +284,7 @@ static func apply(root: Node3D, jungle: bool) -> void:
 
 
 ## The material standing in for the model's `key` (Rock, Concrete, ConcreteDark, Metal, HatchOrange,
-## HatchStripes); null for any other.
+## HatchStripes; and Paint, flaking paint the colour of the mesh's vertices); null for any other.
 static func material(key: String, jungle: bool) -> ShaderMaterial:
 	var cache := "%s_%s" % [key, jungle]
 	if _mats.has(cache):
@@ -322,6 +324,8 @@ static func material(key: String, jungle: bool) -> ShaderMaterial:
 			m = _metal(PAINT, Vector3.ONE, 1.2, 1)
 		"HatchStripes":
 			m = _metal(PAINT, Vector3.ONE, 1.2, 2)
+		"Paint":
+			m = _metal(PAINT, Vector3.ONE, 1.2, 3)
 	if m:
 		_mats[cache] = m
 	return m

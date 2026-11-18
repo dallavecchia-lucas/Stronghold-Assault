@@ -6,8 +6,9 @@ extends Node3D
 ##
 ## Each view is drawn for FRAMES frames (`--frames=N`) before it is saved (the GI, the fog and the reflections
 ## settle), and nothing is drawn in between. The classic field's views first; `--jungle` takes the Jungle Keep's instead.
-## `--lighting=standard` (GameConfig) for the standard lighting. `--no-msaa` for a software GPU (lavapipe), which
-## leaves the depth texture the water reads empty when it is multisampled. To see what draws what:
+## `--interior` takes the views inside the stronghold instead (the same on either map: the stronghold stands in the
+## same place on both). `--lighting=standard` (GameConfig) for the standard lighting. `--no-msaa` for a software GPU
+## (lavapipe), which leaves the depth texture the water reads empty when it is multisampled. To see what draws what:
 ## `--env-off=ssr,sdfgi,ssil,ssao,volumetric_fog,glow` switches environment effects off, `--hide=Water,...` hides
 ## nodes by name, `--probe=x,y` prints the meshes along that pixel's ray.
 
@@ -33,6 +34,20 @@ const JUNGLE := {
 	"forest_floor": [Vector3(-420, 1.7, 230), Vector3(-430, 0.5, 215), 68.0, true],
 	"quarry": [Vector3(-398, 26, 8), Vector3(-505, 6, -40), 60.0],
 }
+## Inside the stronghold (its core at the origin, face S toward +Z): where the garrison and the raiders go.
+const INTERIOR := {
+	"spawn_hall": [Vector3(-15, 1.7, 59.4), Vector3(6, 2.2, 57.6), 70.0],
+	"spawn_hall_up": [Vector3(8, 1.6, 56.4), Vector3(-12, 4.6, 58.4), 72.0],
+	"core_corridor": [Vector3(1.2, 1.7, 52), Vector3(-0.2, 1.6, 20), 68.0],
+	"core_hall": [Vector3(11, 2.0, 11), Vector3(-6, 3.0, -6), 74.0],
+	"core_hall_up": [Vector3(0.8, 1.7, 15.5), Vector3(0, 4.0, -4), 74.0],
+	"gun_ring": [Vector3(-12, 9.8, 60.6), Vector3(12, 9.4, 60.4), 70.0],
+	"roof_ring": [Vector3(10, 16.8, 60.4), Vector3(-12, 16.4, 60.6), 70.0],
+	"junction": [Vector3(4.6, 4.5, 66.4), Vector3(-3.0, 1.2, 68.0), 70.0],
+	"tunnel": [Vector3(-4.0, 1.8, 70.0), Vector3(-4.0, 1.2, 80.0), 70.0],
+	"stairs": [Vector3(4.8, 9.6, 63.2), Vector3(4.8, 8.0, 70.0), 70.0],
+	"lift_corridor": [Vector3(45.5, 1.7, 45.5), Vector3(20, 1.4, 20), 70.0],
+}
 const FRAMES := 24
 
 var level: LevelBuilder
@@ -52,12 +67,15 @@ var hide := []
 
 func _ready() -> void:
 	var jungle := false
+	var interior := false
 	var only := []
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--shots="):
 			shots_dir = arg.get_slice("=", 1)
 		elif arg == "--jungle":
 			jungle = true
+		elif arg == "--interior":
+			interior = true
 		elif arg.begins_with("--only="):
 			only = arg.get_slice("=", 1).split(",")
 		elif arg.begins_with("--frames="):
@@ -71,7 +89,7 @@ func _ready() -> void:
 		elif arg.begins_with("--probe="):
 			var xy := arg.get_slice("=", 1).split(",")
 			probe = Vector2(xy[0].to_float(), xy[1].to_float())
-	views = JUNGLE if jungle else CLASSIC
+	views = INTERIOR if interior else JUNGLE if jungle else CLASSIC
 	_names = views.keys().filter(func(k): return only.is_empty() or k in only)
 	RenderingServer.render_loop_enabled = false
 	level = JungleLevel.new() if jungle else LevelBuilder.new()
@@ -82,6 +100,11 @@ func _ready() -> void:
 		s.process_mode = Node.PROCESS_MODE_DISABLED
 	for t in level.aa_turrets:
 		t.process_mode = Node.PROCESS_MODE_DISABLED
+	# Inside, the outposts' names (drawn through everything) would show through the walls.
+	if interior:
+		for l in level.find_children("*", "Label3D", true, false):
+			if (l as Label3D).no_depth_test:
+				(l as Label3D).visible = false
 	for name in hide:
 		for c in level.find_children(name, "", true, false):
 			if c is Node3D:
