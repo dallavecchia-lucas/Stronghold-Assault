@@ -6,9 +6,10 @@ extends MultiMeshInstance3D
 ## each clump in its world cell (a hash of the cell picks its spot, its turn, its size, so the grass stays put as
 ## the grid moves), its blades spread over the cell so the field has no tufts, on the ground's height (a height
 ## map on the Jungle Keep, the flat field on the classic map), and only where the ground is grass: not on the
-## tracks worn up the lanes, the bare patches, the scree, the banks and the water, the rock, or under a helipad's
-## deck. Where the grass gives out it thins blade by blade, the last ones shorter. The blades sway in gusts of
-## wind, lighter toward the tip, drier where the ground's grass is sun-dried, a few dead and straw-coloured, the
+## tracks worn up the lanes, the bare patches, the scree, the banks and the water, the rock, under a helipad's
+## deck, or inside the stronghold (behind its faces' fronts: its halls, corridors and tunnels have floors). Where
+## the grass gives out it thins blade by blade, the last ones shorter. The blades sway in gusts of wind, lighter
+## toward the tip, drier where the ground's grass is sun-dried, a few dead and straw-coloured, the
 ## light shining through them and a sheen on them. They thin away toward the grid's edge (the ground's texture
 ## carries on), and the field is hidden once the camera is high enough that blades would be specks. The CPU only
 ## moves the grid; on the GPU only the clumps in the field and in sight are worked out, the rest fold to nothing
@@ -50,6 +51,8 @@ uniform float water_y = -10000.0;
 uniform vec4 lanes[4];
 uniform int lane_count = 0;
 uniform float mountain_half = 0.0;
+// Half the square behind the bunkers' fronts: no grass in there, on either map.
+uniform float bunker_half = 0.0;
 // No grass under these (centre xz, half size xz; yaw in lots_yaw).
 uniform vec4 lots[8];
 uniform float lots_yaw[8];
@@ -135,6 +138,10 @@ void vertex() {
 			vec2 q = abs(p) - vec2(mountain_half);
 			float foot = length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0);
 			grass *= smoothstep(4.0, 10.0, foot + (m3 - 0.5) * 4.0);
+		}
+		vec2 qb = abs(p) - vec2(bunker_half);
+		if (max(qb.x, qb.y) < 0.0) {
+			grass = 0.0;
 		}
 		for (int i = 0; i < 8; i++) {
 			if (i >= lot_count) {
@@ -266,7 +273,10 @@ func _setup(level: LevelBuilder, terrain: JungleTerrain) -> void:
 		_mat.set_shader_parameter("lanes", lanes)
 		_mat.set_shader_parameter("lane_count", mini(lanes.size(), 4))
 		_mat.set_shader_parameter("mountain_half", LevelBuilder.MOUNTAIN_HALF)
-	# No grass growing up through the helipads' decks.
+	# No grass growing up through the stronghold's floors (the Jungle Keep's clearing is grass right up to its faces and
+	# on under the mountain) ...
+	_mat.set_shader_parameter("bunker_half", LevelBuilder.FACE_DIST - 2.0)
+	# ... or the helipads' decks.
 	var lots: Array[Vector4] = []
 	var yaws := PackedFloat32Array()
 	for b: AttackerBase in level.bases.slice(0, 8):
