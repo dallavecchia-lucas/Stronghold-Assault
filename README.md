@@ -273,6 +273,21 @@ godot --path game --headless res://scenes/dev/fx_showcase.tscn -- --test        
 
 Add `--lighting=standard` after the `--` to see it without the ray-traced lighting.
 
+### Main menu
+
+The title screen (`game/scenes/main_menu.tscn`) is a live feed from orbit: the Earth holds still while a war burns across its red conflict zones (the texture's red flickers as fire, brighter on the night side; the hotspots, found in the texture when the menu opens, flash with explosions and shockwave rings; missiles arc between them), an alien mothership circles it slowly on a tilted orbit (passing low across the near side, its red underglow sweeping the clouds, then behind the globe), and the 3D title swivels gently from side to side. A tracking reticle follows the mothership while it is in sight. The 3D scene is `MenuBackdrop` (`game/scripts/ui/menu_backdrop.gd`); the menu, the overlay and the HUD are `game/scripts/ui/main_menu.gd`. Arrow keys move between entries and step the settings left and right; Enter confirms.
+
+Its three Meshy models (`assets_src/menu/`: the Earth, the mothership and the title logo) were processed by `process_prop.py`:
+
+```sh
+python3 tools/gltf/process_prop.py --input assets_src/menu/conflict_earth/conflict_earth_meshy.glb \
+    --output game/assets/menu/conflict_earth/conflict_earth.glb --size 2048 --quality 90
+python3 tools/gltf/process_prop.py --input assets_src/menu/title_logo/title_logo_meshy.glb \
+    --output game/assets/menu/title_logo/title_logo.glb --size 2048 --quality 90
+python3 tools/gltf/process_prop.py --input assets_src/menu/stonebound_ark/stonebound_ark_meshy.glb \
+    --output game/assets/menu/stonebound_ark/stonebound_ark.glb --size 1024 --quality 88
+```
+
 ### Intro cinematic
 
 The game opens with a ~3.5 minute intro (`game/scenes/intro.tscn`, built in `game/scripts/intro/intro.gd`); any key skips it, and the main menu has a **Watch Intro** button. Lore cards, shots and lighting cues are timed to the score in a table at the top of the script.
