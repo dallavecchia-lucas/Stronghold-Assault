@@ -32,8 +32,9 @@ var fps := 30.0
 ## Frames drawn with the world all but frozen before a clip's first saved frame (shadows, exposure, the TAA settle).
 const WARMUP := 5
 const RARE := 60
-## Priorities of the moments: rare ones win.
-const PRIO := {"vent_down": 100, "gate_down": 100, "raider_inside": 95, "ram_charge": 85, "gate_hit": 70,
+## Priorities of the moments: rare ones win. A raider inside makes a poor shot (in a tunnel or up a wall the camera
+## outside ends up against the rock or the concrete), so it comes low.
+const PRIO := {"vent_down": 100, "gate_down": 100, "raider_inside": 40, "ram_charge": 85, "gate_hit": 70,
 		"helipad_sabotaged": 70, "airlift": 80, "jet_bomb_run": 65, "bridge_fallen": 60, "talon_bomb_run": 58, "bridge_drop": 55,
 		"drone_swarm": 48, "artillery": 46, "elephant_swim": 44, "raft_crossing": 40, "swim_crossing": 38,
 		"flame_burning": 36, "bridge_crossing": 42, "firefight": 30, "squad_lost": 26}
