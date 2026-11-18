@@ -70,21 +70,29 @@ func _process(delta: float) -> void:
 # --- menu ---------------------------------------------------------------------------------------------
 
 func _build_menu() -> void:
-	# A shade down the left so the menu reads over the globe and the stars.
-	var shade := TextureRect.new()
-	shade.set_anchors_preset(Control.PRESET_LEFT_WIDE)
-	shade.offset_right = 900
+	# A shade down the left so the menu reads over the globe and the stars. It stops short of the
+	# title above the menu: the 3D logo is drawn under everything 2D, and would be dimmed by it.
+	var shade := UIKit.full_rect(ColorRect.new()) as ColorRect
 	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var grad := Gradient.new()
-	grad.set_color(0, Color(0.0, 0.01, 0.03, 0.82))
-	grad.set_color(1, Color(0.0, 0.01, 0.03, 0.0))
-	grad.add_point(0.55, Color(0.0, 0.01, 0.03, 0.45))
-	var gt := GradientTexture2D.new()
-	gt.gradient = grad
-	gt.width = 256
-	gt.height = 4
-	shade.texture = gt
-	shade.stretch_mode = TextureRect.STRETCH_SCALE
+	var sm := ShaderMaterial.new()
+	var ss := Shader.new()
+	ss.code = """
+shader_type canvas_item;
+uniform float top = 340.0;
+uniform float width = 900.0;
+varying vec2 p;
+void vertex() {
+	p = VERTEX;
+}
+void fragment() {
+	float x = smoothstep(width, 0.0, p.x);
+	float y = smoothstep(top - 60.0, top + 140.0, p.y);
+	COLOR = vec4(0.0, 0.01, 0.03, 0.8 * x * x * y);
+}
+"""
+	sm.shader = ss
+	sm.set_shader_parameter("top", MENU_TOP - 60.0)
+	shade.material = sm
 	add_child(shade)
 
 	var box := VBoxContainer.new()
@@ -299,12 +307,18 @@ func _build_overlay() -> void:
 	s.code = """
 shader_type canvas_item;
 
+uniform vec2 logo_uv = vec2(0.22, 0.24);
+uniform vec2 logo_half = vec2(0.2, 0.16);
+
 float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 
 void fragment() {
 	vec2 uv = SCREEN_UV;
 	vec2 c = (uv - 0.5) * vec2(1.3, 1.0);
 	float vig = smoothstep(0.42, 1.0, length(c) * 1.2);
+	// Spare the title (top left, over the menu): the 3D logo lies under this overlay.
+	vec2 l = (uv - logo_uv) / logo_half;
+	vig *= smoothstep(0.7, 1.25, length(l));
 	float scan = 0.5 + 0.5 * sin(FRAGCOORD.y * 2.0);
 	float roll = smoothstep(0.0, 0.04, fract(uv.y * 0.6 - TIME * 0.05)) * (1.0 - smoothstep(0.04, 0.12, fract(uv.y * 0.6 - TIME * 0.05)));
 	float grain = hash(FRAGCOORD.xy + fract(TIME) * 100.0);
@@ -314,6 +328,12 @@ void fragment() {
 """
 	m.shader = s
 	fx.material = m
+	var place := func() -> void:
+		var view := get_viewport_rect().size
+		m.set_shader_parameter("logo_uv", MenuBackdrop.LOGO_CENTER / view)
+		m.set_shader_parameter("logo_half", Vector2(MenuBackdrop.LOGO_WIDTH * 0.55, MenuBackdrop.LOGO_WIDTH * 0.3) / view)
+	place.call()
+	get_viewport().size_changed.connect(place)
 	add_child(fx)
 
 
