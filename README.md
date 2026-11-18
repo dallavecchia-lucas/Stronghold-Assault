@@ -257,7 +257,7 @@ A blast (`FX.blast`, `Combat.explode`) is all of it: the flash and its light, a 
   - **Lit**: a pendant lamp under every A-frame of the spawn halls, strip lights between the steel portal frames of the corridors and the rings, a lamp in every junction, stair shaft and ground tunnel, lamps under the core hall's catwalk, a floodlight from each side aimed at the holotable and a ring lamp over it (the floodlights and the ring lamp cast shadows; the rest don't, and fade out past 45 m), a red beacon inside every gate, a lit sign over every door off the rings. Every lamp has a glowing fixture, so the light reads even where its light has faded.
   - **Floors**: a concrete slab over the ground or rock under every hall, corridor, ring and tunnel. The spawn halls' floor was the mountain's rock, rising from 0.15 m at their front to 0.28 m at their back (and bare ground on some faces): their slab is a floor of its own 0.3 m up (`HALL_TOP`), which collides and is what the navmesh is baked on, running down to the core corridor on a 3 m ramp; the squads' posts in the halls (`LevelBuilder.squad_post`) stand on it. Yellow walkway and edge lines, hazard stripes at the foot of the spawn ramps, in the tunnels, at the lifts and the core's doors, amber guide studs along the corridors.
   - **Steel and pipes**: A-frames with collar ties up the spawn halls' slopes, yellow handrails up both sides of every spawn ramp (they collide: with the hall's floor raised, a ramp's side near its foot came within a step of it, and soldiers taking that step got stuck; a ramp is walked onto from its foot only), portal frames along the corridors and rings, pilasters, a catwalk with a railing and a beam grid in the core hall; water, gas and fire-main pipes along the halls, corridors and rings; kick plates, the face's band and striped door frames along the walls.
-  - **Props** (`game/assets/stronghold/deco`, Meshy models, see the asset table): crates, gas bottles, generators, lockers and consoles along the spawn halls' walls (a run picked at random for every stretch between two ramps, a metre clear of the ramps' sides and 6 m clear of the corridor's mouth, where everyone coming from the core fans out to the ramps; each set back into the slope as far as its height lets it; nothing at the hall's east end, where the last bay's ramp comes down against the wall), consoles round the holotable and along the core hall; radios on the walls; conduit panels on the halls' slopes and on the corridors' and rings' ceilings, blowers on the end walls and the core hall's walls, machinery over the core hall's doors and hanging from its ceiling.
+  - **Props** (`game/assets/stronghold/deco`, Meshy models, see the asset table): crates, gas bottles, generators, lockers and consoles along the spawn halls' walls (a run picked at random for every stretch between two ramps, a metre clear of the ramps' sides and 6 m clear of the corridor's mouth, where everyone coming from the core fans out to the ramps; each set back into the slope as far as its height lets it; nothing at the hall's east end, where the last bay's ramp comes down against the wall), consoles round the holotable and along the core hall; radios on the walls; conduit runs (strips of pipes and wires, the pipes facing out) along the halls' slopes, high on the corridors' walls, on the core hall's walls and on the rings' ceilings, blowers on the end walls and the core hall's walls, machinery over the core hall's doors and hanging from its ceiling.
   - **The core hall**: a holotable in the middle where the reactor stood, a hologram of the mountain turning over it (scan lines, a flicker, a grid), four consoles round it.
   - **Signs**: the bays' numbers by the spawn ramps, SPAWN HALL / CORE / SECTOR / GATE / LIFT, the way to the core and back along the corridors, DECK and ROOF over the rings' doors and the bay on the wall facing each.
 
@@ -1039,7 +1039,7 @@ npx @gltf-transform/cli weld t3.glb game/assets/environment/majestic_oak/majesti
 | forward_helipad_base | the attackers' Forward Helipad Bases (`AttackerBase`, 14.7 m to the mast tips: the deck 39 by 30 m, its pad's white touchdown square 13.4 by 12.2 m, room for a transport helicopter). A base can be bigger (`scale_factor`): the Jungle Keep's Outpost is 5.2 times it, its pad 70 by 63 m, room for the Heavy Lift Helicopter |
 | violet_fortress | the Jungle Keep's prison (`JungleLevel`, 42 m to the top of the watchtower) |
 | mobile_command_citadel | the Jungle Keep's main spawn, the Mobile Command Citadel (`JungleLevel`, 50 m to the top of its masts: a land carrier with the army aboard) |
-| stronghold deco (`game/assets/stronghold/deco`: deco_1, deco_2, misc_deco_1-4, wall_deco_1-7) | the stronghold's insides (`StrongholdInterior`): deco_1 a console, deco_2 an armoured locker, misc_deco_1 gas bottles, misc_deco_2 a generator, misc_deco_3 stacked crates, misc_deco_4 a wall radio, wall_deco_1-4 conduit panels (walls and ceilings), wall_deco_5 a blower, wall_deco_6 and wall_deco_7 machinery (walls and ceilings) |
+| stronghold deco (`game/assets/stronghold/deco`: deco_1, deco_2, misc_deco_1-4, wall_deco_1-7) | the stronghold's insides (`StrongholdInterior`): deco_1 a console, deco_2 an armoured locker, misc_deco_1 gas bottles, misc_deco_2 a generator, misc_deco_3 stacked crates, misc_deco_4 a wall radio, wall_deco_1-4 conduit runs (walls and ceilings: the strip of pipes or wires each was meant to be, cut out of the rest by `tools/gltf/chop_strip.py`), wall_deco_5 a blower, wall_deco_6 and wall_deco_7 machinery (walls and ceilings) |
 | tow_platform | the pontoon raft every hippo and elephant carries on the Jungle Keep (`TowPlatform`, 6 m long: a deck on six float drums), cut into its pieces by `split_raft.py` (below) |
 
 Without Node.js at hand, `tools/gltf/process_prop.py` does the same (pivot at the bottom centre, textures fitted to 1024 px and re-encoded as JPEG at 85) on numpy and Pillow; it is how the helipad, the prison, the citadel and the tow rafts were processed (the prison and the citadel with `--size 2048`: they are big):
@@ -1059,10 +1059,21 @@ python3 tools/gltf/process_prop.py --input assets_src/structures/mobile_command_
 The stronghold's deco props (`assets_src/stronghold_deco/`) the same way, each at 1024 px (`StrongholdInterior` turns, scales and places them):
 
 ```sh
-for n in deco_1 deco_2 misc_deco_1 misc_deco_2 misc_deco_3 misc_deco_4 wall_deco_1 wall_deco_2 wall_deco_3 wall_deco_4 \
-        wall_deco_5 wall_deco_6 wall_deco_7; do
+for n in deco_1 deco_2 misc_deco_1 misc_deco_2 misc_deco_3 misc_deco_4 wall_deco_5 wall_deco_6 wall_deco_7; do
     python3 tools/gltf/process_prop.py --input assets_src/stronghold_deco/$n/${n}_meshy.glb \
         --output game/assets/stronghold/deco/$n.glb
+done
+```
+
+wall_deco_1-4 are each meant as one strip of pipes or wires, but Meshy made them boxes of panels: the strip along the model's front edge (facing +Z) and side frames, a back plate and loose bars round it. `tools/gltf/chop_strip.py` keeps the strip only: the model's connected parts whose middle lies in front of a cut at z = CUT, clipped exactly at it (the parts behind it go), its pivot at the middle of its flat back, which hangs against the wall. The cut for each (in process_prop.py's units, about a metre across): 0.19, 0.26, 0.165, 0.28 (wall_deco_1 and 4 had a strip front and back, mirror images: the front one is kept):
+
+```sh
+for spec in 1:0.19 2:0.26 3:0.165 4:0.28; do
+    n=${spec%%:*}
+    python3 tools/gltf/process_prop.py --input assets_src/stronghold_deco/wall_deco_$n/wall_deco_${n}_meshy.glb \
+        --output /tmp/wall_deco_$n.glb
+    python3 tools/gltf/chop_strip.py --input /tmp/wall_deco_$n.glb --cut ${spec##*:} \
+        --output game/assets/stronghold/deco/wall_deco_$n.glb
 done
 ```
 

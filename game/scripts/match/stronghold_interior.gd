@@ -10,16 +10,16 @@ extends RefCounted
 ## - Floors: a concrete slab over the ground or the rock under every hall, corridor, ring and tunnel (the spawn halls'
 ##   a raised floor of its own, see HALL_TOP).
 ## - The spawn halls: steel A-frames up both slopes every 6 m with a collar tie each, a pendant lamp hanging from
-##   every tie (and a fill under it), pipes along the slopes, conduit panels between the frames, handrails up the
+##   every tie (and a fill under it), pipes along the slopes, conduit runs between the frames, handrails up the
 ##   spawn ramps, crates, gas bottles, generators and lockers along both walls, a console against the far end wall
 ##   under a blower, walkway lines and hazard stripes at the foot of every spawn ramp, the bays' numbers by the ramps.
 ## - The core corridors and the corridors from the lifts: steel portal frames, strip lights between them, pipes
 ##   along the ceiling, kick plates and the face's band along the walls, amber guide studs in the floor, signs.
 ## - The core hall: steel pilasters, a catwalk round its walls with lamps under it, consoles, lockers and bottles
-##   below, blowers, machinery and conduit panels above it, pipes, a beam grid and hanging machinery on the
+##   below, blowers, machinery and conduit runs above it, pipes, a beam grid and hanging machinery on the
 ##   ceiling, floodlights; in the middle a holotable (a turning hologram of the mountain) with four consoles round
 ##   it.
-## - The gun ring and the roof ring: portal frames, a caged lamp between every two, conduit panels on the ceiling,
+## - The gun ring and the roof ring: portal frames, a caged lamp between every two, conduit runs on the ceiling,
 ##   pipes, the face's band, edge lines, striped door frames with a lit sign over every door (DECK / ROOF).
 ## - Every bay's junction, stair shaft and ground tunnel: a lamp each; a red beacon inside every gate.
 ##
@@ -33,7 +33,8 @@ extends RefCounted
 const DECO := "res://assets/stronghold/deco/%s.glb"
 const FONT := "res://assets/fonts/jetbrains_mono/JetBrainsMono-Bold.ttf"
 ## The deco models: [file, its longest side (m), its turn into the frame placement expects (degrees): front +Z,
-## top +Y, and for what hangs on a wall its back toward -Z].
+## top +Y, and for what hangs on a wall its back toward -Z]. The conduit runs are the strips of pipes and wires cut
+## out of wall_deco_1-4 (tools/gltf/chop_strip.py): long and low, their pipes already facing +Z, their backs flat.
 const MODELS := {
 	"console": ["deco_1", 2.0, Vector3.ZERO],
 	"locker": ["deco_2", 1.9, Vector3.ZERO],
@@ -41,10 +42,10 @@ const MODELS := {
 	"generator": ["misc_deco_2", 1.3, Vector3.ZERO],
 	"crates": ["misc_deco_3", 1.4, Vector3.ZERO],
 	"radio": ["misc_deco_4", 0.85, Vector3.ZERO],
-	"conduit_1": ["wall_deco_1", 1.6, Vector3(90, 0, 0)],
-	"conduit_2": ["wall_deco_2", 1.6, Vector3(90, 0, 0)],
-	"conduit_3": ["wall_deco_3", 1.6, Vector3(90, 0, 0)],
-	"conduit_4": ["wall_deco_4", 1.6, Vector3(90, 0, 0)],
+	"conduit_1": ["wall_deco_1", 2.2, Vector3.ZERO],
+	"conduit_2": ["wall_deco_2", 2.2, Vector3.ZERO],
+	"conduit_3": ["wall_deco_3", 2.2, Vector3.ZERO],
+	"conduit_4": ["wall_deco_4", 2.2, Vector3.ZERO],
 	"blower": ["wall_deco_5", 1.4, Vector3(0, 90, 0)],
 	"pod": ["wall_deco_6", 1.5, Vector3(90, 0, 0)],
 	"engine": ["wall_deco_7", 1.5, Vector3.ZERO],
@@ -323,7 +324,7 @@ func _spawn_hall(z: Zone) -> void:
 		_label(z, "%s%d" % [_key, i + 1], P(cx + 6.5, 2.35, _hall_front(2.35)) + front_n * 0.02, front_n, front_up, 0.5)
 		_label(z, "DECK ↑", P(cx + 6.5, 1.85, _hall_front(1.85)) + front_n * 0.02, front_n, front_up, 0.2)
 	_label(z, "↓  CORE  ↓", P(0, 4.15, _hall_back(4.15)) + back_n * 0.02, back_n, back_up, 0.32)
-	# Conduit panels high on both slopes, between the frames.
+	# Conduit runs high on both slopes, along the hall between the frames, their pipes facing out.
 	for i in 7:
 		var cx := _bay(i)
 		var xb := cx - 1.5
@@ -406,8 +407,10 @@ func _core_corridor(z: Zone) -> void:
 	_pipe(z, "paint", P(1.5, 3.1, d0), P(1.5, 3.1, d1), 0.12, BLUE)
 	_pipe(z, "metal", P(1.15, 3.22, d0), P(1.15, 3.22, d1), 0.07)
 	_pipe(z, "paint", P(-1.55, 3.15, d0), P(-1.55, 3.15, d1), 0.1, RED)
-	for d in [33.5, 51.5]:
-		_mount(z, _pick(CONDUITS), P(-0.5, CORRIDOR_H, d), Vector3.DOWN, Vector3.FORWARD, 0.8)
+	# Conduit runs high on the walls between the frames, on either wall in turn.
+	for i in 6:
+		var s := 1.0 if i % 2 == 0 else -1.0
+		_mount(z, _pick(CONDUITS), P(s * CORRIDOR_HALF, 2.45, 29.0 + 6.0 * i), Vector3(-s, 0, 0), Vector3.UP, 2.0 / 2.2)
 	# Signs both ways, radios on the walls, a few crates and bottles by the core end.
 	for d in [30.0, 42.0, 54.0]:
 		_label(z, "←  CORE   ·   SPAWN HALL %s  →" % _key, P(CORRIDOR_HALF - 0.01, 1.55, d), Vector3.LEFT, Vector3.UP, 0.16)
@@ -456,10 +459,10 @@ func _core_wall(z: Zone) -> void:
 			_stand(z, "locker", P(s * 8.4, FLOOR, wd + 0.05 + _size["locker"].z * 0.5), into)
 			_stand(z, "generator", P(s * 10.4, FLOOR, wd + 0.05 + _size["generator"].z * 0.5), into)
 		_mount(z, "radio", P(s * 3.2, 1.5, wd), into, Vector3.UP)
-	# Above the catwalk: blowers, machinery over the way in, conduit panels toward the corners.
+	# Above the catwalk: blowers, machinery over the way in, conduit runs toward the corners.
 	for s in [-1.0, 1.0]:
 		_mount(z, "blower", P(s * 5.0, 6.9, wd), into, Vector3.UP)
-		_mount(z, _pick(CONDUITS), P(s * 9.5, 7.0, wd), into, Vector3.UP)
+		_mount(z, _pick(CONDUITS), P(s * 9.5, 7.0, wd), into, Vector3.UP, 2.6 / 2.2)
 	_mount(z, "engine", P(0, 6.9, wd), into, Vector3.UP)
 	_label(z, "SECTOR %s" % _key, P(0, 3.95, wd + 0.02), into, Vector3.UP, 0.42)
 	_box(z, "stripes", _at(P(0, FLOOR + 0.003, wd + 0.45)), Vector3(CORRIDOR_HALF * 2.0, 0.006, 0.5))
@@ -551,7 +554,7 @@ func _ring(z: Zone, h0: float, tag: String) -> void:
 		_polyline(z, "paint", _ring_line(o, h0 + FLOOR + 0.003), Vector2(0.06, 0.006), LINE)
 	_polyline_pipe(z, "paint", _ring_line(1.1, h0 + 2.72), 0.1, BLUE if tag == "DECK" else GREEN)
 	_polyline_pipe(z, "metal", _ring_line(0.85, h0 + 2.82), 0.06, Color.WHITE)
-	# The straight run: kick plates and the face's band, portal frames, a lamp between every two, conduit panels on
+	# The straight run: kick plates and the face's band, portal frames, a lamp between every two, conduit runs on
 	# the ceiling.
 	var doors := []
 	for i in 7:
@@ -576,7 +579,7 @@ func _ring(z: Zone, h0: float, tag: String) -> void:
 		_strip_light(z, P(-42.0 + 6.0 * i, h0 + RING_H, mid_d), Vector3.RIGHT, 0.5, col, 2.8, 4.8)
 	for i in 7:
 		var cx := _bay(i)
-		_mount(z, CONDUITS[(i + int(h0)) % 4], P(cx + 1.65, h0 + RING_H, RING_D.x + 0.65), Vector3.DOWN, Vector3.FORWARD, 0.82)
+		_mount(z, CONDUITS[(i + int(h0)) % 4], P(cx + 1.65, h0 + RING_H, RING_D.x + 0.65), Vector3.DOWN, Vector3.FORWARD, 0.6)
 		# The doors through the front wall (from every bay's stair landing onto the gun ring; from the roof onto the roof
 		# ring): a striped frame, a lit sign over it, the bay on the wall facing it.
 		var door: Vector2 = doors[i]
