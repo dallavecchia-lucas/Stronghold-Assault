@@ -1,6 +1,6 @@
 class_name DefenderArmory
 extends Node
-## The defenders' war chest: credits that come in over time and buy squads: AA Squads (AASquad),
+## The defenders' war chest: credits earned by killing attackers, that buy squads: AA Squads (AASquad),
 ## Flame Squads (FlameSquad), Infiltrator Squads (InfiltratorSquad) and Snipers (Sniper: one marksman,
 ## on the roster like a squad), and the two machines (DefenderMachine): the Fighter Jet (DefenderJet) and the
 ## Hover Tank (DefenderTank). A bought squad deploys in a gate spawn hall (east, west and south in
@@ -8,12 +8,20 @@ extends Node
 ## and sets out on its auto order. It leaves the roster when all its troopers are down (a machine, when it
 ## is destroyed). The jet scrambles into the air in front of the gate hall's face, the tank deploys on the
 ## ground outside the gate: a hover tank is too broad for the halls' ramps.
+##
+## The defenders start with nothing and nothing comes in over time: every attacker that dies pays out BOUNTY of what it
+## cost the attackers (UnitTypes "cost"), so a Bear Rifleman is worth little and a War Elephant a lot (watch()).
 
 signal squad_bought(squad)
 signal squad_lost(squad)
+## An attacker died and its bounty was paid (credits).
+signal bounty_paid(unit: AttackerUnit, credits: float)
 
-const START_CREDITS := 400.0
-const INCOME := 6.0
+const START_CREDITS := 0.0
+## Credits a second on top (none: the defenders earn by killing; kept for the showcases and tests).
+const INCOME := 0.0
+## The share of a dead attacker's cost paid to the defenders.
+const BOUNTY := 0.3
 const AA_COST := 350
 const FLAME_COST := 300
 const INFILTRATOR_COST := 280
@@ -35,6 +43,8 @@ const POST_OFFSETS := {"E": Vector3(-3.0, 0.0, 0.15), "W": Vector3(-3.0, 0.0, 0.
 var level: LevelBuilder
 var credits := START_CREDITS
 var income := INCOME
+## Credits earned from bounties so far.
+var earned := 0.0
 ## Squads and machines on the roster, in hotbar order.
 var squads: Array = []
 
@@ -45,6 +55,20 @@ var _numbers := {"aa": 0, "flame": 0, "infiltrator": 0, "sniper": 0, "jet": 0, "
 
 func _process(delta: float) -> void:
 	credits += income * delta
+
+
+## Pays the bounty for every attacker of `commander`'s that dies.
+func watch(commander: AttackerCommander) -> void:
+	commander.unit_died.connect(_on_attacker_died)
+
+
+func _on_attacker_died(u: AttackerUnit) -> void:
+	var pay: float = float(u.stats.get("cost", 0)) * BOUNTY
+	if pay <= 0.0:
+		return
+	credits += pay
+	earned += pay
+	bounty_paid.emit(u, pay)
 
 
 func can_buy(kind := "aa") -> bool:

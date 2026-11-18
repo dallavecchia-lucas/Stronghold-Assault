@@ -84,7 +84,7 @@ const HEAL_COLOR := Color(0.35, 1.0, 0.45)
 const AA_COLOR := Color(1.0, 0.9, 0.4)
 ## The defenders' drones (DefenderDrone). A unit that can hurt them (hunts_drones) is pulled in by one in sight
 ## within DRONE_NOTICE (flat, m) and follows it as far as DRONE_LEASH, hyper-focused: see _update_drone_prey().
-const DRONE_NOTICE := 80.0
+const DRONE_NOTICE := 30.0
 const DRONE_LEASH := 110.0
 const DRONE_MARK := Color(1.0, 0.35, 0.3)
 ## How close to a broken gate an order has to land to send infiltrators in.
@@ -465,6 +465,12 @@ var _skeleton: Skeleton3D
 var _recoil := 0.0
 var _desired_velocity := Vector3.ZERO
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
+## Standing still on the floor: how many more ticks move_and_slide is spared (_on_velocity_computed), and where it stands.
+const REST_CHECK := 4
+## _find_enemy: further than reach() plus this, nothing is looked at more closely.
+const FAR_SKIP := 60.0
+var _rest_left := 0
+var _rest_at := Vector3.INF
 
 
 func setup(p_type: String, p_id: int) -> void:
@@ -1539,7 +1545,13 @@ func _update_target() -> void:
 ## has revealed her). Defenders in the fog of war can't be picked out either (AttackerVision).
 func _find_enemy() -> Node3D:
 	var candidates := []
+	# Those too far off to be in range whatever their size (none has a target_radius anywhere near FAR_SKIP) are passed
+	# over before anything dearer is asked of them.
+	var far := reach() + FAR_SKIP
+	far *= far
 	for d in get_tree().get_nodes_in_group("defender_targets"):
+		if global_position.distance_squared_to(d.global_position) > far:
+			continue
 		if d.is_alive() and _in_range(d) and not Combat.low_profile(d) and AttackerVision.sees_node(d):
 			candidates.append([global_position.distance_to(d.global_position), d])
 	candidates.sort_custom(func(a, b): return a[0] < b[0])
@@ -2514,7 +2526,7 @@ func _raid_ram() -> void:
 		start_ram()
 
 
-func _is_soldier(t: Node3D) -> bool:
+func _is_soldier(t) -> bool:
 	return Combat.is_valid_target(t) and t.get("station_kind") == "soldier"
 
 
@@ -3508,10 +3520,20 @@ func _on_velocity_computed(safe: Vector3) -> void:
 		velocity.x = safe.x
 		velocity.z = safe.z
 	velocity.y = 0.0 if is_on_floor() else velocity.y - _gravity * dt
+	# Standing still on the floor right where it stood still last time: move_and_slide would find the same nothing
+	# again, and nothing below has anything to do (it is looked at afresh every REST_CHECK ticks all the same).
+	var still := velocity == Vector3.ZERO and safe.x == 0.0 and safe.z == 0.0
+	if still and _rest_left > 0 and global_position == _rest_at:
+		_rest_left -= 1
+		return
+	var was := global_position
 	move_and_slide()
+	_rest_left = REST_CHECK if still and global_position == was and is_on_floor() else 0
+	_rest_at = global_position
 	if fits_inside() and is_on_wall() and Vector2(safe.x, safe.z).length() > 0.5:
 		_step_up(Vector3(safe.x, 0.0, safe.z).normalized() * 0.3)
-	elif not stats.get("steer", false) and is_on_wall():
+	elif is_on_wall():
+		# (A steered unit too: a Mule Artillery's team wedged head-on against a trunk would push into it for ever.)
 		_sidestep(safe, dt)
 	var flat := Vector2(velocity.x, velocity.z)
 	if not stats.get("steer", false) and flat.length() > 0.3 and not (Combat.is_valid_target(target) and _in_range(target)):

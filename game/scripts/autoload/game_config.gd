@@ -39,11 +39,30 @@ var mouse_sensitivity := 0.0025
 #   --lighting=raytraced|standard  how the light is rendered
 #   --drones=off                   no defender drones (DroneBay) in the match
 #   --garrison=off                 no garrison (Garrison): no spawned soldiers, and the guns crew themselves as before
+# The balance simulator (SimDirector, tools/balance): the CPU plays both sides and the match is written up as JSON.
+#   --sim=out.json                 play a whole match AI against AI, write its telemetry to out.json and quit
+#   --atk=name|path.json           the attacking CPU's policy (AIAttacker.POLICIES, or a JSON file of overrides)
+#   --def=name|path.json           the defending CPU's policy (AIDefender.POLICIES, or a JSON file of overrides)
+#   --sim-ticks=N                  physics ticks a game second (Engine.physics_ticks_per_second; the game's own 60 by default):
+#                                  fewer plays a coarser match faster
+#   --seed=N                       seeds the random number generator
+#   --match-time=seconds           the time the defenders have to hold, instead of the map's
+#   --sample=seconds               how often the telemetry samples the match (10 by default)
+#   --sim-label=text               carried into the telemetry as is (which batch, which variant)
 var drones := true
 var garrison := true
 var autotest := ""
 var screenshot_path := ""
 var autotest_duration := 90.0
+var sim := ""
+var atk_policy := "default"
+var def_policy := "default"
+var sim_ticks := 0
+var sim_seed := -1
+var sim_sample := 10.0
+var sim_label := ""
+## Seconds the defenders have to hold when set (> 0), instead of the map's own (LevelBuilder.match_time).
+var match_time_override := 0.0
 
 
 func _ready() -> void:
@@ -61,9 +80,27 @@ func _ready() -> void:
 			drones = arg.get_slice("=", 1) != "off"
 		elif arg.begins_with("--garrison="):
 			garrison = arg.get_slice("=", 1) != "off"
+		elif arg.begins_with("--sim="):
+			sim = arg.get_slice("=", 1)
+		elif arg.begins_with("--atk="):
+			atk_policy = arg.get_slice("=", 1)
+		elif arg.begins_with("--def="):
+			def_policy = arg.get_slice("=", 1)
+		elif arg.begins_with("--sim-ticks="):
+			sim_ticks = arg.get_slice("=", 1).to_int()
+		elif arg.begins_with("--seed="):
+			sim_seed = arg.get_slice("=", 1).to_int()
+		elif arg.begins_with("--sample="):
+			sim_sample = arg.get_slice("=", 1).to_float()
+		elif arg.begins_with("--sim-label="):
+			sim_label = arg.get_slice("=", 1)
+		elif arg.begins_with("--match-time="):
+			match_time_override = arg.get_slice("=", 1).to_float()
+	if sim_seed >= 0:
+		seed(sim_seed)
 
 
-## CPU attacker income multiplier for the chosen difficulty.
+## CPU attacker war chest multiplier for the chosen difficulty (its starting credits, and any income, times this).
 func ai_income_mult() -> float:
 	return [0.75, 1.0, 1.4][difficulty]
 

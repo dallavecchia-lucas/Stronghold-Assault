@@ -218,7 +218,10 @@ func _springs(delta: float) -> void:
 	# stepped in SPRING_STEP slices (a long frame stepped whole would throw them off to infinity).
 	var steps := spring_steps(delta)
 	var h := spring_span(delta) / steps
-	for _i in steps:
+	# At rest (as they are between rounds) the springs stay at rest: nothing to step.
+	var resting := _jump == 0.0 and _jump_v == 0.0 and _rock == Vector2.ZERO and _rock_v == Vector2.ZERO and _back == 0.0 \
+			and _back_v == 0.0
+	for _i in (0 if resting else steps):
 		_jump_v += (-_jump * 520.0 - _jump_v * 26.0) * h
 		_jump += _jump_v * h
 		_rock_v += (-_rock * 300.0 - _rock_v * 16.0) * h

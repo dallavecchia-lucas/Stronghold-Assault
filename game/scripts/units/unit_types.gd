@@ -250,7 +250,7 @@ const DATA := {
 		"model": "res://assets/units/war_elephant_sentinel/war_elephant_sentinel_rigged.glb",
 	},
 	"mule": {
-		"name": "Mule Artillery", "cost": 280, "hp": 450.0, "speed": 1.0,
+		"name": "Mule Artillery", "cost": 280, "hp": 1600.0, "speed": 1.6,
 		"sight": 28.0,
 		"range": 0.0, "damage": 0.0, "fire_interval": 1.0, "spread": 0.0,
 		"structure_mult": 1.5, "radius": 1.6, "height": 2.2,

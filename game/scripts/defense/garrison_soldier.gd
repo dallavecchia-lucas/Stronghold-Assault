@@ -68,6 +68,8 @@ static var longest_shot := 0.0
 var _agent: NavigationAgent3D
 var _route: Array[Vector3] = []
 var _gates: Array = []
+var _near_gates: Array = []
+var _gates_from := Vector3.INF
 var _want := Vector3.ZERO
 var _check_reach := false
 var _stuck_t := 0.0
@@ -286,7 +288,10 @@ func _hold(delta: float) -> void:
 		if to.length() > 0.05:
 			# The last few tens of centimetres into the exact spot.
 			global_position += to.limit_length(RUN_SPEED * 0.5 * delta)
-		rotation.y = lerp_angle(rotation.y, atan2(-facing.x, -facing.z), minf(delta * 4.0, 1.0))
+		# Turned to face out; once it is (to a millionth of a radian) it is left be: no transform to push round its body.
+		var ry := lerp_angle(rotation.y, atan2(-facing.x, -facing.z), minf(delta * 4.0, 1.0))
+		if absf(ry - rotation.y) > 1e-6:
+			rotation.y = ry
 	velocity.x = move_toward(velocity.x, 0.0, delta * 20.0)
 	velocity.z = move_toward(velocity.z, 0.0, delta * 20.0)
 	if _fighting:
@@ -366,12 +371,20 @@ func _step_up(motion: Vector3) -> bool:
 func _open_gates() -> void:
 	if _gates.is_empty() and garrison:
 		_gates = garrison.gates()
-	for g in _gates:
+	# The gates stand still: which are within reach is only worked out again once it has moved.
+	if global_position != _gates_from:
+		_gates_from = global_position
+		_near_gates.clear()
+		for g in _gates:
+			if not is_instance_valid(g):
+				continue
+			var d: Vector3 = g.global_position - global_position
+			if Vector2(d.x, d.z).length() < GATE_REACH:
+				_near_gates.append(g)
+	for g in _near_gates:
 		if not is_instance_valid(g) or not g.is_alive():
 			continue
-		var d: Vector3 = g.global_position - global_position
-		if Vector2(d.x, d.z).length() < GATE_REACH:
-			g.hold_open()
+		g.hold_open()
 
 
 ## A climbing link (a stair shaft, a ladder, a fallen gate's breach): its route, walked straight through.

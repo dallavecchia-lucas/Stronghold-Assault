@@ -42,11 +42,14 @@ const CANNON_BLAST := 3.0
 const CANNON_HEAT := 0.16
 ## The cannon is the stronghold's long gun too (there is none on the roofs): past AI_RANGE and out to CANNON_RANGE its
 ## crew lobs a shell every CANNON_LONG_INTERVAL, the barrel raised for the range.
-const CANNON_RANGE := 150.0
-const CANNON_LONG_INTERVAL := 6.0
+const CANNON_RANGE := 110.0
+const CANNON_LONG_INTERVAL := 12.0
 ## The bastion's flak: a shell every FLAK_INTERVAL, FLAK_DAMAGE where it bursts; how high it elevates (rad).
 const FLAK_INTERVAL := 0.42
 const FLAK_DAMAGE := 20.0
+## The flak's damage against what is on the ground, as a share of FLAK_DAMAGE (it is an anti-aircraft gun: its shells burst
+## round aircraft); at 0 it never takes a ground target at all.
+const FLAK_GROUND_MULT := 0.25
 const FLAK_HEAT := 0.05
 const FLAK_PITCH_MAX := deg_to_rad(78.0)
 const REPAIR_TIME := 360.0  # 6 minutes
@@ -91,6 +94,8 @@ var crew: Node3D = null
 var crew_stand := Vector3.INF
 
 var _yaw := 0.0
+var _shown_yaw := NAN
+var _shown_pitch := NAN
 var _pitch := 0.0
 ## The servos' rates (rad/s), and the sweep's clock.
 var _yaw_rate := 0.0
@@ -345,8 +350,12 @@ func _physics_process(delta: float) -> void:
 	if overheated and heat < 0.35:
 		overheated = false
 	_shake = maxf(_shake - delta, 0.0)
-	_camera.h_offset = randf_range(-1, 1) * _shake * 0.05
-	_camera.v_offset = randf_range(-1, 1) * _shake * 0.05
+	# (The shake's random numbers are drawn whether or not it shakes, as ever: the same random sequence for everything else.)
+	var shake_h := randf_range(-1, 1) * _shake * 0.05
+	var shake_v := randf_range(-1, 1) * _shake * 0.05
+	if _shake > 0.0 or _camera.h_offset != 0.0 or _camera.v_offset != 0.0:
+		_camera.h_offset = shake_h
+		_camera.v_offset = shake_v
 	_apply_aim()
 
 
@@ -360,8 +369,13 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _apply_aim() -> void:
-	_yaw_pivot.rotation.y = _yaw
-	_pitch_pivot.rotation.x = _pitch
+	# Only when the aim moved: a pivot set to where it already is still pushes its transform through everything on it.
+	if _yaw != _shown_yaw:
+		_shown_yaw = _yaw
+		_yaw_pivot.rotation.y = _yaw
+	if _pitch != _shown_pitch:
+		_shown_pitch = _pitch
+		_pitch_pivot.rotation.x = _pitch
 	if _rig:
 		_rig.set_aim(_yaw, _pitch)
 
@@ -468,7 +482,7 @@ func _fire_flak() -> bool:
 		overheated = true
 	if _rig is BastionRig:
 		(_rig as BastionRig).fire_round()
-	Flak.fire(self, _shown_muzzle().origin, _target, FLAK_DAMAGE, team)
+	Flak.fire(self, _shown_muzzle().origin, _target, FLAK_DAMAGE * (1.0 if _target.is_in_group("air_units") else FLAK_GROUND_MULT), team)
 	return true
 
 
@@ -555,7 +569,7 @@ func _find_target() -> Node3D:
 					and Combat.has_line_of_sight(self, _muzzle.global_position, Combat.aim_point(a), a):
 				best_d = d
 				best = a
-		if best:
+		if best or FLAK_GROUND_MULT <= 0.0:
 			return best
 	for u in get_tree().get_nodes_in_group("attacker_units"):
 		var d := global_position.distance_to(u.global_position)

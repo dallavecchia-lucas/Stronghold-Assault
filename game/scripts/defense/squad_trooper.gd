@@ -94,6 +94,10 @@ var _wall_away := Vector3.ZERO
 var _tossed := false
 ## Held in a Serpent Sniper's coils last frame (it struggles: _in_coils).
 var _was_held := false
+## Standing still on the floor: how many more ticks move_and_slide is spared (_move), and where it stands.
+const REST_CHECK := 4
+var _rest_left := 0
+var _rest_at := Vector3.INF
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 
 static var _scenes := {}
@@ -390,7 +394,16 @@ func _move(flat: Vector3, delta: float) -> void:
 	velocity.x = flat.x
 	velocity.z = flat.z
 	velocity.y = 0.0 if is_on_floor() else velocity.y - _gravity * delta
+	# Standing still on the floor right where it stood still last time: move_and_slide would find the same nothing
+	# again (it is looked at afresh every REST_CHECK ticks all the same).
+	var still := velocity == Vector3.ZERO
+	if still and _rest_left > 0 and global_position == _rest_at:
+		_rest_left -= 1
+		return
+	var was := global_position
 	move_and_slide()
+	_rest_left = REST_CHECK if still and global_position == was and is_on_floor() else 0
+	_rest_at = global_position
 	# Against a wall the velocity starts from nothing every frame: go by what it is trying to do.
 	if is_on_wall() and _want.length() > 0.5 and flat.length() > 0.05:
 		if _step_up(flat.normalized() * 0.3, _pathing):

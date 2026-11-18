@@ -271,8 +271,10 @@ func _update_banner() -> void:
 		_banner.gates.append([String(side).left(1).to_upper(), g.hp / g.max_hp if g.is_alive() else 0.0, g.recently_damaged(1.0)])
 	var armory := controller.armory
 	if armory:
-		_banner.strip_text = "CREDITS %d  +%.0f/s" % [int(armory.credits), armory.income]
-		_banner.strip_tip = "Credits buy squads, the Sniper, the Fighter Jet and the Hover Tank (top left: what they buy now)"
+		_banner.strip_text = "CREDITS %d" % int(armory.credits) if armory.income <= 0.0 \
+				else "CREDITS %d  +%.0f/s" % [int(armory.credits), armory.income]
+		_banner.strip_tip = "Credits buy squads, the Sniper, the Fighter Jet and the Hover Tank (top left: what they buy now). " \
+				+ "They are earned by killing attackers: each pays %d%% of what it cost them, a big unit a lot" % int(DefenderArmory.BOUNTY * 100.0)
 	else:
 		_banner.strip_text = ""
 

@@ -39,6 +39,9 @@ var _muzzle_mark: Node3D
 var _eye_mark: Node3D
 var _flash: MuzzleFlash
 var _flash_t := 0.0
+## The physics frame of her last round (Sniper._landed): its tracer and trail give away where she shoots from, fog or
+## not (AttackerVision hides her body, not her shots). See shot_lately().
+var fired_frame := -1000000
 
 static var _rifle_scene: PackedScene
 
@@ -47,6 +50,11 @@ func _init() -> void:
 	max_hp = MAX_HP
 	hp = MAX_HP
 	station_kind = "sniper"
+
+
+## True if she fired within the last `secs` seconds of game time: her tracer shows where she is.
+func shot_lately(secs: float) -> bool:
+	return Engine.get_physics_frames() - fired_frame <= int(secs * Engine.physics_ticks_per_second)
 
 
 func _model_path() -> String:
