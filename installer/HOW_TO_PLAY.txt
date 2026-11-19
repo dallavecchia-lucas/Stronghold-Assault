@@ -1,0 +1,50 @@
+STRONGHOLD ASSAULT - QUICK START
+================================
+
+Pick a side on the main menu. The computer plays the other side.
+
+  ATTACKER (real-time strategy) wins by destroying every air vent on the
+  stronghold's roofs. You get one war chest (25,000 credits) and no income:
+  every unit lost is gone for good.
+
+  DEFENDER (first person) wins by holding the stronghold for 25 minutes.
+  You start with nothing and earn credits by killing attackers.
+
+Esc pauses the game (both sides).
+Too slow? On the main menu set Lighting to "Standard" instead of "Ray-traced".
+
+
+DEFENDER KEYS
+-------------
+  1-9        take over a post (machine guns, cannons, riflemen)
+  G          the Gunner Squad          Tab   jump to the busiest post
+  WASD       move      Shift sprint    Space jump
+  Left mouse fire      Right mouse aim/zoom     R reload
+  B / N / M  buy an AA Squad / Flame Squad / Infiltrator Squad
+  K / J / H  buy a Sniper / Fighter Jet / Hover Tank
+  F1-F6      take command of something you bought
+  C          call a drone swarm to your post
+
+
+ATTACKER KEYS
+-------------
+  Camera     WASD / arrows / screen edge to pan, Q/E to rotate, wheel to zoom
+  Left mouse click or drag to select (Shift adds)
+  Right mouse attack-move, or attack what you click
+  Ctrl+Right mouse   move without stopping
+  Backspace  select your base, then a unit's key to build it:
+             Z Bear Rifleman   C Wolf Medic     N Mule Artillery
+             V Sky Talon       B War Elephant   I Combat Rhino
+             L Bison Field Gun K Hippo Gunner   M Breaching Ram
+             J Night Ops Chimp X Kangaroo       H Giraffe Scout
+             Y Armored Lioness U Serpent Sniper
+  Ctrl+1-9   save a group, 1-9 to recall it
+  F1         show all keys in game
+
+Only Breaching Rams, Chimps and Kangaroo Commandos can get inside once a
+gate is down.
+
+SYSTEM NEEDS
+------------
+  64-bit Windows 10/11 or Linux, a graphics card with Vulkan support
+  (most cards from 2016 on; older ones fall back to OpenGL), about 1 GB of disk.

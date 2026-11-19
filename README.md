@@ -2,6 +2,17 @@
 
 Asymmetric RTS vs FPS siege game built in Godot 4. One player commands the attacking army (RTS); the other defends the stronghold in first person, rotating between soldiers and mounted weapons.
 
+## Install and play (no Godot needed)
+
+Grab the latest files from the repo's **Releases** page:
+
+- **Windows 10/11**: `StrongholdAssault-<version>-Windows-Setup.exe`. Double-click, **Next → Install → Finish**: the game starts and is on your Desktop and Start Menu (uninstall from Settings → Apps). No admin rights needed. If SmartScreen says "Windows protected your PC" (the installer isn't code-signed), click **More info → Run anyway**. No-install option: `…-Windows-Portable.zip`, unzip and run `StrongholdAssault.exe`.
+- **Linux (64-bit)**: `StrongholdAssault-<version>-Linux.tar.gz`. Unpack, run `./install.sh` (adds it to your apps menu and a `stronghold-assault` command; `uninstall.sh` removes it), or just run `./StrongholdAssault.x86_64` in place.
+
+Pick a side; the computer plays the other. `Esc` pauses; if it runs slowly, set **Lighting** to **Standard** on the menu. The keys are in *How to play* (Start Menu) / `HOW_TO_PLAY.txt` ([`installer/HOW_TO_PLAY.txt`](installer/HOW_TO_PLAY.txt)).
+
+**Making a release.** Push a tag (`git tag v1.0.1 && git push origin v1.0.1`): the *Build installers* workflow (`.github/workflows/release.yml`) exports the game with Godot 4.5.1, builds the three files and publishes them as a GitHub Release. You can also run it by hand from the Actions tab (the files are attached to the run). To build locally: `GODOT=/path/to/godot installer/build_release.sh 1.0.1` (needs Godot 4.5.x with its export templates, and NSIS's `makensis`); the files land in `dist/`. Export settings are in `game/export_presets.cfg` (the dev showcases are left out).
+
 ## Getting the repo (Git LFS required)
 
 Models, textures and audio are stored with [Git LFS](https://git-lfs.com). Install it once, then clone:

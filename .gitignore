@@ -26,3 +26,6 @@ Thumbs.db
 game/scenes/tmp/
 game/scripts/tmp/
 clips/
+
+# Installer output (installer/build_release.sh)
+dist/
