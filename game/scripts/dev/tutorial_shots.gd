@@ -161,8 +161,8 @@ func _start() -> void:
 			for p in [["kangaroo", Vector3(-4, 0, 0)], ["medic", Vector3(2, 0, 2)], ["giraffe", Vector3(6, 0, -3)],
 					["rifleman", Vector3(-1, 0, 6)], ["rifleman", Vector3(4, 0, 7)]]:
 				units.append(_spawn(p[0], at + p[1]))
-			_cam_pos = SPOT + Vector3(-14, 2.0, 16)
-			_cam_look = at + Vector3(0, 8, -20)
+			_cam_pos = at + Vector3(10, 3.0, 14)
+			_cam_look = at + Vector3(-2, 7.0, -14)
 
 
 func _spawn(type_id: String, pos: Vector3, facing := 0.0) -> AttackerUnit:
@@ -371,10 +371,12 @@ func _drones() -> void:
 	if _at(1.0, "call"):
 		var res := bay.call_swarm(units[0].global_position)
 		print("TUTORIAL drones call: ", res)
+	# Low beside the knot, looking up toward the roofs the swarm comes off; then in close as it dives on them.
+	var at := SPOT + Vector3(0, 0, -16)
 	if t < 7.0:
-		_ease_cam(SPOT + Vector3(-14, 2.0, 16), SPOT + Vector3(0, 9, -36), 0.6)
+		_ease_cam(at + Vector3(10, 3.0, 14), at + Vector3(-2, 7.0, -14), 0.6)
 	else:
-		_ease_cam(SPOT + Vector3(-12, 3.0, 2), SPOT + Vector3(2, 4, -18), 1.2)
+		_ease_cam(at + Vector3(9, 2.4, 7), at + Vector3(-1, 3.0, -3), 1.2)
 
 
 ## The helipad nearest the south face (its spawn point index).

@@ -453,6 +453,12 @@
    "start": 13.4,
    "end": 30.07,
    "note": "the RTS view: a hippo, R, the cone toward the face; the smoke curtain goes up"
+  },
+  "heavy_lift_run": {
+   "source": "media/heavy_lift_showcase.mp4",
+   "start": 0.3,
+   "end": 28.97,
+   "note": "a Heavy Lift Helicopter takes bears and an elephant aboard and sets them down by the south helipad"
   }
  }
 }
