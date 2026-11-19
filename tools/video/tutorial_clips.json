@@ -1,0 +1,421 @@
+{
+ "_doc": "Clips cut from media/*.mp4 for the Field Manual (game/scripts/ui/field_manual*.gd) by tools/video/cut_tutorial_clips.py, into game/assets/tutorial/<id>.ogv.",
+ "width": 640,
+ "quality": 5,
+ "clips": {
+  "def_overview": {
+   "source": "media/gun_decks.mp4",
+   "start": 0,
+   "end": 8.9,
+   "note": "the garrison holding a gun deck"
+  },
+  "rifle_view": {
+   "source": "media/lioness_showcase.mp4",
+   "start": 49.5,
+   "end": 57,
+   "note": "a deck rifleman's view (sneaking lionesses come up the field)"
+  },
+  "rifle_flash": {
+   "source": "media/kangaroo_showcase.mp4",
+   "start": 28,
+   "end": 36,
+   "note": "a rifleman blinded by a Kangaroo's flash grenade"
+  },
+  "sentry_gun": {
+   "source": "media/turret_showcase.mp4",
+   "start": 4,
+   "end": 24,
+   "note": "the Orbital Sentry Gun: crewed, sweeping, firing, barrels glowing"
+  },
+  "cannon": {
+   "source": "media/turret_showcase.mp4",
+   "start": 44,
+   "end": 64,
+   "note": "the Arctic Sentinel Cannon: crewed, recoil, lobbed shells"
+  },
+  "bastion": {
+   "source": "media/turret_showcase.mp4",
+   "start": 96,
+   "end": 114,
+   "note": "the Sentinel Bastion flak gun"
+  },
+  "spire": {
+   "source": "media/turret_showcase.mp4",
+   "start": 130,
+   "end": 150,
+   "note": "the Sentinel Spire's missiles"
+  },
+  "gunner_solo": {
+   "source": "media/gunner_squad_showcase.mp4",
+   "start": 0,
+   "end": 9,
+   "note": "a lone Heavy Gunner: walk, strafe, minigun"
+  },
+  "gunner_file": {
+   "source": "media/gunner_squad_showcase.mp4",
+   "start": 10,
+   "end": 23,
+   "note": "the squad filing up the spawn ramp and through the tunnel"
+  },
+  "gunner_wedge": {
+   "source": "media/gunner_squad_showcase.mp4",
+   "start": 24,
+   "end": 34,
+   "note": "out through the blast door into a wedge"
+  },
+  "gunner_fight": {
+   "source": "media/gunner_squad_showcase.mp4",
+   "start": 48,
+   "end": 63,
+   "note": "a fight on two fronts, the guns overheating"
+  },
+  "aa_lock": {
+   "source": "media/aa_squad_showcase.mp4",
+   "start": 14,
+   "end": 26,
+   "note": "locking onto Sky Talons and firing seeking missiles"
+  },
+  "aa_strike": {
+   "source": "media/aa_squad_showcase.mp4",
+   "start": 27,
+   "end": 37,
+   "note": "a rocket strike on ground units"
+  },
+  "aa_mines": {
+   "source": "media/aa_squad_showcase.mp4",
+   "start": 37,
+   "end": 48,
+   "note": "mines thrown and walked into"
+  },
+  "aa_auto": {
+   "source": "media/aa_squad_showcase.mp4",
+   "start": 72,
+   "end": 88,
+   "note": "squads left on their auto orders"
+  },
+  "flame_solo": {
+   "source": "media/flame_squad_showcase.mp4",
+   "start": 4,
+   "end": 12,
+   "note": "a lone Flame Trooper's flame"
+  },
+  "flame_fight": {
+   "source": "media/flame_squad_showcase.mp4",
+   "start": 64,
+   "end": 80,
+   "note": "Chimps rush the squad out of the trees and burn"
+  },
+  "flame_tree": {
+   "source": "media/flame_squad_showcase.mp4",
+   "start": 82,
+   "end": 98,
+   "note": "the flame held on a trunk until the canopy catches"
+  },
+  "flame_clear": {
+   "source": "media/flame_squad_showcase.mp4",
+   "start": 104,
+   "end": 124,
+   "note": "the CLEAR order burning the forest down"
+  },
+  "inf_bow": {
+   "source": "media/infiltrator_showcase.mp4",
+   "start": 0,
+   "end": 12,
+   "note": "low profile: the riflemen ignore her while she looses arrows"
+  },
+  "inf_camo": {
+   "source": "media/infiltrator_showcase.mp4",
+   "start": 17,
+   "end": 24,
+   "note": "adaptive camo on (the vignette)"
+  },
+  "inf_sabotage": {
+   "source": "media/infiltrator_showcase.mp4",
+   "start": 31,
+   "end": 43,
+   "note": "sabotaging a Forward Helipad"
+  },
+  "inf_op": {
+   "source": "media/infiltrator_showcase.mp4",
+   "start": 44,
+   "end": 60,
+   "note": "a sabotage operation seen from above"
+  },
+  "sniper_walk": {
+   "source": "media/sniper_showcase.mp4",
+   "start": 0,
+   "end": 9,
+   "note": "the Sniper over her shoulder"
+  },
+  "sniper_scope": {
+   "source": "media/sniper_showcase.mp4",
+   "start": 10,
+   "end": 24,
+   "note": "through the scope: shot, bolt, reload"
+  },
+  "sniper_tags": {
+   "source": "media/sniper_showcase.mp4",
+   "start": 35.5,
+   "end": 44,
+   "note": "tagged units from the attacker's side"
+  },
+  "sniper_thermal": {
+   "source": "media/sniper_showcase.mp4",
+   "start": 46,
+   "end": 58,
+   "note": "thermal sight through the forest"
+  },
+  "hover_tank": {
+   "source": "media/vehicle_showcase.mp4",
+   "start": 0,
+   "end": 15,
+   "note": "the Iron Vanguard hover tank"
+  },
+  "drone": {
+   "source": "media/vehicle_showcase.mp4",
+   "start": 15.5,
+   "end": 25,
+   "note": "a defender drone"
+  },
+  "jet": {
+   "source": "media/vehicle_showcase.mp4",
+   "start": 25,
+   "end": 35,
+   "note": "the fighter jet"
+  },
+  "att_overview": {
+   "source": "media/stronghold_assault_intro_final.mp4",
+   "start": 140,
+   "end": 152,
+   "note": "the army on the march (intro)"
+  },
+  "hero_bear": {
+   "source": "media/stronghold_assault_intro_final.mp4",
+   "start": 84.12,
+   "end": 86.74,
+   "note": "The Bear, from the intro's gallery"
+  },
+  "hero_elephant": {
+   "source": "media/stronghold_assault_intro_final.mp4",
+   "start": 86.98,
+   "end": 89.59,
+   "note": "The Elephant, from the intro's gallery"
+  },
+  "hero_kangaroo": {
+   "source": "media/stronghold_assault_intro_final.mp4",
+   "start": 89.83,
+   "end": 92.45,
+   "note": "The Kangaroo, from the intro's gallery"
+  },
+  "hero_lioness": {
+   "source": "media/stronghold_assault_intro_final.mp4",
+   "start": 92.69,
+   "end": 95.31,
+   "note": "The Lioness, from the intro's gallery"
+  },
+  "hero_rhino": {
+   "source": "media/stronghold_assault_intro_final.mp4",
+   "start": 95.55,
+   "end": 98.17,
+   "note": "The Rhino, from the intro's gallery"
+  },
+  "hero_chimp": {
+   "source": "media/stronghold_assault_intro_final.mp4",
+   "start": 98.41,
+   "end": 101.02,
+   "note": "The Chimpanzee, from the intro's gallery"
+  },
+  "hero_talon": {
+   "source": "media/stronghold_assault_intro_final.mp4",
+   "start": 101.26,
+   "end": 103.88,
+   "note": "The Eagle, from the intro's gallery"
+  },
+  "hero_wolf": {
+   "source": "media/stronghold_assault_intro_final.mp4",
+   "start": 104.12,
+   "end": 106.74,
+   "note": "The Wolf, from the intro's gallery"
+  },
+  "hero_hippo": {
+   "source": "media/stronghold_assault_intro_final.mp4",
+   "start": 106.98,
+   "end": 109.59,
+   "note": "The Hippopotamus, from the intro's gallery"
+  },
+  "hero_giraffe": {
+   "source": "media/stronghold_assault_intro_final.mp4",
+   "start": 109.83,
+   "end": 112.45,
+   "note": "The Giraffe, from the intro's gallery"
+  },
+  "hero_serpent": {
+   "source": "media/stronghold_assault_intro_final.mp4",
+   "start": 112.69,
+   "end": 115.31,
+   "note": "The Serpent, from the intro's gallery"
+  },
+  "hero_ram": {
+   "source": "media/stronghold_assault_intro_final.mp4",
+   "start": 115.55,
+   "end": 118.17,
+   "note": "The Ram, from the intro's gallery"
+  },
+  "hero_mule": {
+   "source": "media/stronghold_assault_intro_final.mp4",
+   "start": 118.41,
+   "end": 121.02,
+   "note": "The Mules, from the intro's gallery"
+  },
+  "hero_bison": {
+   "source": "media/stronghold_assault_intro_final.mp4",
+   "start": 121.26,
+   "end": 123.88,
+   "note": "The Bison, from the intro's gallery"
+  },
+  "bear_swim": {
+   "source": "media/bear_swim_dive.mp4",
+   "start": 3,
+   "end": 14,
+   "note": "a Bear Rifleman swimming the river"
+  },
+  "bear_dive": {
+   "source": "media/bear_swim_dive.mp4",
+   "start": 14,
+   "end": 28,
+   "note": "the dive: out of the defenders' sight"
+  },
+  "elephant_raft": {
+   "source": "media/chimp_swing_rafts.mp4",
+   "start": 17.5,
+   "end": 22,
+   "note": "a War Elephant, its raft folded on its rump"
+  },
+  "raft_crossing": {
+   "source": "media/chimp_swing_rafts.mp4",
+   "start": 26.5,
+   "end": 33,
+   "note": "rafts towed across the river"
+  },
+  "hippo_raft": {
+   "source": "media/chimp_swing_rafts.mp4",
+   "start": 33,
+   "end": 46,
+   "note": "a Hippo puts its raft down; the riders get off"
+  },
+  "kangaroo_hop": {
+   "source": "media/kangaroo_showcase.mp4",
+   "start": 0,
+   "end": 13,
+   "note": "a Kangaroo Commando hopping"
+  },
+  "kangaroo_flash": {
+   "source": "media/kangaroo_showcase.mp4",
+   "start": 14,
+   "end": 27,
+   "note": "three flash grenades onto the gun deck"
+  },
+  "kangaroo_raid": {
+   "source": "media/kangaroo_showcase.mp4",
+   "start": 58,
+   "end": 70,
+   "note": "through the broken gate and up to the decks"
+  },
+  "lioness_walk": {
+   "source": "media/lioness_showcase.mp4",
+   "start": 0,
+   "end": 13,
+   "note": "the walk, then the gallop"
+  },
+  "lioness_lines": {
+   "source": "media/lioness_showcase.mp4",
+   "start": 14,
+   "end": 31,
+   "note": "firing lines"
+  },
+  "lioness_sneak": {
+   "source": "media/lioness_showcase.mp4",
+   "start": 32,
+   "end": 48,
+   "note": "sneak, stalk and pounce"
+  },
+  "lioness_blast": {
+   "source": "media/lioness_showcase.mp4",
+   "start": 60,
+   "end": 68,
+   "note": "the fire blast"
+  },
+  "chimp_swing": {
+   "source": "media/chimp_swing_rafts.mp4",
+   "start": 0,
+   "end": 17,
+   "note": "swinging through the trees"
+  },
+  "ram_charge": {
+   "source": "media/ram_raid_showcase.mp4",
+   "start": 0,
+   "end": 8,
+   "note": "rams charge the gate down"
+  },
+  "ram_raid": {
+   "source": "media/ram_raid_showcase.mp4",
+   "start": 8,
+   "end": 24,
+   "note": "rams and Chimps loose inside the stronghold"
+  },
+  "talon_fly": {
+   "source": "media/talon_showcase.mp4",
+   "start": 0,
+   "end": 13,
+   "note": "take-off and glide"
+  },
+  "talon_flock": {
+   "source": "media/talon_showcase.mp4",
+   "start": 22,
+   "end": 31,
+   "note": "a flock, each in a ring of its own"
+  },
+  "talon_strike": {
+   "source": "media/talon_strike_showcase.mp4",
+   "start": 46,
+   "end": 66,
+   "note": "bomb strike and strafe runs on the south face"
+  },
+  "dog_heal": {
+   "source": "media/dog_showcase.mp4",
+   "start": 4,
+   "end": 24,
+   "note": "healing two units at a time"
+  },
+  "dog_sweep": {
+   "source": "media/dog_showcase.mp4",
+   "start": 33,
+   "end": 50,
+   "note": "a minefield found and swept"
+  },
+  "dog_dig": {
+   "source": "media/dog_showcase.mp4",
+   "start": 53,
+   "end": 60,
+   "note": "digging out a mine"
+  },
+  "giraffe_ping": {
+   "source": "media/giraffe_showcase.mp4",
+   "start": 15,
+   "end": 30,
+   "note": "the ping marks defenders in the fog"
+  },
+  "heavy_lift": {
+   "source": "media/vehicle_showcase.mp4",
+   "start": 36,
+   "end": 50,
+   "note": "the Heavy Lift Helicopter"
+  },
+  "bridge": {
+   "source": "media/bridge_deploy.mp4",
+   "start": 0,
+   "end": 18,
+   "note": "a folding bridge airdropped across the river"
+  }
+ }
+}

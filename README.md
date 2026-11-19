@@ -285,7 +285,7 @@ Add `--lighting=standard` after the `--` to see it without the ray-traced lighti
 
 ### Main menu
 
-The title screen (`game/scenes/main_menu.tscn`) is a live feed from orbit: the Earth holds still while a war burns across its red conflict zones (the texture's red flickers as fire, brighter on the night side; the hotspots, found in the texture when the menu opens, flash with explosions and shockwave rings; missiles arc between them), an alien mothership circles it slowly on a tilted orbit (passing low across the near side, its red underglow sweeping the clouds, then behind the globe), and the 3D title swivels gently from side to side. A tracking reticle follows the mothership while it is in sight. The 3D scene is `MenuBackdrop` (`game/scripts/ui/menu_backdrop.gd`); the menu, the overlay and the HUD are `game/scripts/ui/main_menu.gd`. Arrow keys move between entries and step the settings left and right; Enter confirms.
+The title screen (`game/scenes/main_menu.tscn`) is a live feed from orbit: the Earth holds still while a war burns across its red conflict zones (the texture's red flickers as fire, brighter on the night side; the hotspots, found in the texture when the menu opens, flash with explosions and shockwave rings; missiles arc between them), an alien mothership circles it slowly on a tilted orbit (passing low across the near side, its red underglow sweeping the clouds, then behind the globe), and the 3D title swivels gently from side to side. A tracking reticle follows the mothership while it is in sight. The 3D scene is `MenuBackdrop` (`game/scripts/ui/menu_backdrop.gd`); the menu, the overlay and the HUD are `game/scripts/ui/main_menu.gd`. Arrow keys move between entries and step the settings left and right; Enter confirms. **Field Manual** opens the tutorial (see *Field Manual* below).
 
 Its three Meshy models (`assets_src/menu/`: the Earth, the mothership and the title logo) were processed by `process_prop.py`:
 
@@ -312,6 +312,17 @@ ffmpeg -i intro.avi -c:v libx264 -crf 18 -pix_fmt yuv420p -c:a aac -b:a 256k int
 Preview from a given moment with `-- --intro-start=80` (seconds).
 
 The score (`game/assets/audio/intro_theme.ogg`) is original and synthesized by `tools/audio/compose_intro.py`; it is a temp track meant to be replaced by a real recording.
+
+### Field Manual (tutorial)
+
+The game's tutorial (`game/scenes/field_manual.tscn`, `game/scripts/ui/field_manual.gd`): **Field Manual** on the main menu, or on the pause menu during a match (it opens over the paused match at your side's pages and plays while paused; closing it goes back to the pause menu). Two tabs, **Defenders** and **Attackers**: each starts with a *How to defend / How to attack* page (the goal, the economy, the controls), then a page per unit (the posts and deck guns, the roof defenses, the four squads, the Sniper, the jet, the tank and the drones; every attacker unit, the Heavy Lift Helicopter and the river crossings). A page has the unit's video, what it is for, its key, cost and numbers, and its skills, each with its key; clicking a skill plays the clip that shows it. `↑ ↓` the unit, `← →` the clip, `Tab` the other side, `Esc` back.
+
+The pages are `game/scripts/ui/field_manual_data.gd` (the numbers are the game's: keep them in step with `unit_types.gd`, `defender_armory.gd` and the defense scripts). The videos are recycled: 69 short clips (`game/assets/tutorial/*.ogv`, Ogg Theora, 640x360, about 76 MB) cut from the showcase videos in `media/`, with the intro's gallery of heroes for the units that have no showcase (the elephant, the rhino, the hippo, the serpent, the mules, the bison). The cuts are listed in `tools/video/tutorial_clips.json` (source, start and end); to recut them:
+
+```sh
+git lfs pull --include="media/*"
+python3 tools/video/cut_tutorial_clips.py            # all of them, or name the clip ids
+```
 
 ### Defender drones
 
