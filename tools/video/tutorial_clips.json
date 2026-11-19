@@ -465,6 +465,24 @@
    "start": 0.5,
    "end": 16.0,
    "note": "a drone swarm off the roof onto a knot of attackers; the bears shoot back"
+  },
+  "serpent_fire": {
+   "source": "media/serpent_showcase.mp4",
+   "start": 11.0,
+   "end": 19.5,
+   "note": "behind the Serpent Sniper firing at a Flame Trooper: slow, heavy rounds"
+  },
+  "serpent_nest": {
+   "source": "media/serpent_showcase.mp4",
+   "start": 23.0,
+   "end": 37.5,
+   "note": "F on a tree: it winds up the trunk into the crown and fires from on top of it"
+  },
+  "serpent_trap": {
+   "source": "media/serpent_showcase.mp4",
+   "start": 56.0,
+   "end": 77.5,
+   "note": "G on a bush: it coils round it; a trooper walks past and is seized and squeezed"
   }
  }
 }
