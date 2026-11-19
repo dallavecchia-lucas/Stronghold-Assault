@@ -459,6 +459,12 @@
    "start": 0.3,
    "end": 28.97,
    "note": "a Heavy Lift Helicopter takes bears and an elephant aboard and sets them down by the south helipad"
+  },
+  "drone_swarm": {
+   "source": "media/drone_swarm_showcase.mp4",
+   "start": 0.5,
+   "end": 16.0,
+   "note": "a drone swarm off the roof onto a knot of attackers; the bears shoot back"
   }
  }
 }
