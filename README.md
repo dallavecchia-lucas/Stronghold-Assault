@@ -227,7 +227,7 @@ Balance numbers live in `game/scripts/units/unit_types.gd` and the constants at 
 
 ### Light and effects
 
-**The light** (`game/scripts/fx/atmosphere.gd`). The sky is drawn by a shader: deep blue overhead paling to a bright haze at the horizon, the haze over the far land below it (the fog's colour, so the land fades into it), a warm glow round the sun and its disk blooming, and clouds lit from the sun's side and shadowed underneath, thinning into the haze. The sun is warm and its shadows soft, hardening where they touch, over four cascades. ACES tone mapping with a wide bloom: anything brighter than white (the sun, fire, flashes) glows. Ambient occlusion darkens the creases, screen-space indirect light bounces colour (and a blast's glare) onto what stands round it, and volumetric fog fills the air: shafts of sunlight through the canopy, a halo round every fire, muzzle flash and blast. The fog thins as the camera climbs (it follows the camera's height over the ground), so the strategy view stays clear. The volumetric fog, the indirect light and the warp below are Forward+ (and Mobile) only; the Compatibility renderer draws the rest.
+**The light** (`game/scripts/fx/atmosphere.gd`). The sky is drawn by a shader: deep blue overhead paling to a bright haze at the horizon, the haze over the far land below it (the fog's colour, so the land fades into it), a warm glow round the sun and its disk blooming, and clouds lit from the sun's side and shadowed underneath, thinning into the haze. The sun is warm and its shadows soft, hardening where they touch, over four cascades. ACES tone mapping with a wide bloom: anything brighter than white (the sun, fire, flashes) glows. Ambient occlusion darkens the creases, screen-space indirect light bounces colour (and a blast's glare) onto what stands round it, and volumetric fog fills the air: shafts of sunlight through the canopy, a halo round every fire, muzzle flash and blast. The fog thins as the camera climbs (it follows the camera's height over the ground), so the strategy view stays clear. The volumetric fog, the indirect light and the warp below are Forward+ (and Mobile) only; the Compatibility renderer draws the rest. Without the ray-traced lighting (on Compatibility always) the sky shader drops its half-res pass, which only the volumetric clouds draw into: strict GL drivers (Mesa) reject the GLSL Compatibility generates for that pass, and the whole sky would fail to compile and draw white.
 
 **Ray-traced lighting** (the menu's **Lighting** option, `Ray-traced` by default; `Standard` is lighter on the GPU; `-- --lighting=standard` on the command line). Godot has no hardware ray tracing; these are its rays, marched in software:
 
@@ -315,13 +315,25 @@ The score (`game/assets/audio/intro_theme.ogg`) is original and synthesized by `
 
 ### Field Manual (tutorial)
 
-The game's tutorial (`game/scenes/field_manual.tscn`, `game/scripts/ui/field_manual.gd`): **Field Manual** on the main menu, or on the pause menu during a match (it opens over the paused match at your side's pages and plays while paused; closing it goes back to the pause menu). Two tabs, **Defenders** and **Attackers**: each starts with a *How to defend / How to attack* page (the goal, the economy, the controls), then a page per unit (the posts and deck guns, the roof defenses, the four squads, the Sniper, the jet, the tank and the drones; every attacker unit, the Heavy Lift Helicopter and the river crossings). A page has the unit's video, what it is for, its key, cost and numbers, and its skills, each with its key; clicking a skill plays the clip that shows it. `↑ ↓` the unit, `← →` the clip, `Tab` the other side, `Esc` back.
+The game's tutorial (`game/scenes/field_manual.tscn`; `game/scripts/ui/field_manual.gd`, `field_manual_style.gd`, `field_manual_data.gd`): **Field Manual** on the main menu, or on the pause menu during a match (it opens over the paused match at your side's book and plays while paused; closing it goes back to the pause menu). It is two books on a desk, one for each side, each in its own voice:
 
-The pages are `game/scripts/ui/field_manual_data.gd` (the numbers are the game's: keep them in step with `unit_types.gd`, `defender_armory.gd` and the defense scripts). The videos are recycled: 69 short clips (`game/assets/tutorial/*.ogv`, Ogg Theora, 640x360, about 76 MB) cut from the showcase videos in `media/`, with the intro's gallery of heroes for the units that have no showcase (the elephant, the rhino, the hippo, the serpent, the mules, the bison). The cuts are listed in `tools/video/tutorial_clips.json` (source, start and end); to recut them:
+- **The Host** (the attackers): *FM 1-01, Field Manual: the Host of Earth*, the field manual the last human army left to the beasts that took up its tools. A cloth-bound book on a walnut desk under a warm lamp, ivory paper foxed at the edges, set in EB Garamond (old-style figures, small caps, drop caps) with Libre Franklin for the heavy heads and vermilion for the second colour. A title page with the Last Command's seal, the contents, then a chapter for every beast (and the Heavy Lift Helicopter, and the rivers): on the left its plate, the video printed as a photograph and mounted with corners, its figures and its particulars; on the right what it is for (its Latin name under it) and its *employment*, a paragraph a skill with its key printed reversed out of the ink and a reference to the figure that shows it. In the margins, notes in pencil from the soldiers who carried the book.
+- **The Garrison** (the defenders): *TM 30-90, Standing Orders: the Keep*, a ring binder of typed orders on a steel desk under a strip light. Grey-green form paper printed in green-grey (Overpass), typed on in blue-black (Courier Prime, every letter struck a little differently), SECRET at the head and foot of every sheet. A cover sheet and the index of orders, then an order for every post: the photograph clipped onto the form, the particulars in the form's boxes, the duties numbered, a note at the foot bracketed in grease pencil.
+
+The other book lies under the open one with its edge showing: click it, or `Tab`, to open it instead. The pages turn (the page as it was is caught and turned over onto the new spread, with the sound of it). `← →` (or the page corners, or the wheel) turn the page, `↑ ↓` the figures, `Home` the contents, `Esc` (or a click on the desk) puts it down. Every spread is printed on sheets of its own, and now and then a cup was set down on one. Everything is drawn in code and shaders (the paper, the desk, the lamp, the ink of the stamps and the pencil, the photographs' print); the fonts are in `game/assets/fonts/` with their OFL licences; the paper sounds are synthesized by `tools/audio/manual_sounds.py`.
+
+The text is `game/scripts/ui/field_manual_data.gd` (the numbers are the game's: keep them in step with `unit_types.gd`, `defender_armory.gd` and the defense scripts). The figures are short clips (`game/assets/tutorial/*.ogv`, Ogg Theora, 640x360) cut from the showcase videos in `media/`: the cuts are listed in `tools/video/tutorial_clips.json` (source, start and end); to recut them:
 
 ```sh
 git lfs pull --include="media/*"
 python3 tools/video/cut_tutorial_clips.py            # all of them, or name the clip ids
+```
+
+The units no showcase filmed were filmed for it: the War Elephant's walk, flak and missiles (`elephant_showcase`), the Bison Field Gun, the Mule Artillery and the Serpent Sniper (their showcases), and the Combat Rhino, the Hippo Heavy Gunner, the Heavy Lift Helicopter and the drone swarms in `game/scenes/dev/tutorial_shots.tscn` (`--shot=rhino_cluster`, `rhino_aa`, `hippo_guns`, `hippo_smoke`, `heli`, `drones`), all on the showcase field. They were recorded with the Compatibility renderer:
+
+```sh
+godot --path game --rendering-driver opengl3 --resolution 960x540 --write-movie rhino.avi --fixed-fps 30 \
+    res://scenes/dev/tutorial_shots.tscn -- --shot=rhino_cluster --lighting=standard
 ```
 
 ### Defender drones
@@ -1114,6 +1126,10 @@ The game strips the placeholder weapons (`PH_*`) from its mounts and puts the tu
 ## Texture credits
 
 The ground's, the stronghold's and the water's photoscanned materials are from [Poly Haven](https://polyhaven.com), released under CC0 (public domain): `forest_leaves_02`, `brown_mud_leaves_01`, `leafy_grass`, `sparse_grass`, `forest_ground_04`, `brown_mud_03`, `rock_face_03`, `ganges_river_pebbles`, `aerial_rocks_02`, `concrete_layers_02`, `dirty_concrete`, `metal_plate_02`, `rusty_metal_02`. The water's wave normals, caustics and foam are generated (`tools/textures/gen_water.py`).
+
+## Font credits
+
+The Field Manual's faces are under the SIL Open Font License (each folder in `game/assets/fonts/` has its `OFL.txt`): [EB Garamond](https://github.com/octaviopardo/EBGaramond12) (Georg Duffner, Octavio Pardo), [Libre Franklin](https://github.com/googlefonts/Libre-Franklin) (Impallari Type), [Reenie Beanie](https://fonts.google.com/specimen/Reenie+Beanie) (James Grieshaber), [Courier Prime](https://github.com/quoteunquoteapps/CourierPrime) (Quote-Unquote Apps), [Overpass](https://github.com/RedHatOfficial/Overpass) (Delve Withrington, Red Hat) and [Big Shoulders Stencil](https://github.com/xotypeco/big_shoulders) (Patric King). JetBrains Mono (the HUD's) is under its own licence in its folder.
 
 ## Asset layout
 

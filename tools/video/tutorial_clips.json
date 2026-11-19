@@ -285,12 +285,6 @@
    "end": 28,
    "note": "the dive: out of the defenders' sight"
   },
-  "elephant_raft": {
-   "source": "media/chimp_swing_rafts.mp4",
-   "start": 17.5,
-   "end": 22,
-   "note": "a War Elephant, its raft folded on its rump"
-  },
   "raft_crossing": {
    "source": "media/chimp_swing_rafts.mp4",
    "start": 26.5,
@@ -416,6 +410,25 @@
    "start": 0,
    "end": 18,
    "note": "a folding bridge airdropped across the river"
+  },
+  "elephant_walk": {
+   "source": "media/elephant_showcase.mp4",
+   "start": 0.3,
+   "end": 15.0,
+   "note": "a War Elephant on the march, the camera circling it",
+   "quality": 3
+  },
+  "elephant_flak": {
+   "source": "media/elephant_showcase.mp4",
+   "start": 15.3,
+   "end": 30.6,
+   "note": "the flak cannons swing up and shoot down the drones"
+  },
+  "elephant_missiles": {
+   "source": "media/elephant_showcase.mp4",
+   "start": 30.9,
+   "end": 43.7,
+   "note": "the RTS view: missiles aimed with O, only as many elephants firing as the kill needs"
   }
  }
 }

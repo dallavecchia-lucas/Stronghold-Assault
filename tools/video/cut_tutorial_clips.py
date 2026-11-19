@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Cuts the Field Manual's video clips out of the showcase videos in media/.
 
-The clips are listed in tools/video/tutorial_clips.json ({id: {source, start, end}}); each is cut from its source
+The clips are listed in tools/video/tutorial_clips.json ({id: {source, start, end[, quality]}}); each is cut from its source
 .mp4 (seconds, start to end), scaled down and written as Ogg Theora (the format Godot plays) to
 game/assets/tutorial/<id>.ogv, without sound. The Field Manual (game/scripts/ui/field_manual_data.gd) names
 its clips by these ids.
@@ -25,6 +25,7 @@ FPS = 30
 
 
 def cut(cid: str, clip: dict, width: int, quality: int) -> str:
+    quality = clip.get("quality", quality)  # a clip full of grass and leaves can be told to take less room
     src = os.path.join(ROOT, clip["source"])
     out = os.path.join(OUT_DIR, cid + ".ogv")
     start, end = float(clip["start"]), float(clip["end"])
