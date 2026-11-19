@@ -26,3 +26,4 @@ Thumbs.db
 game/scenes/tmp/
 game/scripts/tmp/
 clips/
+*.log
