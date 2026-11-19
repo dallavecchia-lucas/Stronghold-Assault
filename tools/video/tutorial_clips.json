@@ -495,6 +495,18 @@
    "start": 23.3,
    "end": 34.0,
    "note": "G and a click on the gate machine gun on the south deck: the shell comes down on it"
+  },
+  "bison_deck": {
+   "source": "media/bison_showcase.mp4",
+   "start": 2.0,
+   "end": 15.0,
+   "note": "the RTS view: one bison gun, G, the view up to the south face, a click on the gate's machine gun; the shell lands on it"
+  },
+  "bison_group": {
+   "source": "media/bison_showcase.mp4",
+   "start": 27.5,
+   "end": 40.0,
+   "note": "four bison guns box-selected, G onto the deck: their shells spread along it 9 m apart"
   }
  }
 }

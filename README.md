@@ -329,7 +329,7 @@ git lfs pull --include="media/*"
 python3 tools/video/cut_tutorial_clips.py            # all of them, or name the clip ids
 ```
 
-The units no showcase filmed were filmed for it: the War Elephant's walk, flak and missiles (`elephant_showcase`), the Bison Field Gun, the Mule Artillery and the Serpent Sniper (their showcases), and the Combat Rhino, the Hippo Heavy Gunner, the Heavy Lift Helicopter and the drone swarms in `game/scenes/dev/tutorial_shots.tscn` (`--shot=rhino_cluster`, `rhino_aa`, `hippo_guns`, `hippo_smoke`, `heli`, `drones`), all on the showcase field. They were recorded with the Compatibility renderer:
+The units no showcase had filmed were filmed for it, on the showcase field: the War Elephant's walk, flak and missiles (`elephant_showcase`, `media/elephant_showcase.mp4`), the Bison Field Gun, the Mule Artillery and the Serpent Sniper (their showcases: `media/bison_showcase.mp4`, `mule_showcase.mp4`, `serpent_showcase.mp4`), and the Combat Rhino, the Hippo Heavy Gunner, the Heavy Lift Helicopter and the drone swarms in `game/scenes/dev/tutorial_shots.tscn` (`--shot=rhino_cluster`, `rhino_aa`, `hippo_guns`, `hippo_smoke`, `heli`, `drones`; `media/rhino_showcase.mp4`, `hippo_showcase.mp4`, `heavy_lift_showcase.mp4`, `drone_swarm_showcase.mp4`; `--snap=t1,t2 --snap-out=prefix` saves stills of a shot to check its framing). The Fighter Jet and the Hover Tank keep the vehicle showcase's footage (captioned as their proving ground): their showcase runs on the Jungle Keep, whose depth-reading shaders don't compile on the Compatibility renderer under Mesa. The recordings were made with the Compatibility renderer:
 
 ```sh
 godot --path game --rendering-driver opengl3 --resolution 960x540 --write-movie rhino.avi --fixed-fps 30 \
@@ -494,7 +494,7 @@ python3 tools/video/cut_showcase.py aa.avi aa.log media/aa_squad_showcase.mp4
 
 ### Bison showcase
 
-`game/scenes/dev/bison_showcase.tscn` aims the Bison Field Gun's bombardment the way a player does, in the RTS view: a lone bison out in the south field is clicked, `G`, the view pans up to the south face, and the cursor goes onto the gate machine gun on the gun deck, `LMB`. After its reload (cut short here) it hits the mortar on the roof. Then four bisons are box-selected and shell the deck, their shells spread along it between the two riflemen, and then the roof. The garrison's posts hold fire, and their machines don't get repaired.
+`game/scenes/dev/bison_showcase.tscn` aims the Bison Field Gun's bombardment the way a player does, in the RTS view: a lone bison out in the south field is clicked, `G`, the view pans up to the south face, and the cursor goes onto the gate machine gun on the gun deck, `LMB`. After its reload (cut short here) it hits the flak gun on the roof (the mortar that stood there is gone). Then four bisons are box-selected and shell the deck, their shells spread along it between the two riflemen, and then the roof. Recorded: `media/bison_showcase.mp4`. The garrison's posts hold fire, and their machines don't get repaired.
 
 ```sh
 godot --path game --headless --fixed-fps 30 res://scenes/dev/bison_showcase.tscn -- --test  # prints and checks: BISON SHOWCASE PASS / FAIL
@@ -506,7 +506,7 @@ godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie
 
 ### Mule showcase
 
-`game/scenes/dev/mule_showcase.tscn` works the Mule Artillery the way a player does, in the RTS view, in the south field. A mule walks up the lane, super slow. `T`: the barrel rises (7 s), and an order to move meanwhile changes nothing. `G` and a click on the gate machine gun on the south gun deck, about 90 m off: the turret lays the barrel and the shell leaves the raised muzzle and comes down on the gun. `G` again does nothing while the gun reloads (30 s, cut short here); then the mortar on the roof; then a spot in the field behind it, the turret swinging round while the team stands. Ordered to move while armed, it stays put. `T` disarms it (7 s), and the order to move given meanwhile it carries out once disarmed. The garrison's posts hold fire, and their machines don't get repaired.
+`game/scenes/dev/mule_showcase.tscn` works the Mule Artillery the way a player does, in the RTS view, in the south field. A mule walks up the lane, super slow. `T`: the barrel rises (7 s), and an order to move meanwhile changes nothing. `G` and a click on the gate machine gun on the south gun deck, about 90 m off: the turret lays the barrel and the shell leaves the raised muzzle and comes down on the gun. `G` again does nothing while the gun reloads (30 s, cut short here); then the flak gun on the roof (the mortar that stood there is gone); then a spot in the field behind it, the turret swinging round while the team stands. Recorded: `media/mule_showcase.mp4`. Ordered to move while armed, it stays put. `T` disarms it (7 s), and the order to move given meanwhile it carries out once disarmed. The garrison's posts hold fire, and their machines don't get repaired.
 
 ```sh
 godot --path game --headless --fixed-fps 30 res://scenes/dev/mule_showcase.tscn -- --test  # prints and checks: MULE SHOWCASE PASS / FAIL
