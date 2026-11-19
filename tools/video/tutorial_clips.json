@@ -429,6 +429,30 @@
    "start": 30.9,
    "end": 43.7,
    "note": "the RTS view: missiles aimed with O, only as many elephants firing as the kill needs"
+  },
+  "rhino_cluster": {
+   "source": "media/rhino_showcase.mp4",
+   "start": 0.3,
+   "end": 15.0,
+   "note": "the RTS view: three rhinos, F, the cursor on the south gun deck; their bombs walk over it"
+  },
+  "rhino_aa": {
+   "source": "media/rhino_showcase.mp4",
+   "start": 15.3,
+   "end": 28.1,
+   "note": "three rhinos under drones flying in: each locks on and hammers one"
+  },
+  "hippo_guns": {
+   "source": "media/hippo_showcase.mp4",
+   "start": 0.3,
+   "end": 13.0,
+   "note": "two hippos open up on a knot of Flame Troopers, the spray landing round them"
+  },
+  "hippo_smoke": {
+   "source": "media/hippo_showcase.mp4",
+   "start": 13.4,
+   "end": 30.07,
+   "note": "the RTS view: a hippo, R, the cone toward the face; the smoke curtain goes up"
   }
  }
 }
