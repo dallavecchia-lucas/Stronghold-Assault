@@ -4,7 +4,7 @@ extends Node3D
 ## slow; T sets its gun up (7 s, and an order to move meanwhile changes nothing); G and a click on the gate
 ## machine gun on the south gun deck, nearly 100 m off: the turret lays the barrel, the shell goes up out of
 ## the muzzle and comes down on the gun. G again does nothing until the gun has reloaded (30 s, cut short
-## here); then the mortar on the roof; then a spot behind it, out in the field: the turret swings round while
+## here); then the flak gun on the roof (a Sentinel Bastion); then a spot behind it, out in the field: the turret swings round while
 ## the team stands. Ordered to move armed, it stays put. T disarms it (7 s), and the order to move given
 ## meanwhile it carries out once its gun is packed.
 ##
@@ -63,6 +63,11 @@ func _ready() -> void:
 		match String(s.name):
 			"MG_south": mg = s
 			"Artillery": mortar = s
+	if mortar == null:
+		mortar = _roof_gun()
+	# The roofs' flak shoots at the ground too now: it holds its fire with the posts.
+	for g in level.aa_turrets:
+		g.process_mode = Node.PROCESS_MODE_DISABLED
 	var units_root := Node3D.new()
 	add_child(units_root)
 	commander = AttackerCommander.new()
@@ -84,6 +89,18 @@ func _ready() -> void:
 	rig.focus(START)
 	_build_overlay()
 	level.navigation_ready.connect(_start, CONNECT_ONE_SHOT)
+
+
+## The mortar is gone from the south roof: the roof's flak gun over the gate stands in for it (the nearest Sentinel
+## Bastion along the face to the gate's machine gun).
+func _roof_gun() -> Node3D:
+	var best: Node3D = null
+	for g in level.aa_turrets:
+		if not String(g.name).begins_with("Bastion") or absf(g.global_position.z - mg.global_position.z) > 25.0:
+			continue
+		if best == null or absf(g.global_position.x - mg.global_position.x) < absf(best.global_position.x - mg.global_position.x):
+			best = g
+	return best
 
 
 func _start() -> void:
@@ -139,7 +156,7 @@ func _process(delta: float) -> void:
 		"reload":
 			_reload()
 		"fire_roof":
-			_fire_at(mortar.global_position, mortar, "Reloaded (cut short here): G, click the mortar on the roof")
+			_fire_at(mortar.global_position, mortar, "Reloaded (cut short here): G, click the flak gun on the roof")
 		"traverse":
 			_traverse()
 		"armed_move":
