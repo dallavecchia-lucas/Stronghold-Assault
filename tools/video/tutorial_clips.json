@@ -483,6 +483,18 @@
    "start": 56.0,
    "end": 77.5,
    "note": "G on a bush: it coils round it; a trooper walks past and is seized and squeezed"
+  },
+  "mule_setup": {
+   "source": "media/mule_showcase.mp4",
+   "start": 10.5,
+   "end": 23.0,
+   "note": "the RTS view: T, the team halts and the barrel climbs to 40 degrees (7 s); an order to move meanwhile changes nothing"
+  },
+  "mule_fire": {
+   "source": "media/mule_showcase.mp4",
+   "start": 23.3,
+   "end": 34.0,
+   "note": "G and a click on the gate machine gun on the south deck: the shell comes down on it"
   }
  }
 }
