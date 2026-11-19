@@ -46,6 +46,9 @@ var _cursor_on = null
 var _cam_pos := Vector3.ZERO
 var _cam_look := Vector3.ZERO
 var _snaps: Array = []
+## The heli shot: the side of the parked helicopter the field opens out on.
+var _open := Vector3.RIGHT
+var _park := Vector3.ZERO
 var _snap_out := "snap"
 var _snapping := false
 
@@ -65,7 +68,8 @@ func _ready() -> void:
 	level = LevelBuilder.new()
 	add_child(level)
 	level.build()
-	for s in level.stations:
+	# The garrison holds its fire: the posts, and the roofs' flak and missiles (the flak would shell the field).
+	for s in level.stations + level.aa_turrets:
 		s.process_mode = Node.PROCESS_MODE_DISABLED
 	var units_root := Node3D.new()
 	add_child(units_root)
@@ -142,8 +146,12 @@ func _start() -> void:
 				units.append(_spawn("rifleman", ramp + out * (6.0 + (k / 4) * 2.5) + out.cross(Vector3.UP) * ((k % 4) - 1.5) * 2.2))
 			units.append(_spawn("elephant", ramp + out * 13.0))
 			commander.submit({"type": "helo_board", "units": units.map(func(u): return u.unit_id), "helo": 0})
-			_cam_pos = helo.global_position + out * 34.0 + out.cross(Vector3.UP) * 22.0 + Vector3.UP * 4.0
-			_cam_look = helo.global_position + Vector3.UP * 5.0
+			# Film it from the open field (toward the middle of the map), not from the trees beside its spot.
+			var hx := helo.global_position.x
+			_open = Vector3(-signf(hx) if absf(hx) > 1.0 else 1.0, 0, 0)
+			_park = helo.global_position
+			_cam_pos = _park + _open * 52.0 + Vector3.UP * 13.0
+			_cam_look = _park + Vector3.UP * 4.0
 		"drones":
 			bay = DroneBay.new()
 			bay.level = level
@@ -331,35 +339,32 @@ func _heli() -> void:
 		_steps["fly_t"] = t
 		var pad := _south_pad()
 		commander.submit({"type": "helo_fly", "helo": 0, "spawn": pad})
-	# The dull stretches go faster: the walk to the ramp, the cruise.
-	var state := helo.state if is_instance_valid(helo) else -1
-	if state != _steps.get("state", -2):
-		_steps["state"] = state
-		print("TUTORIAL heli t=%.1f state %s, %d/%d aboard" % [t, TransportHelo.State.keys()[state] if state >= 0 else "-", aboard, units.size()])
-	if not _steps.has("fly") and t > 2.0 or state == TransportHelo.State.CRUISE:
-		Engine.time_scale = 3.0
-	elif state == TransportHelo.State.DESCEND:
-		Engine.time_scale = 2.0
-	else:
-		Engine.time_scale = 1.0
+	# The walk to the ramp goes faster.
+	Engine.time_scale = 3.0 if not _steps.has("fly") and t > 2.0 else 1.0
 	if not is_instance_valid(helo):
 		return
+	var state: int = helo.state
+	if state != _steps.get("state", -2):
+		_steps["state"] = state
+		print("TUTORIAL heli t=%.1f state %s, %d/%d aboard" % [t, TransportHelo.State.keys()[state], aboard, units.size()])
+	if is_instance_valid(helo.get("_label")):
+		helo.get("_label").visible = false
 	var h := helo.global_position
-	var fwd := -helo.global_basis.z
-	fwd.y = 0.0
-	fwd = fwd.normalized() if fwd.length() > 0.01 else Vector3.FORWARD
-	var side := fwd.cross(Vector3.UP)
-	if not _steps.has("fly"):
-		# Off its flank as the units go aboard.
-		_ease_cam(h + side * 30.0 - fwd * 18.0 + Vector3.UP * 5.0, h + Vector3.UP * 4.0, 1.0)
-	elif state in [TransportHelo.State.SPOOL, TransportHelo.State.CLIMB]:
-		_ease_cam(h + side * 34.0 + fwd * 10.0 + Vector3.UP * 2.0, h + Vector3.UP * 6.0, 0.8)
-	elif state == TransportHelo.State.CRUISE:
-		_ease_cam(h - fwd * 46.0 + side * 18.0 + Vector3.UP * 10.0, h + fwd * 20.0, 1.5)
-	else:
-		# Down on the pad and the units put down beside the camp.
-		var pad: Vector3 = level.spawn_points[_south_pad()]
-		_ease_cam(pad + (pad - h).normalized() * 6.0 + side * 40.0 + Vector3.UP * 14.0, h.lerp(pad, 0.5) + Vector3.UP * 4.0, 1.2)
+	if not _steps.has("fly") or state == TransportHelo.State.SPOOL or (state == TransportHelo.State.CLIMB and h.distance_to(_park) < 45.0):
+		# At the base, from the open field, raised over the groves: boarding, the rotors spinning up, lift-off.
+		_ease_cam(_park + _open * 52.0 + Vector3.UP * 13.0, h + Vector3.UP * 4.0, 0.8)
+		return
+	# Then cut to a camera standing off the helipad, watching it fly in and set down.
+	var pad: Vector3 = level.spawn_points[_south_pad()]
+	if not _steps.has("pad_cam"):
+		_steps["pad_cam"] = true
+		var a := Vector3(pad.x - _park.x, 0.0, pad.z - _park.z).normalized()
+		var side := a.cross(Vector3.UP)
+		if side.dot(_open) < 0.0:
+			side = -side
+		_cam_pos = pad + side * 50.0 + a * 20.0 + Vector3.UP * 12.0
+		_cam_look = h
+	_ease_cam(_cam_pos, h + Vector3.UP * 2.0, 0.5)
 
 
 func _drones() -> void:
