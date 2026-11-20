@@ -145,6 +145,8 @@ func _ready() -> void:
 		camera_rig.camera.far = 2400.0
 	camera_rig.camera.current = true
 	camera_rig.focus(level.camera_home())
+	if LevelBuilder.jungle:
+		camera_rig.set_zoom(170.0)  # far enough out to take in the whole citadel
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	commander.unit_died.connect(func(u): selected.erase(u))
 	if commander.fleet != null:

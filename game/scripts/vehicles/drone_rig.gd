@@ -56,7 +56,16 @@ func _build() -> void:
 		_flames.append(f)
 
 
+var _skipped := 0.0
+
+
 func _process(delta: float) -> void:
+	# Off camera, animated only every TurretRig.OFFSCREEN_STEP s (with the time it skipped).
+	_skipped += delta
+	if _skipped < TurretRig.OFFSCREEN_STEP and TurretRig.offscreen(self, global_position):
+		return
+	delta = _skipped
+	_skipped = 0.0
 	_track(delta, 0.25)
 	if follow_motion:
 		_read_motion(delta)

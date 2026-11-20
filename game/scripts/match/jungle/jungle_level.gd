@@ -172,8 +172,11 @@ func match_time() -> float:
 	return maxf(GameConfig.match_duration, JUNGLE_TIME) if GameConfig.autotest == "" else GameConfig.match_duration
 
 
+## The match opens on the citadel, with the ground its army comes out onto (north of it) in view.
 func camera_home() -> Vector3:
-	return spawn_points[0] + Vector3(0, 0, -40)
+	if citadel != null:
+		return citadel.global_position + Vector3(0, 0, -citadel_front * 0.5)
+	return spawn_points[0]
 
 
 func _build_scenery() -> void:

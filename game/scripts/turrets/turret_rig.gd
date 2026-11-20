@@ -201,10 +201,28 @@ func _kick(jump: float, rock: float, back := 0.0) -> void:
 	_back_v += back * 60.0
 
 
+## Off camera, a rig is only animated every OFFSCREEN_STEP s (with the time it skipped): there are over a hundred.
+const OFFSCREEN_STEP := 0.2
+var _skipped := 0.0
+
+
+## Whether a cosmetic rig at `p` can be left unanimated this frame: off the active camera's view, or far beyond it.
+static func offscreen(node: Node3D, p: Vector3) -> bool:
+	var cam := node.get_viewport().get_camera_3d()
+	if cam == null:
+		return false
+	return not cam.is_position_in_frustum(p) or cam.global_position.distance_squared_to(p) > 400.0 * 400.0
+
+
 func _process(delta: float) -> void:
 	# Out of sight (its owner shows the player's own gun instead), it rests.
 	if model == null or not is_visible_in_tree():
 		return
+	_skipped += delta
+	if _skipped < OFFSCREEN_STEP and offscreen(self, global_position):
+		return
+	delta = _skipped
+	_skipped = 0.0
 	_springs(delta)
 	_sensors(delta)
 	_animate(delta)

@@ -72,6 +72,12 @@ func _ground_height(p: Vector3) -> float:
 	return maxf(hit.position.y, 0.0) if not hit.is_empty() else 0.0
 
 
+func set_zoom(z: float) -> void:
+	zoom = clampf(z, min_zoom, max_zoom)
+	_target_zoom = zoom
+	_apply()
+
+
 func focus(point: Vector3) -> void:
 	position = Vector3(point.x, 0, point.z)
 
