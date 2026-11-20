@@ -22,12 +22,12 @@ const AI_FIRE_INTERVAL := 0.6
 const RESPAWN_TIME := 15.0
 ## Where the first-person Shadowline rifle's grip sits in front of the camera. Aimed, it is put away
 ## and its smart scope's view (RifleScope) fills the screen instead, a little zoomed in (SCOPE_FOV).
-## The plain view model's are the others.
 const VIEW_HIP := Vector3(0.13, -0.2, -0.25)
 const VIEW_AIM := Vector3(0.13, -0.32, -0.2)
 const SCOPE_FOV := 58.0
-const PLAIN_HIP := Vector3(0.22, -0.22, -0.45)
-const PLAIN_AIM := Vector3(0.0, -0.16, -0.38)
+## The base soldier: the Cyber Orc Sentinel with the Shadowline (Idle and Running clips, the rifle on its
+## `rifle` bone). Every defender foot soldier is one, the posts' riflemen and the garrison alike.
+const MODEL := "res://assets/defenders/cyber_orc_sentinel/cyber_orc_sentinel_armed.glb"
 
 var station_name := "Soldier"
 ## Built with the first-person camera, view model and scope (a post the player takes over); a garrison soldier
@@ -62,8 +62,8 @@ var _rest_at := Vector3.INF
 var _head: Node3D
 var _camera: Camera3D
 var _body: Node3D
-## Rigged character model (empty = placeholder capsule). Clips: "Idle", "Running".
-var model_path := ""
+## Rigged character model (empty = placeholder capsule, dev showcases only). Clips: "Idle", "Running".
+var model_path := MODEL
 var _anim: AnimationPlayer
 const ANIM_IDLE := "Idle"
 const ANIM_RUN := "Running"
@@ -79,8 +79,8 @@ var _view_skel: Skeleton3D
 var _view_rifle := -1
 ## The rifle's smart scope's view, when the model carries the Shadowline.
 var _scope: RifleScope
-var _view_hip := PLAIN_HIP
-var _view_aim := PLAIN_AIM
+var _view_hip := VIEW_HIP
+var _view_aim := VIEW_AIM
 var _shape: CollisionShape3D
 
 
@@ -136,31 +136,18 @@ func _build_first_person() -> void:
 
 	_viewmodel = Node3D.new()
 	_camera.add_child(_viewmodel)
-	if _body_muzzle:
-		# The Shadowline assault rifle the body carries, held out in front: its origin is the pistol
-		# grip, its muzzle +Z (turned to look down -Z with the camera).
-		_view_hip = VIEW_HIP
-		_view_aim = VIEW_AIM
-		var gun := HeldGun.instance(HeldGun.SHADOWLINE_RIFLE)
-		gun.rotation = Vector3(0.0, PI, 0.0)
-		_viewmodel.add_child(gun)
-		for mi in gun.find_children("*", "MeshInstance3D", true, false):
-			(mi as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		_muzzle = gun.find_child("muzzle", true, false) as Node3D
-		_view_gun = gun
-		_build_view_arms()
-		_scope = RifleScope.new()
-		add_child(_scope)
-	else:
-		var gun_mat := Mats.flat(Color(0.12, 0.12, 0.13), 0.7, 0.35)
-		_viewmodel.add_child(Mats.box_mesh(Vector3(0.07, 0.11, 0.6), Vector3.ZERO, gun_mat))
-		_viewmodel.add_child(Mats.box_mesh(Vector3(0.05, 0.16, 0.08), Vector3(0, -0.1, 0.08), gun_mat))
-		_viewmodel.add_child(Mats.box_mesh(Vector3(0.06, 0.06, 0.22), Vector3(0, 0.07, -0.05), Mats.flat(Color(0.25, 0.28, 0.32), 0.5, 0.5)))
-		for c in _viewmodel.get_children():
-			(c as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		_muzzle = Node3D.new()
-		_muzzle.position = Vector3(0, 0, -0.32)
-		_viewmodel.add_child(_muzzle)
+	# The Shadowline assault rifle, held out in front: its origin is the pistol grip, its muzzle +Z
+	# (turned to look down -Z with the camera).
+	var gun := HeldGun.instance(HeldGun.SHADOWLINE_RIFLE)
+	gun.rotation = Vector3(0.0, PI, 0.0)
+	_viewmodel.add_child(gun)
+	for mi in gun.find_children("*", "MeshInstance3D", true, false):
+		(mi as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_muzzle = gun.find_child("muzzle", true, false) as Node3D
+	_view_gun = gun
+	_build_view_arms()
+	_scope = RifleScope.new()
+	add_child(_scope)
 	_viewmodel.position = _view_hip
 	_viewmodel.visible = false
 

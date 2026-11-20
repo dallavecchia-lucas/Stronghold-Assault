@@ -243,7 +243,7 @@ func _stage_units() -> void:
 			_unit(["rifleman", "rhino", "kangaroo", "giraffe"][k], b.spawn_point + Vector3(0, 0, (k - 1.5) * 6.0), -PI * 0.5 * signf(b.position.x))
 	var gate := JungleLayout.PRISON + Vector2(0, 50)
 	var s := DefenderSoldier.new()
-	s.model_path = LevelBuilder.DEFENDER_MODELS[0]
+	s.model_path = DefenderSoldier.MODEL
 	s.station_name = "Prison guard"
 	add_child(s)
 	s.global_position = Vector3(gate.x, level.ground.height_at(gate.x, gate.y) + 0.1, gate.y)

@@ -17,8 +17,7 @@ signal died(soldier: GarrisonSoldier)
 
 enum Job { NONE, GUN, DECK, FIELD }
 
-## The spawned soldiers all carry the Shadowline (Idle and Running clips, the rifle on its `rifle` bone).
-const MODEL := "res://assets/defenders/cyber_orc_sentinel/cyber_orc_sentinel_armed.glb"
+## The spawned soldiers are the base soldier too (DefenderSoldier.MODEL).
 const RUN_SPEED := 4.5
 ## Along a climbing route: up or down a stair or a ladder, and along its flat parts.
 const CLIMB_SPEED := 2.2

@@ -131,7 +131,7 @@ func _spawn(type_id: String, pos: Vector3) -> AttackerUnit:
 
 func _guard(p: Vector3) -> void:
 	var s := DefenderSoldier.new()
-	s.model_path = LevelBuilder.DEFENDER_MODELS[guards.size() % LevelBuilder.DEFENDER_MODELS.size()]
+	s.model_path = DefenderSoldier.MODEL
 	s.station_name = "Guard"
 	# Stood on the floor under `p`.
 	var q := PhysicsRayQueryParameters3D.create(p + Vector3.UP * 1.5, p + Vector3.DOWN * 3.0, GameConfig.LAYER_WORLD)

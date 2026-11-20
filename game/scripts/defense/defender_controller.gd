@@ -35,6 +35,10 @@ const BUY_TANK_KEY := KEY_H
 ## The garrison's spawn control: Y the next side, U BASE / FIELD.
 const SPAWN_SIDE_KEY := KEY_Y
 const SPAWN_PRIORITY_KEY := KEY_U
+## E: a foot soldier standing by a gun's seat climbs into it and mans the gun; E again (or the gun knocked out)
+## climbs back down beside it. MOUNT_RANGE: how close (m) to the seat or the gun the soldier has to be.
+const MOUNT_KEY := KEY_E
+const MOUNT_RANGE := 3.5
 
 var level: LevelBuilder
 ## The defenders' credits and bought squads; null: no roster.
@@ -60,6 +64,11 @@ var _threat := {}
 var _switching := false
 var _whiteout: ColorRect
 var _whiteout_tw: Tween
+## The foot soldier sitting in the gun the player mans (null: not mounted), and that gun.
+var _rider: DefenderSoldier
+var _ridden: MountedGun
+var _rider_layer := 0
+var _mount_hint: Label
 
 
 func _ready() -> void:
@@ -92,6 +101,14 @@ func _unhandled_input(event: InputEvent) -> void:
 	if drones and event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == CALL_DRONES_KEY:
 		call_drones()
 		return
+	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == MOUNT_KEY:
+		if _rider != null and current == _ridden:
+			_dismount(true)
+			return
+		var gun := _gun_in_reach()
+		if gun != null:
+			_mount(gun)
+			return
 	if garrison and event is InputEventKey and event.pressed and not event.echo:
 		if event.physical_keycode == SPAWN_SIDE_KEY:
 			cycle_spawn()
@@ -284,6 +301,9 @@ func restore_mouse() -> void:
 
 
 func _possess(s) -> void:
+	# Leaving the gun the soldier sits in for another post: the soldier climbs down and is left there.
+	if _rider != null and s != _ridden and s != _rider:
+		_dismount(false)
 	if current != null:
 		current.unpossess()
 	current = s
@@ -294,7 +314,65 @@ func _possess(s) -> void:
 	hud.on_switched()
 
 
+## The gun with a seat the player's foot soldier stands close enough to climb into (null: none).
+func _gun_in_reach() -> MountedGun:
+	if not (current is DefenderSoldier) or not current.can_possess():
+		return null
+	var p: Vector3 = current.global_position
+	var best: MountedGun = null
+	var best_d := MOUNT_RANGE
+	for s in stations:
+		if not (s is MountedGun) or not s.has_seat() or not s.can_possess():
+			continue
+		var d := minf(p.distance_to(s.crew_spot().origin), p.distance_to(s.global_position))
+		if d < best_d:
+			best_d = d
+			best = s
+	return best
+
+
+## The player's foot soldier climbs into `gun`'s seat: the soldier is put away (no body, no hitbox, not a target)
+## while the player mans the gun from the seat.
+func _mount(gun: MountedGun) -> void:
+	var soldier: DefenderSoldier = current
+	_possess(gun)
+	_rider = soldier
+	_ridden = gun
+	_rider_layer = soldier.collision_layer
+	soldier.collision_layer = 0
+	soldier.visible = false
+	soldier.process_mode = Node.PROCESS_MODE_DISABLED
+	for g in ["damageable", "defender_targets"]:
+		if soldier.is_in_group(g):
+			soldier.remove_from_group(g)
+
+
+## The soldier climbs back down beside the gun; `take_control`: the player is back on foot in it.
+func _dismount(take_control: bool) -> void:
+	var soldier := _rider
+	var gun := _ridden
+	_rider = null
+	_ridden = null
+	if soldier == null or not is_instance_valid(soldier):
+		return
+	var at: Vector3 = gun.crew_stand if is_instance_valid(gun) and gun.crew_stand.is_finite() \
+			else (gun.crew_spot().origin if is_instance_valid(gun) else soldier.global_position)
+	soldier.global_position = at + Vector3.UP * 0.1
+	soldier.velocity = Vector3.ZERO
+	soldier.collision_layer = _rider_layer
+	soldier.visible = true
+	soldier.process_mode = Node.PROCESS_MODE_INHERIT
+	soldier.add_to_group("damageable")
+	soldier.add_to_group("defender_targets")
+	if take_control:
+		_possess(soldier)
+
+
 func _on_station_unavailable(s) -> void:
+	# The gun the soldier sits in knocked out: the soldier climbs down and fights on foot.
+	if _rider != null and s == _ridden and s == current:
+		_dismount(true)
+		return
 	if s != current:
 		return
 	current.unpossess()
@@ -372,6 +450,13 @@ func _build_hud() -> void:
 	_prompt.visible = false
 	root.add_child(_prompt)
 
+	_mount_hint = UIKit.label("", 20, UIKit.WARN)
+	_mount_hint.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	_mount_hint.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_mount_hint.position.y += 100
+	_mount_hint.visible = false
+	root.add_child(_mount_hint)
+
 	_fade = UIKit.full_rect(ColorRect.new()) as ColorRect
 	_fade.color = Color(0, 0, 0, 0)
 	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -400,6 +485,12 @@ func _refresh_threat() -> void:
 
 
 func _process(_delta: float) -> void:
+	var reach := _gun_in_reach()
+	_mount_hint.visible = reach != null or (_rider != null and current == _ridden)
+	if reach != null:
+		_mount_hint.text = "E: man the %s" % reach.station_name
+	elif _mount_hint.visible:
+		_mount_hint.text = "E: climb down"
 	if current != null:
 		# A scope up draws its own reticle.
 		var info: Dictionary = current.get_hud_info()

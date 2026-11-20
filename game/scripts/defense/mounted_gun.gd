@@ -112,7 +112,6 @@ var _pitch_pivot: Node3D
 var _camera: Camera3D
 var _muzzle: Node3D
 var _gunner: Node3D
-var _viewmodel: Node3D
 var _turret: Node3D
 ## The model's rig (null: no model, or one no rig knows, turned whole).
 var _rig: TurretRig
@@ -148,20 +147,13 @@ func _ready() -> void:
 	add_child(_yaw_pivot)
 	_pitch_pivot = Node3D.new()
 	_yaw_pivot.add_child(_pitch_pivot)
-	_viewmodel = Node3D.new()
-	_pitch_pivot.add_child(_viewmodel)
-	_viewmodel.add_child(Mats.box_mesh(Vector3(0.18, 0.2, 0.7), Vector3(0, 0, 0.05), metal))
-	var barrel := Mats.cylinder_mesh(0.05, 1.1, Vector3(0, 0.02, -0.85), metal, 8)
-	barrel.rotation.x = PI * 0.5
-	_viewmodel.add_child(barrel)
-	_viewmodel.add_child(Mats.box_mesh(Vector3(0.05, 0.12, 0.05), Vector3(0, 0.15, -0.6), metal))  # front sight
-	for x in [-0.12, 0.12]:
-		_viewmodel.add_child(Mats.box_mesh(Vector3(0.04, 0.14, 0.04), Vector3(x, -0.05, 0.45), metal))  # grips
 	_muzzle = Node3D.new()
 	_muzzle.position = Vector3(0, 0.02, -2.0 if kind == "cannon" else -1.42)
 	_pitch_pivot.add_child(_muzzle)
+	# The player's eye: in the seat when the gun has one (moved there every frame, _process), otherwise up over
+	# the gun's back; it turns with the gun's aim either way.
 	_camera = Camera3D.new()
-	_camera.position = Vector3(0, 0.42, 1.25)
+	_camera.position = Vector3(0.0, maxf(model_height, 1.0) * 0.45, maxf(model_height, 1.0) * 1.15)
 	_camera.near = 0.05
 	_camera.fov = 70.0
 	_camera.far = 800.0
@@ -192,7 +184,6 @@ func _ready() -> void:
 			_turret = Props.instance(model_path, model_height)
 			_turret.position.y = -_yaw_pivot.position.y
 			_yaw_pivot.add_child(_turret)
-		_viewmodel.visible = false
 	_sweep = randf() * SWEEP_TIME
 
 	# Knocked out, it smokes and smoulders until it is repaired.
@@ -211,7 +202,7 @@ func possess() -> void:
 	possessed = true
 	_camera.current = true
 	_gunner.visible = false
-	_show_turret(false)
+	_seat_camera()
 
 
 func unpossess() -> void:
@@ -221,13 +212,21 @@ func unpossess() -> void:
 	_gunner.visible = hp > 0.0
 	_yaw_rate = 0.0
 	_pitch_rate = 0.0
-	_show_turret(true)
 
 
-func _show_turret(show: bool) -> void:
-	if _turret:
-		_turret.visible = show
-		_viewmodel.visible = not show
+## Eye height over the seat pan.
+const SEAT_EYE := 0.95
+
+
+func _process(_delta: float) -> void:
+	if possessed:
+		_seat_camera()
+
+
+## Manned by the player, a gun with a seat is seen from it: the camera rides the seat as the turret turns.
+func _seat_camera() -> void:
+	if has_seat():
+		_camera.global_position = crew_spot().origin + Vector3.UP * SEAT_EYE
 
 
 func wants_captured_mouse() -> bool:

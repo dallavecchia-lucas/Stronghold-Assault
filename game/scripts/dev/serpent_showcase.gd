@@ -741,7 +741,7 @@ func _trooper(tr: SquadTrooper, at: Vector3, face: Vector3) -> void:
 ## A rifleman standing in the field, looking toward `look` (he doesn't fight until let loose).
 func _guard(p: Vector3, look: Vector3) -> DefenderSoldier:
 	var s := DefenderSoldier.new()
-	s.model_path = LevelBuilder.DEFENDER_MODELS[1]
+	s.model_path = DefenderSoldier.MODEL
 	s.station_name = "Field rifleman"
 	var to := look - p
 	s.transform = Transform3D(Basis.looking_at(Vector3(to.x, 0.0, to.z)), p + Vector3.UP * 0.1)

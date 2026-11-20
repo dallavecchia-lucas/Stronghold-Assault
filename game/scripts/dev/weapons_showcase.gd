@@ -65,7 +65,7 @@ func _start() -> void:
 	for k in 10:
 		await get_tree().physics_frame
 	# Cyber Orc Sentinels with the rifle, side by side, facing the camera (+Z).
-	var model: String = LevelBuilder.DEFENDER_MODELS.filter(func(p): return p.ends_with("_armed.glb"))[0]
+	var model: String = DefenderSoldier.MODEL
 	for k in 3:
 		var s := DefenderSoldier.new()
 		s.model_path = model

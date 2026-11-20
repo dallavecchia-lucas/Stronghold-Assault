@@ -211,6 +211,9 @@ static func offscreen(node: Node3D, p: Vector3) -> bool:
 	var cam := node.get_viewport().get_camera_3d()
 	if cam == null:
 		return false
+	# Close by (the gun the player mans, its origin behind the camera), it is always animated.
+	if cam.global_position.distance_squared_to(p) < 30.0 * 30.0:
+		return false
 	return not cam.is_position_in_frustum(p) or cam.global_position.distance_squared_to(p) > 400.0 * 400.0
 
 

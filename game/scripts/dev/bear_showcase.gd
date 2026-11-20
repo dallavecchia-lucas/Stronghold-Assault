@@ -377,7 +377,7 @@ func _unit(type: String, at: Vector3) -> AttackerUnit:
 ## A rifleman of the garrison standing on the bank, looking toward `look` (he doesn't fight until let loose).
 func _guard(p: Vector3, look: Vector3) -> DefenderSoldier:
 	var s := DefenderSoldier.new()
-	s.model_path = LevelBuilder.DEFENDER_MODELS[1]
+	s.model_path = DefenderSoldier.MODEL
 	s.station_name = "Field rifleman"
 	var at := Vector3(p.x, LevelBuilder.ground_height(p) + 0.1, p.z)
 	var to := look - at
