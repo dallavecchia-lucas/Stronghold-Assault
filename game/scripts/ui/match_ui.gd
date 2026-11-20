@@ -159,6 +159,10 @@ func _build_pause() -> void:
 	resume.custom_minimum_size = Vector2(260, 48)
 	resume.pressed.connect(set_paused.bind(false))
 	box.add_child(resume)
+	var manual := UIKit.button("Field Manual", 22)
+	manual.custom_minimum_size = Vector2(260, 48)
+	manual.pressed.connect(_open_manual)
+	box.add_child(manual)
 	var quit := UIKit.button("Quit to Menu", 22)
 	quit.custom_minimum_size = Vector2(260, 48)
 	quit.pressed.connect(_quit_to_menu)
@@ -217,6 +221,13 @@ func show_end(title: String, subtitle: String, won: bool) -> void:
 	_pause_panel.visible = false
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	get_tree().paused = true
+
+
+## The Field Manual over the paused match, open at the player's side; closing it goes back to the pause menu.
+func _open_manual() -> void:
+	_pause_panel.visible = false
+	var m := FieldManual.open_over(self, GameConfig.player_side == GameConfig.PlayerSide.ATTACKER)
+	m.closed.connect(func(): _pause_panel.visible = get_tree().paused)
 
 
 func _quit_to_menu() -> void:

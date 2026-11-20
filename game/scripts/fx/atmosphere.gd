@@ -214,6 +214,11 @@ func _build(level: Node3D, jungle: bool) -> void:
 	var sky_mat := ShaderMaterial.new()
 	var sh := Shader.new()
 	sh.code = SKY_SHADER
+	if not raytraced:
+		# Only the volumetric clouds need the half-res pass. The Compatibility renderer's GLSL for it constructs
+		# samplers Vulkan-style, which strict drivers (Mesa) reject: the whole sky then fails to compile and draws
+		# white. Without the volumetric clouds the pass draws nothing, so it goes.
+		sh.code = SKY_SHADER.replace("render_mode use_half_res_pass;", "").replace("HALF_RES_COLOR", "vec4(0.0)")
 	sky_mat.shader = sh
 	sky_mat.set_shader_parameter("cloud_noise", _cloud_noise())
 	sky_mat.set_shader_parameter("volumetric", raytraced)

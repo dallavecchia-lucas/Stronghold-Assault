@@ -4,9 +4,9 @@ extends Node3D
 ## south face's gun deck and roof from beyond the rifles' reach.
 ##
 ##   single   one bison is selected, G, the cursor on the gate machine gun on the gun deck, LMB;
-##            after its reload (cut short here), the same bison onto the mortar on the roof
+##            after its reload (cut short here), the same bison onto the flak gun on the roof (a Sentinel Bastion)
 ##   group    four bisons are box-selected, G: their shells cluster round the cursor along the deck
-##            instead of piling onto one spot, then (reloaded) round the mortar on the roof
+##            instead of piling onto one spot, then (reloaded) round the flak gun on the roof
 ##
 ##   godot --path game --headless --fixed-fps 30 res://scenes/dev/bison_showcase.tscn -- --test
 ##   godot --path game --rendering-driver opengl3 --resolution 1280x720 --write-movie bison.avi \
@@ -22,7 +22,7 @@ const SOLO_AT := Vector3(-8.0, 0.0, 140.0)
 const GROUP_AT := [Vector3(4.0, 0.0, 136.0), Vector3(10.0, 0.0, 136.0), Vector3(7.0, 0.0, 142.0),
 		Vector3(13.0, 0.0, 142.0)]
 ## The south deck's riflemen the group aims between (LevelBuilder.RIFLE_POSTS: south bays 3 and 5).
-const DECK_SOLDIERS := ["Soldier_south_2", "Soldier_south_4"]
+const DECK_SOLDIERS := ["Soldier_south_3", "Soldier_south_5"]
 ## How far out the view is over the bisons, and up at the face while aiming.
 const FIELD_ZOOM := 46.0
 const FACE_ZOOM := 30.0
@@ -90,6 +90,11 @@ func _ready() -> void:
 			"Artillery": mortar = s
 		if String(s.name) in DECK_SOLDIERS:
 			deck_soldiers.append(s)
+	if mortar == null:
+		mortar = _roof_gun()
+	# The roofs' flak shoots at the ground too now: it holds its fire with the posts.
+	for g in level.aa_turrets:
+		g.process_mode = Node.PROCESS_MODE_DISABLED
 	controller = AttackerController.new()
 	controller.level = level
 	controller.commander = commander
@@ -105,6 +110,19 @@ func _ready() -> void:
 	_pan_to = rig.position
 	_build_overlay()
 	level.navigation_ready.connect(_start, CONNECT_ONE_SHOT)
+
+
+
+## The mortar is gone from the south roof: the roof's flak gun over the gate stands in for it (the nearest Sentinel
+## Bastion along the face to the gate's machine gun).
+func _roof_gun() -> Node3D:
+	var best: Node3D = null
+	for g in level.aa_turrets:
+		if not String(g.name).begins_with("Bastion") or absf(g.global_position.z - mg.global_position.z) > 25.0:
+			continue
+		if best == null or absf(g.global_position.x - mg.global_position.x) < absf(best.global_position.x - mg.global_position.x):
+			best = g
+	return best
 
 
 func _start() -> void:
@@ -147,7 +165,7 @@ func _process(delta: float) -> void:
 		"solo_deck":
 			_bombard_step([solo], solo, Combat.aim_point(mg) - Vector3.UP * 1.2, "One bison → the gate machine gun on the gun deck", mg, false)
 		"solo_roof":
-			_bombard_step([solo], solo, mortar.global_position, "40 s later: the same bison → the mortar on the roof", mortar, true)
+			_bombard_step([solo], solo, mortar.global_position, "40 s later: the same bison → the flak gun on the roof", mortar, true)
 		"group_deck":
 			_bombard_step(group, null, _deck_aim(), "Four bisons → the gun deck: the shells spread along it", null, false)
 		"group_roof":
@@ -266,7 +284,7 @@ func _report(watch: Node3D) -> void:
 			var hit := deck_soldiers.filter(func(s): return s.hp < _hp_before[s]).size()
 			_check(hit == deck_soldiers.size(), "%s: %d/%d deck riflemen hit" % [phase, hit, deck_soldiers.size()])
 		"group_roof":
-			_check(mortar.hp < _hp_before[mortar] or not mortar.is_alive(), "%s: mortar hit" % phase)
+			_check(mortar.hp < _hp_before[mortar] or not mortar.is_alive(), "%s: roof gun hit" % phase)
 
 
 func _check(ok: bool, what: String) -> void:

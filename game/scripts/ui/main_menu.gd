@@ -124,12 +124,17 @@ void fragment() {
 	box.add_child(gap2)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
+	var manual := _menu_button("FIELD MANUAL", "", false)
+	manual.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	manual.tooltip_text = "The tutorial: every unit on both sides and its skills, on video."
+	manual.pressed.connect(_leave.bind("res://scenes/field_manual.tscn"))
+	row.add_child(manual)
 	var intro := _menu_button("WATCH INTRO", "", false)
 	intro.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	intro.pressed.connect(_leave.bind("res://scenes/intro.tscn"))
 	row.add_child(intro)
 	var quit := _menu_button("QUIT", "", false)
-	quit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	quit.custom_minimum_size.x = 104
 	quit.pressed.connect(func(): get_tree().quit())
 	row.add_child(quit)
 	box.add_child(row)
